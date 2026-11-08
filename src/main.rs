@@ -205,8 +205,11 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
             let _ = title_proxy.send_event(UserEvent::TitleChanged(tab_id, title));
         })
         .with_navigation_handler(move |url| {
-            let _ = url_proxy.send_event(UserEvent::UrlChanged(tab_id, url.clone()));
-            if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("about:") {
+            if url.starts_with("data:text/html") {
+                // Internal page rendering (about:blank, about:newtab, about:history, etc.)
+                true
+            } else if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("about:") {
+                let _ = url_proxy.send_event(UserEvent::UrlChanged(tab_id, url.clone()));
                 true
             } else {
                 eprintln!("[security] Blocked navigation to: {url}");
@@ -292,7 +295,7 @@ fn build_toolbar_webview(
         .with_ipc_handler(move |req| {
             let _ = proxy.send_event(UserEvent::ToolbarIpc(req.body().to_string()));
         })
-        .with_navigation_handler(|_url| false)
+        .with_navigation_handler(|url| url.starts_with("data:text/html"))
         .with_devtools(cfg!(debug_assertions));
 
     #[cfg(any(
