@@ -561,6 +561,8 @@ fn main() -> Result<()> {
     let window = WindowBuilder::new()
         .with_title(window_title)
         .with_inner_size(LogicalSize::new(DEFAULT_WIDTH, DEFAULT_HEIGHT))
+        .with_visible(true)
+        .with_focused(true)
         .build(&event_loop)
         .context("Failed to create window")?;
 
@@ -625,6 +627,9 @@ fn main() -> Result<()> {
     }
 
     println!("[rusty_browser] Started with {} tabs", tabs.count());
+
+    window.set_visible(true);
+    window.set_focus();
 
     // ── Event loop ─────────────────────────────────────────────────────
     event_loop.run(move |event, _event_loop, control_flow| {
