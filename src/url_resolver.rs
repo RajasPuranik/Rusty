@@ -9,15 +9,26 @@ pub const NEW_TAB_URL: &str = "about:blank";
 /// Default search engine template. `%s` is replaced with the encoded query.
 pub const DEFAULT_SEARCH_TEMPLATE: &str = "https://duckduckgo.com/?q=%s";
 
-/// Resolve raw user input into a navigable URL.
-///
-/// - If it parses as an http(s) URL, use it directly.
-/// - If it looks like a bare domain (contains a dot, no spaces), prepend `https://`.
-/// - Otherwise treat it as a search query.
+/// Resolve raw user input into a navigable URL using the default search template.
 pub fn resolve(raw: &str) -> String {
+    resolve_with_template(raw, DEFAULT_SEARCH_TEMPLATE)
+}
+
+/// Resolve raw user input into a navigable URL or search query using a specified search template.
+///
+/// - Internal `about:` URLs are returned directly.
+/// - Valid `http://` or `https://` URLs are normalized and returned.
+/// - Bare domains (contains '.', no spaces) have `https://` prepended.
+/// - Everything else is treated as a search query and formatted into `search_template`.
+pub fn resolve_with_template(raw: &str, search_template: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return NEW_TAB_URL.to_owned();
+    }
+
+    // Pass through internal about: pages directly
+    if trimmed.starts_with("about:") {
+        return trimmed.to_owned();
     }
 
     // Already a valid http(s) URL?
@@ -35,9 +46,14 @@ pub fn resolve(raw: &str) -> String {
         }
     }
 
-    // Search query
+    // Search query using template
     let encoded = utf8_percent_encode(trimmed, NON_ALPHANUMERIC).to_string();
-    DEFAULT_SEARCH_TEMPLATE.replace("%s", &encoded)
+    let template = if search_template.contains("%s") {
+        search_template
+    } else {
+        DEFAULT_SEARCH_TEMPLATE
+    };
+    template.replace("%s", &encoded)
 }
 
 #[cfg(test)]
@@ -72,5 +88,17 @@ mod tests {
     fn resolve_with_spaces() {
         let url = resolve("  https://example.com  ");
         assert_eq!(url, "https://example.com/");
+    }
+
+    #[test]
+    fn resolve_about_page() {
+        assert_eq!(resolve("about:settings"), "about:settings");
+        assert_eq!(resolve("about:history"), "about:history");
+    }
+
+    #[test]
+    fn resolve_custom_template() {
+        let url = resolve_with_template("rust lang", "https://www.google.com/search?q=%s");
+        assert_eq!(url, "https://www.google.com/search?q=rust%20lang");
     }
 }

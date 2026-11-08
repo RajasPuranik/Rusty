@@ -145,6 +145,27 @@ pub const TOOLBAR_HTML: &str = r##"<!DOCTYPE html>
   }
   .zoom-text:hover { color: #e8eaed; }
 
+  /* Private window styling */
+  .private-badge {
+    background: #4a287a;
+    color: #e2d2ff;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 6px;
+    white-space: nowrap;
+    border: 1px solid #754bb7;
+    display: none;
+    flex-shrink: 0;
+  }
+  body.incognito {
+    background: #191424;
+  }
+  body.incognito .tab.active {
+    background: #2b223d;
+  }
+
   /* Tab bar */
   .tab-bar {
     display: flex;
@@ -225,6 +246,7 @@ pub const TOOLBAR_HTML: &str = r##"<!DOCTYPE html>
 
   <!-- Address bar (normal mode) -->
   <div class="addr-container" id="addrContainer">
+    <span class="private-badge" id="privateBadge" title="Private Window: No history or cookies saved">🕵️ PRIVATE</span>
     <input class="addr-input" id="addrInput" type="text"
            placeholder="Search or enter URL" spellcheck="false" autocomplete="off">
     <button class="star-btn" id="starBtn" title="Bookmark this tab (Ctrl+D)">☆</button>
@@ -248,10 +270,12 @@ pub const TOOLBAR_HTML: &str = r##"<!DOCTYPE html>
   <!-- Find button -->
   <button class="nav-btn" id="findBtn" title="Find in page (Ctrl+F)">🔍</button>
 
-  <!-- History & Bookmarks & Downloads quick links -->
+  <!-- History & Bookmarks & Downloads & Settings quick links -->
   <button class="nav-btn" id="bmPageBtn" title="Bookmarks (about:bookmarks)">★</button>
   <button class="nav-btn" id="histPageBtn" title="History (Ctrl+H / about:history)">🕒</button>
   <button class="nav-btn" id="dlPageBtn" title="Downloads (Ctrl+J / about:downloads)">📥</button>
+  <button class="nav-btn" id="settingsPageBtn" title="Settings (Ctrl+, / about:settings)">⚙</button>
+  <button class="nav-btn" id="privateWinBtn" title="New Private Window (Ctrl+Shift+N)">🕵️</button>
 
   <!-- Memory saver: Sleep inactive background tabs -->
   <button class="nav-btn" id="discardBtn" title="Sleep Background Tabs (Free RAM)">💤</button>
@@ -289,6 +313,9 @@ const findBtn      = document.getElementById('findBtn');
 const bmPageBtn    = document.getElementById('bmPageBtn');
 const histPageBtn  = document.getElementById('histPageBtn');
 const dlPageBtn    = document.getElementById('dlPageBtn');
+const settingsPageBtn = document.getElementById('settingsPageBtn');
+const privateWinBtn   = document.getElementById('privateWinBtn');
+const privateBadge    = document.getElementById('privateBadge');
 
 // ── Navigation button handlers ──────────────────────────────────────────
 backBtn.addEventListener('click', () => send({ action: 'back' }));
@@ -302,6 +329,8 @@ discardBtn.addEventListener('click', () => send({ action: 'discard_background_ta
 bmPageBtn.addEventListener('click', () => send({ action: 'navigate', url: 'about:bookmarks' }));
 histPageBtn.addEventListener('click', () => send({ action: 'navigate', url: 'about:history' }));
 dlPageBtn.addEventListener('click', () => send({ action: 'navigate', url: 'about:downloads' }));
+settingsPageBtn.addEventListener('click', () => send({ action: 'navigate', url: 'about:settings' }));
+privateWinBtn.addEventListener('click', () => send({ action: 'open_private_window' }));
 
 // ── Bookmark toggle (Star button) ───────────────────────────────────────
 starBtn.addEventListener('click', () => send({ action: 'toggle_bookmark' }));
@@ -403,6 +432,12 @@ window.updateState = function(state) {
     zoomText.textContent = `${state.zoom_percent}%`;
   }
 
+  // Update incognito / private status
+  if (state.is_incognito) {
+    privateBadge.style.display = 'inline-block';
+    document.body.classList.add('incognito');
+  }
+
   // Update tab bar
   if (state.tabs !== undefined) {
     renderTabs(state.tabs, state.active_tab);
@@ -496,6 +531,12 @@ document.addEventListener('keydown', (e) => {
   } else if (ctrl && e.key === '0') {
     e.preventDefault();
     send({ action: 'zoom_reset' });
+  } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'n') {
+    e.preventDefault();
+    send({ action: 'open_private_window' });
+  } else if (ctrl && e.key === ',') {
+    e.preventDefault();
+    send({ action: 'navigate', url: 'about:settings' });
   }
 });
 

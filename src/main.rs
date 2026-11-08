@@ -68,6 +68,7 @@ struct IpcCommand {
     scroll_y: Option<f64>,
     query: Option<String>,
     backwards: Option<bool>,
+    settings: Option<crate::storage::Settings>,
 }
 
 /// Injected into every content webview to capture keyboard accelerators
@@ -108,6 +109,12 @@ window.addEventListener('keydown', (e) => {
     } else if (ctrl && e.key === '0') {
         e.preventDefault();
         window.ipc.postMessage(JSON.stringify({ action: 'zoom_reset' }));
+    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'open_private_window' }));
+    } else if (ctrl && e.key === ',') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'navigate', url: 'about:settings' }));
     } else if (ctrl && e.key === 'Tab') {
         e.preventDefault();
         window.ipc.postMessage(JSON.stringify({ action: e.shiftKey ? 'prev_tab' : 'next_tab' }));
@@ -137,6 +144,10 @@ struct ContentWebViewParams<'a> {
     window_height: f64,
     scroll_y: f64,
     zoom_level: f64,
+    is_incognito: bool,
+    block_camera: bool,
+    block_microphone: bool,
+    block_geolocation: bool,
 }
 
 /// Build a content webview for a tab positioned below the toolbar.
@@ -150,6 +161,10 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
         window_height,
         scroll_y,
         zoom_level,
+        is_incognito,
+        block_camera,
+        block_microphone,
+        block_geolocation,
     } = params;
 
     let title_proxy = proxy.clone();
@@ -180,6 +195,7 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
             )),
         })
         .with_url(url)
+        .with_incognito(is_incognito)
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script(&combined_script)
         .with_ipc_handler(move |req| {
@@ -195,6 +211,23 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
             } else {
                 eprintln!("[security] Blocked navigation to: {url}");
                 false
+            }
+        })
+        .with_permission_handler(move |kind| {
+            match kind {
+                wry::PermissionKind::Camera if block_camera => {
+                    eprintln!("[security] Denied camera permission (privacy sandbox)");
+                    wry::PermissionResponse::Deny
+                }
+                wry::PermissionKind::Microphone if block_microphone => {
+                    eprintln!("[security] Denied microphone permission (privacy sandbox)");
+                    wry::PermissionResponse::Deny
+                }
+                wry::PermissionKind::Geolocation if block_geolocation => {
+                    eprintln!("[security] Denied geolocation permission (privacy sandbox)");
+                    wry::PermissionResponse::Deny
+                }
+                _ => wry::PermissionResponse::Default,
             }
         })
         .with_download_started_handler(move |url, destination| {
@@ -294,6 +327,7 @@ fn sync_toolbar(
     tabs: &TabManager,
     content_webviews: &HashMap<TabId, WebView>,
     storage: &mut Storage,
+    is_incognito: bool,
 ) {
     let tab_infos = tabs.all_info();
     let active_id = tabs.active_id().unwrap_or(0);
@@ -327,6 +361,7 @@ fn sync_toolbar(
         "can_go_forward": can_fwd,
         "is_bookmarked": is_bookmarked,
         "zoom_percent": zoom_percent,
+        "is_incognito": is_incognito,
     });
 
     let js = format!("updateState({})", state);
@@ -380,6 +415,10 @@ fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
             let dls = storage.downloads();
             let _ = wv.load_html(&ui::pages::render_downloads_page(dls));
         }
+        "about:settings" => {
+            let settings = storage.settings().clone();
+            let _ = wv.load_html(&ui::pages::render_settings_page(&settings));
+        }
         other => {
             let _ = wv.load_url(other);
         }
@@ -387,6 +426,7 @@ fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
 }
 
 /// Ensure the active tab has a live webview allocated.
+#[allow(clippy::too_many_arguments)]
 fn ensure_active_tab_webview(
     window: &Window,
     tabs: &mut TabManager,
@@ -395,6 +435,7 @@ fn ensure_active_tab_webview(
     win_width: f64,
     win_height: f64,
     storage: &mut Storage,
+    is_incognito: bool,
 ) -> Result<()> {
     let active_id = match tabs.active_id() {
         Some(id) => id,
@@ -408,7 +449,8 @@ fn ensure_active_tab_webview(
                 None => return Ok(()),
             };
 
-            println!("[memory] Lazily creating webview for tab #{active_id} (url={url}, scroll={scroll_y:.0}px)");
+            let settings = storage.settings().clone();
+            println!("[memory] Lazily creating webview for tab #{active_id} (url={url}, scroll={scroll_y:.0}px, incognito={is_incognito})");
             let wv = build_content_webview(ContentWebViewParams {
                 window,
                 url: &url,
@@ -418,6 +460,10 @@ fn ensure_active_tab_webview(
                 window_height: win_height,
                 scroll_y,
                 zoom_level: zoom,
+                is_incognito,
+                block_camera: settings.block_camera,
+                block_microphone: settings.block_microphone,
+                block_geolocation: settings.block_geolocation,
             })?;
 
             load_target_url(&wv, &url, storage);
@@ -453,6 +499,7 @@ fn discard_inactive_tabs(
     threshold: Duration,
     toolbar_wv: &WebView,
     storage: &mut Storage,
+    is_incognito: bool,
 ) {
     let to_discard = tabs.tabs_to_discard(threshold);
     for id in &to_discard {
@@ -462,24 +509,27 @@ fn discard_inactive_tabs(
         println!("[memory] Discarded inactive tab #{id} from RAM (scroll={scroll:.0}px)");
     }
     if !to_discard.is_empty() {
-        sync_toolbar(toolbar_wv, tabs, content_webviews, storage);
+        sync_toolbar(toolbar_wv, tabs, content_webviews, storage, is_incognito);
     }
 }
 
 fn main() -> Result<()> {
-    // ── Parse initial URL from command line ─────────────────────────────
-    let initial_url = {
-        let args: Vec<String> = env::args().skip(1).collect();
-        if args.is_empty() {
-            None
-        } else {
-            Some(url_resolver::resolve(&args.join(" ")))
-        }
+    // ── Parse command line arguments ───────────────────────────────────
+    let args: Vec<String> = env::args().skip(1).collect();
+    let is_incognito = args.iter().any(|a| a == "--incognito" || a == "--private" || a == "-p");
+    let non_flag_args: Vec<String> = args
+        .into_iter()
+        .filter(|a| !a.starts_with("--") && a != "-p")
+        .collect();
+    let initial_url = if non_flag_args.is_empty() {
+        None
+    } else {
+        Some(url_resolver::resolve(&non_flag_args.join(" ")))
     };
 
     let discard_timeout = get_discard_timeout();
     println!(
-        "[rusty_browser] Discard timeout configured to {}s",
+        "[rusty_browser] Discard timeout configured to {}s (incognito={is_incognito})",
         discard_timeout.as_secs()
     );
 
@@ -492,8 +542,14 @@ fn main() -> Result<()> {
     let proxy = event_loop.create_proxy();
 
     // ── Main window ────────────────────────────────────────────────────
+    let window_title = if is_incognito {
+        "Rusty Browser (Private Browsing)"
+    } else {
+        "Rusty Browser"
+    };
+
     let window = WindowBuilder::new()
-        .with_title("Rusty Browser")
+        .with_title(window_title)
         .with_inner_size(LogicalSize::new(DEFAULT_WIDTH, DEFAULT_HEIGHT))
         .build(&event_loop)
         .context("Failed to create window")?;
@@ -522,6 +578,7 @@ fn main() -> Result<()> {
         win_width,
         win_height,
         &mut storage,
+        is_incognito,
     )?;
 
     println!("[rusty_browser] Started with: {first_url_display}");
@@ -541,6 +598,7 @@ fn main() -> Result<()> {
                     discard_timeout,
                     &toolbar_wv,
                     &mut storage,
+                    is_incognito,
                 );
             }
 
@@ -581,16 +639,13 @@ fn main() -> Result<()> {
 
                 match cmd.action.as_str() {
                     "toolbar_ready" => {
-                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                     }
 
                     "navigate" => {
                         if let Some(raw_url) = cmd.url {
-                            let url = if raw_url.starts_with("about:") {
-                                raw_url
-                            } else {
-                                url_resolver::resolve(&raw_url)
-                            };
+                            let template = &storage.settings().default_search_template;
+                            let url = url_resolver::resolve_with_template(&raw_url, template);
 
                             if let Some(active_id) = tabs.active_id() {
                                 if let Some(tab) = tabs.get_mut(active_id) {
@@ -604,16 +659,17 @@ fn main() -> Result<()> {
                                     win_width,
                                     win_height,
                                     &mut storage,
+                                    is_incognito,
                                 );
                                 if let Some(wv) = content_webviews.get(&active_id) {
                                     load_target_url(wv, &url, &mut storage);
-                                    if !url.starts_with("about:") {
+                                    if !is_incognito && !url.starts_with("about:") {
                                         let title = tabs.get(active_id).map(|t| t.title.as_str()).unwrap_or("");
                                         storage.record_history(&url, title);
                                     }
                                 }
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -643,6 +699,7 @@ fn main() -> Result<()> {
                                 win_width,
                                 win_height,
                                 &mut storage,
+                                is_incognito,
                             );
                             if let Some(wv) = content_webviews.get(&active_id) {
                                 let url = tabs.get(active_id).map(|t| t.url.clone()).unwrap_or_else(|| "about:blank".to_owned());
@@ -697,7 +754,7 @@ fn main() -> Result<()> {
                             if let Some(tab) = tabs.get(active_id) {
                                 storage.toggle_bookmark(&tab.url, &tab.title);
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -710,7 +767,7 @@ fn main() -> Result<()> {
                                     let _ = wv.zoom(zoom);
                                 }
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -723,7 +780,7 @@ fn main() -> Result<()> {
                                     let _ = wv.zoom(zoom);
                                 }
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -735,7 +792,7 @@ fn main() -> Result<()> {
                                     let _ = wv.zoom(1.0);
                                 }
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -749,7 +806,11 @@ fn main() -> Result<()> {
                             }
                         }
 
+                        let default_zoom = storage.settings().default_zoom;
                         let new_id = tabs.create_tab("about:blank".to_owned());
+                        if let Some(t) = tabs.get_mut(new_id) {
+                            t.zoom_level = default_zoom;
+                        }
                         tabs.switch_to(new_id);
 
                         let _ = ensure_active_tab_webview(
@@ -760,9 +821,10 @@ fn main() -> Result<()> {
                             win_width,
                             win_height,
                             &mut storage,
+                            is_incognito,
                         );
 
-                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                     }
 
                     "close_tab" | "close_current_tab" => {
@@ -786,8 +848,9 @@ fn main() -> Result<()> {
                                     win_width,
                                     win_height,
                                     &mut storage,
+                                    is_incognito,
                                 );
-                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                             } else {
                                 *control_flow = ControlFlow::Exit;
                             }
@@ -815,8 +878,9 @@ fn main() -> Result<()> {
                                     win_width,
                                     win_height,
                                     &mut storage,
+                                    is_incognito,
                                 );
-                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                             }
                         }
                     }
@@ -842,8 +906,9 @@ fn main() -> Result<()> {
                                 win_width,
                                 win_height,
                                 &mut storage,
+                                is_incognito,
                             );
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -868,8 +933,9 @@ fn main() -> Result<()> {
                                 win_width,
                                 win_height,
                                 &mut storage,
+                                is_incognito,
                             );
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                         }
                     }
 
@@ -881,7 +947,59 @@ fn main() -> Result<()> {
                             Duration::ZERO,
                             &toolbar_wv,
                             &mut storage,
+                            is_incognito,
                         );
+                    }
+
+                    "open_private_window" => {
+                        println!("[privacy] Spawning new private browsing window");
+                        if let Ok(exe) = env::current_exe() {
+                            let _ = std::process::Command::new(exe).arg("--incognito").spawn();
+                        }
+                    }
+
+                    "save_settings" => {
+                        if let Some(new_settings) = cmd.settings {
+                            println!("[settings] Saving updated browser settings");
+                            storage.update_settings(new_settings);
+                        }
+                    }
+
+                    "clear_history" => {
+                        println!("[storage] Cleared browsing history");
+                        storage.clear_history();
+                        if let Some(tab) = tabs.active_tab() {
+                            if tab.url == "about:history" {
+                                if let Some(wv) = content_webviews.get(&tab.id) {
+                                    let _ = wv.load_html(&ui::pages::render_history_page(&[]));
+                                }
+                            }
+                        }
+                    }
+
+                    "clear_bookmarks" => {
+                        println!("[storage] Cleared bookmarks");
+                        storage.clear_bookmarks();
+                        if let Some(tab) = tabs.active_tab() {
+                            if tab.url == "about:bookmarks" {
+                                if let Some(wv) = content_webviews.get(&tab.id) {
+                                    let _ = wv.load_html(&ui::pages::render_bookmarks_page(&[]));
+                                }
+                            }
+                        }
+                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
+                    }
+
+                    "clear_downloads" => {
+                        println!("[storage] Cleared downloads");
+                        storage.clear_downloads();
+                        if let Some(tab) = tabs.active_tab() {
+                            if tab.url == "about:downloads" {
+                                if let Some(wv) = content_webviews.get(&tab.id) {
+                                    let _ = wv.load_html(&ui::pages::render_downloads_page(&[]));
+                                }
+                            }
+                        }
                     }
 
                     other => {
@@ -894,28 +1012,29 @@ fn main() -> Result<()> {
             Event::UserEvent(UserEvent::TitleChanged(tab_id, title)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
                     tab.title = title.clone();
-                    if !tab.url.starts_with("about:") {
+                    if !is_incognito && !tab.url.starts_with("about:") {
                         storage.record_history(&tab.url, &title);
                     }
                 }
                 if tabs.active_id() == Some(tab_id) {
                     if let Some(tab) = tabs.get(tab_id) {
-                        window.set_title(&format!("{} — Rusty Browser", tab.title));
+                        let suffix = if is_incognito { " — Rusty Browser (Private)" } else { " — Rusty Browser" };
+                        window.set_title(&format!("{}{suffix}", tab.title));
                     }
                 }
-                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
             }
 
             // ── URL changed ────────────────────────────────────────────
             Event::UserEvent(UserEvent::UrlChanged(tab_id, url)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
                     tab.url = url.clone();
-                    if !url.starts_with("about:") {
+                    if !is_incognito && !url.starts_with("about:") {
                         storage.record_history(&url, &tab.title);
                     }
                 }
                 if tabs.active_id() == Some(tab_id) {
-                    sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                    sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage, is_incognito);
                 }
             }
 
@@ -926,12 +1045,16 @@ fn main() -> Result<()> {
 
             // ── Download Completed ─────────────────────────────────────
             Event::UserEvent(UserEvent::DownloadCompleted(url, path, success)) => {
-                let filename = std::path::Path::new(&path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "download".to_owned());
-                storage.record_download(&url, &filename, &path, success);
-                println!("[download] Saved download to history: {filename} (success={success})");
+                if !is_incognito {
+                    let filename = std::path::Path::new(&path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "download".to_owned());
+                    storage.record_download(&url, &filename, &path, success);
+                    println!("[download] Saved download to history: {filename} (success={success})");
+                } else {
+                    println!("[download] Incognito session: download not recorded to persistent history");
+                }
             }
 
             // ── Content IPC ────────────────────────────────────────────

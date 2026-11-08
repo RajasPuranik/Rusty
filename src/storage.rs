@@ -41,20 +41,45 @@ pub struct DownloadRecord {
     pub timestamp_secs: u64,
 }
 
+fn default_true() -> bool {
+    true
+}
+fn default_search() -> String {
+    "https://duckduckgo.com/?q=%s".to_owned()
+}
+fn default_discard() -> u64 {
+    600
+}
+fn default_zoom() -> f64 {
+    1.0
+}
+
 /// Browser user settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_search")]
     pub default_search_template: String,
+    #[serde(default = "default_discard")]
     pub discard_timeout_secs: u64,
+    #[serde(default = "default_zoom")]
     pub default_zoom: f64,
+    #[serde(default = "default_true")]
+    pub block_camera: bool,
+    #[serde(default = "default_true")]
+    pub block_microphone: bool,
+    #[serde(default = "default_true")]
+    pub block_geolocation: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            default_search_template: "https://duckduckgo.com/?q=%s".to_owned(),
-            discard_timeout_secs: 600, // 10 minutes
-            default_zoom: 1.0,
+            default_search_template: default_search(),
+            discard_timeout_secs: default_discard(),
+            default_zoom: default_zoom(),
+            block_camera: true,
+            block_microphone: true,
+            block_geolocation: true,
         }
     }
 }
@@ -283,10 +308,37 @@ impl Storage {
     }
 
     /// Get reference to settings.
-    #[allow(dead_code)]
     pub fn settings(&mut self) -> &Settings {
         self.ensure_loaded();
         &self.data.settings
+    }
+
+    /// Update settings and save to disk.
+    pub fn update_settings(&mut self, settings: Settings) {
+        self.ensure_loaded();
+        self.data.settings = settings;
+        self.save();
+    }
+
+    /// Clear all browsing history.
+    pub fn clear_history(&mut self) {
+        self.ensure_loaded();
+        self.data.history.clear();
+        self.save();
+    }
+
+    /// Clear all bookmarks.
+    pub fn clear_bookmarks(&mut self) {
+        self.ensure_loaded();
+        self.data.bookmarks.clear();
+        self.save();
+    }
+
+    /// Clear all download records.
+    pub fn clear_downloads(&mut self) {
+        self.ensure_loaded();
+        self.data.downloads.clear();
+        self.save();
     }
 
     /// Path to user data directory (for webview context / cookies).
@@ -340,6 +392,30 @@ mod tests {
         assert_eq!(storage.downloads().len(), 1);
         assert_eq!(storage.downloads()[0].filename, "file.zip");
         assert!(storage.downloads()[0].success);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_clear_data_and_settings() {
+        let mut storage = Storage::new();
+        let temp_dir = env::temp_dir().join("rusty_browser_test_clear");
+        let _ = fs::create_dir_all(&temp_dir);
+        storage.data_dir = temp_dir.clone();
+        storage.file_path = temp_dir.join("test_clear.json");
+        let _ = fs::remove_file(&storage.file_path);
+
+        storage.record_history("https://example.com", "Example");
+        assert_eq!(storage.recent_history(5).len(), 1);
+        storage.clear_history();
+        assert_eq!(storage.recent_history(5).len(), 0);
+
+        let mut s = storage.settings().clone();
+        s.block_camera = false;
+        s.default_zoom = 1.25;
+        storage.update_settings(s);
+        assert!(!storage.settings().block_camera);
+        assert_eq!(storage.settings().default_zoom, 1.25);
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
