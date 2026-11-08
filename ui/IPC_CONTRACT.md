@@ -16,6 +16,15 @@ Dispatched from JavaScript via `window.ipc.postMessage(JSON.stringify(msg))`.
 | `new_tab` | `{"action": "new_tab", "url": string}` | Open a new tab with the given URL (or `"about:blank"`). |
 | `switch_tab` | `{"action": "switch_tab", "tab_id": number}` | Switch active tab to `tab_id`. |
 | `close_tab` | `{"action": "close_tab", "tab_id": number}` | Close specified tab. If active, switches to adjacent. |
+| `reorder_tabs` | `{"action": "reorder_tabs", "from_id": number, "to_id": number, "position": "before" \| "after"}` | Reorder tabs via drag-and-drop. |
+| `pin_tab` | `{"action": "pin_tab", "tab_id": number, "pinned": boolean}` | Toggle or set pinned status for tab. |
+| `mute_tab` | `{"action": "mute_tab", "tab_id": number, "muted": boolean}` | Toggle or set audio mute for tab. |
+| `duplicate_tab` | `{"action": "duplicate_tab", "tab_id": number}` | Clone tab and insert duplicate. |
+| `close_other_tabs` | `{"action": "close_other_tabs", "tab_id": number}` | Close all other unpinned tabs. |
+| `close_tabs_below` | `{"action": "close_tabs_below", "tab_id": number}` | Close all unpinned tabs below/to right of specified tab. |
+| `create_group` | `{"action": "create_group", "name": string, "color": string, "tab_id"?: number}` | Create a colored tab group. |
+| `set_tab_group` | `{"action": "set_tab_group", "tab_id": number, "group_id": string \| null}` | Assign or remove tab from a tab group. |
+| `toggle_group_collapse` | `{"action": "toggle_group_collapse", "group_id": string}` | Toggle collapsed view state for tab group. |
 | `navigate` | `{"action": "navigate", "url": string}` | Navigate active tab to `url` or resolve search query. |
 | `back` | `{"action": "back"}` | History back navigation. |
 | `forward` | `{"action": "forward"}` | History forward navigation. |

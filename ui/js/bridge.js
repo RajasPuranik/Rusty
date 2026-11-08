@@ -7,10 +7,16 @@
   const listeners = new Map();
 
   // Mock state for standalone browser preview
+  let mockGroups = [
+    { id: 'dev', name: 'Dev & Docs', color: '#3b82f6', collapsed: false },
+    { id: 'media', name: 'Entertainment', color: '#ec4899', collapsed: false }
+  ];
+
   let mockTabs = [
-    { id: 1, title: 'New Tab', url: 'about:blank', active: true, sleeping: false, pinned: false, group_id: null },
-    { id: 2, title: 'GitHub: Where the world builds software', url: 'https://github.com', active: false, sleeping: false, pinned: false, group_id: null },
-    { id: 3, title: 'The Rust Programming Language', url: 'https://www.rust-lang.org', active: false, sleeping: true, pinned: true, group_id: null }
+    { id: 1, title: 'New Tab', url: 'about:blank', active: true, sleeping: false, pinned: false, muted: false, group_id: null },
+    { id: 2, title: 'GitHub: Where the world builds software', url: 'https://github.com', active: false, sleeping: false, pinned: false, muted: false, group_id: 'dev' },
+    { id: 3, title: 'The Rust Programming Language', url: 'https://www.rust-lang.org', active: false, sleeping: true, pinned: false, muted: false, group_id: 'dev' },
+    { id: 4, title: 'YouTube: Music & Videos', url: 'https://youtube.com', active: false, sleeping: false, pinned: true, muted: true, group_id: null }
   ];
 
   let mockBookmarks = [
@@ -158,6 +164,97 @@
           this._emitMockState();
           break;
         }
+        case 'pin_tab': {
+          const tab = mockTabs.find((t) => t.id === payload.tab_id);
+          if (tab) {
+            tab.pinned = payload.pinned !== undefined ? payload.pinned : !tab.pinned;
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'mute_tab': {
+          const tab = mockTabs.find((t) => t.id === payload.tab_id);
+          if (tab) {
+            tab.muted = payload.muted !== undefined ? payload.muted : !tab.muted;
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'duplicate_tab': {
+          const tab = mockTabs.find((t) => t.id === payload.tab_id);
+          if (tab) {
+            const idx = mockTabs.indexOf(tab);
+            const copy = {
+              ...tab,
+              id: Date.now(),
+              active: false,
+              title: `${tab.title} (Copy)`
+            };
+            mockTabs.splice(idx + 1, 0, copy);
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'close_other_tabs': {
+          mockTabs = mockTabs.filter((t) => t.id === payload.tab_id || t.pinned);
+          this._emitMockState();
+          break;
+        }
+        case 'close_tabs_below': {
+          const idx = mockTabs.findIndex((t) => t.id === payload.tab_id);
+          if (idx !== -1) {
+            mockTabs = mockTabs.filter((t, i) => i <= idx || t.pinned);
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'reorder_tabs': {
+          const fromIdx = mockTabs.findIndex((t) => t.id === payload.from_id);
+          const toIdx = mockTabs.findIndex((t) => t.id === payload.to_id);
+          if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+            const [moved] = mockTabs.splice(fromIdx, 1);
+            // If dragging into another group, update group_id
+            const target = mockTabs[toIdx > fromIdx ? toIdx - 1 : toIdx];
+            if (target && !moved.pinned) {
+              moved.group_id = target.group_id;
+            }
+            const insertAt = payload.position === 'after' ? (toIdx > fromIdx ? toIdx : toIdx + 1) : (toIdx > fromIdx ? toIdx - 1 : toIdx);
+            mockTabs.splice(Math.max(0, insertAt), 0, moved);
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'create_group': {
+          const newGrp = {
+            id: 'grp_' + Date.now(),
+            name: payload.name || 'New Group',
+            color: payload.color || '#3b82f6',
+            collapsed: false
+          };
+          mockGroups.push(newGrp);
+          if (payload.tab_id) {
+            const tab = mockTabs.find((t) => t.id === payload.tab_id);
+            if (tab) tab.group_id = newGrp.id;
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'set_tab_group': {
+          const tab = mockTabs.find((t) => t.id === payload.tab_id);
+          if (tab) {
+            tab.group_id = payload.group_id || null;
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'toggle_group_collapse': {
+          const grp = mockGroups.find((g) => g.id === payload.group_id);
+          if (grp) {
+            grp.collapsed = !grp.collapsed;
+          }
+          this._emitMockState();
+          break;
+        }
         case 'content_rect': {
           // Track layout changes
           break;
@@ -172,6 +269,9 @@
       const isBookmarked = active ? mockBookmarks.some((b) => b.url === active.url) : false;
       this.dispatch('state_update', {
         tabs: mockTabs,
+        groups: mockGroups,
+        bookmarks: mockBookmarks,
+        history: mockHistory,
         active_tab: active ? active.id : 1,
         url: active ? active.url : 'about:blank',
         title: active ? active.title : 'New Tab',

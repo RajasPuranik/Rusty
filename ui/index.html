@@ -73,7 +73,12 @@
       <!-- Vertical Tabs Sidebar -->
       <aside id="tabs-sidebar">
         <div class="sidebar-header">
-          <span class="sidebar-title" style="font-weight: 500; font-size: 12px; color: var(--text-secondary);">TABS</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button id="btn-collapse-sidebar" class="btn-icon" title="Collapse / Expand Sidebar" style="width: 22px; height: 22px;">
+              <script>document.write(window.Icons.get('chevron-left', '', 14));</script>
+            </button>
+            <span class="sidebar-title" style="font-weight: 500; font-size: 12px; color: var(--text-secondary);">TABS</span>
+          </div>
           <button id="btn-new-tab-v" class="btn-icon" title="New Tab (Ctrl+T)">
             <script>document.write(window.Icons.get('plus', '', 14));</script>
           </button>
@@ -95,6 +100,8 @@
         <div id="palette-results" class="palette-results"></div>
       </div>
     </div>
+    <!-- ── Tab Context Menu ─────────────────────────────────────────── -->
+    <div id="tab-context-menu" class="context-menu"></div>
   </div>
 
   <script src="js/chrome.js"></script>
