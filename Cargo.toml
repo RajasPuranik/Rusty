@@ -1,0 +1,29 @@
+[package]
+name = "rusty_browser"
+version = "0.1.0"
+edition = "2021"
+description = "A minimal, memory-efficient desktop web browser built with Rust + wry"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Windowing (cross-platform, maintained by Tauri team)
+tao = "0.37"
+
+# System webview wrapper (WebView2 on Windows, WebKit on macOS, WebKitGTK on Linux)
+wry = "0.57"
+
+# URL parsing & validation
+url = "2"
+
+# Percent-encoding for search queries
+percent-encoding = "2"
+
+# Error handling
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
