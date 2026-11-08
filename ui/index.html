@@ -15,6 +15,9 @@
   <script src="js/settings.js"></script>
 </head>
 <body>
+  <!-- Thin hover trigger for Zen / Focus Mode -->
+  <div id="zen-hover-trigger"></div>
+
   <div id="app-shell">
     <!-- ── Top Chrome Bar ──────────────────────────────────────────────── -->
     <header id="chrome-header">
@@ -28,7 +31,7 @@
         <button id="btn-reload" class="btn-icon" title="Reload page (Ctrl+R)">
           <script>document.write(window.Icons.get('reload', '', 15));</script>
         </button>
-        <button id="btn-toggle-tabs" class="btn-icon" title="Toggle Horizontal / Vertical Tabs">
+        <button id="btn-toggle-tabs" class="btn-icon" title="Toggle Horizontal / Vertical Tabs (Ctrl+Shift+V)">
           <script>document.write(window.Icons.get('vertical-tabs', '', 16));</script>
         </button>
       </div>
@@ -41,6 +44,9 @@
           </div>
           <input id="omnibox-input" class="omnibox-input" type="text" placeholder="Search with Google or enter address" autocomplete="off" spellcheck="false">
           <div class="omnibox-actions">
+            <button id="btn-reader" class="btn-icon" title="Toggle Reader Mode">
+              <script>document.write(window.Icons.get('reader', '', 14));</script>
+            </button>
             <button id="btn-star" class="btn-star btn-icon" title="Bookmark this tab">
               <script>document.write(window.Icons.get('star', '', 15));</script>
             </button>
@@ -50,6 +56,28 @@
 
       <!-- Actions & Utilities -->
       <div class="actions-group">
+        <button id="btn-find" class="btn-icon" title="Find in Page (Ctrl+F)">
+          <script>document.write(window.Icons.get('find', '', 15));</script>
+        </button>
+        <button id="btn-sidepanel-bookmarks" class="btn-icon" title="Bookmarks Panel">
+          <script>document.write(window.Icons.get('bookmark', '', 15));</script>
+        </button>
+        <button id="btn-sidepanel-history" class="btn-icon" title="History Panel (Ctrl+H)">
+          <script>document.write(window.Icons.get('history', '', 15));</script>
+        </button>
+        <button id="btn-sidepanel-downloads" class="btn-icon" title="Downloads Panel (Ctrl+J)">
+          <script>document.write(window.Icons.get('download', '', 15));</script>
+        </button>
+        <button id="btn-split-view" class="btn-icon" title="Split View (needs Rust support)">
+          <script>document.write(window.Icons.get('split-view', '', 15));</script>
+        </button>
+        <button id="btn-zen" class="btn-icon" title="Zen Focus Mode (F11)">
+          <script>document.write(window.Icons.get('zen-mode', '', 15));</script>
+        </button>
+        <button id="btn-settings" class="btn-icon" title="Settings (Ctrl+,)">
+          <script>document.write(window.Icons.get('settings', '', 15));</script>
+        </button>
+        
         <div id="memory-badge" class="memory-badge" title="Live process memory">
           <span class="memory-dot"></span>
           <span id="memory-text">85 MB</span>
@@ -60,6 +88,29 @@
       </div>
     </header>
 
+    <!-- ── Find in Page Bar (Pushes Content Down) ───────────────────────── -->
+    <div id="find-bar">
+      <div class="find-input-wrap">
+        <script>document.write(window.Icons.get('search', '', 14));</script>
+        <input id="find-input" class="find-input" type="text" placeholder="Find in page..." autocomplete="off">
+        <span id="find-match-count" class="find-match-count">0/0</span>
+      </div>
+      <div class="find-actions">
+        <button id="find-prev" class="btn-icon" title="Previous Match (Shift+Enter)">
+          <script>document.write(window.Icons.get('chevron-up', '', 14));</script>
+        </button>
+        <button id="find-next" class="btn-icon" title="Next Match (Enter)">
+          <script>document.write(window.Icons.get('chevron-down', '', 14));</script>
+        </button>
+        <label class="find-checkbox-label">
+          <input type="checkbox" id="find-case-sensitive"> Match case
+        </label>
+        <button id="find-close" class="btn-icon" title="Close Find Bar (Escape)">
+          <script>document.write(window.Icons.get('close', '', 14));</script>
+        </button>
+      </div>
+    </div>
+
     <!-- ── Horizontal Tabs Strip ────────────────────────────────────────── -->
     <nav id="tabs-horizontal">
       <div id="tabs-horizontal-list" style="display: flex; gap: 4px; align-items: center;"></div>
@@ -68,7 +119,7 @@
       </button>
     </nav>
 
-    <!-- ── Main Workspace Body: Sidebar + Content Viewport ─────────────── -->
+    <!-- ── Main Workspace Body: Sidebar + Content Viewport + Side Panel ──── -->
     <div id="body-container">
       <!-- Vertical Tabs Sidebar -->
       <aside id="tabs-sidebar">
@@ -88,18 +139,195 @@
 
       <!-- Content Viewport (Child WebView2 sits here, or mock iframe in standalone browser) -->
       <main id="content-viewport"></main>
+
+      <!-- ── Side Panel (Takes physical layout space, zero overlay) ─────── -->
+      <aside id="side-panel">
+        <div class="panel-header">
+          <div id="panel-title" class="panel-title">
+            <span id="panel-icon"></span>
+            <span id="panel-heading">Bookmarks</span>
+          </div>
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <button id="panel-action-btn" class="btn-icon" title="Panel Action"></button>
+            <button id="panel-close-btn" class="btn-icon" title="Close Panel">
+              <script>document.write(window.Icons.get('close', '', 14));</script>
+            </button>
+          </div>
+        </div>
+        <div class="panel-search-wrap">
+          <input id="panel-search-input" class="panel-search-input" type="text" placeholder="Search...">
+        </div>
+        <div id="panel-content" class="panel-content"></div>
+      </aside>
     </div>
 
-    <!-- ── Modal Overlay for Command Palette (Ctrl+K) ───────────────────── -->
+    <!-- ── Modal Overlay for Command Palette (Ctrl+K) & Settings ────────── -->
     <div id="modal-overlay">
-      <div class="command-palette">
+      <!-- Command Palette Modal -->
+      <div id="command-palette" class="command-palette" style="display: none;">
         <div class="palette-input-wrap">
           <script>document.write(window.Icons.get('search', '', 16));</script>
           <input id="palette-input" class="palette-input" type="text" placeholder="Type a command or search tabs (e.g. skin, theme, tabs)..." autocomplete="off" spellcheck="false">
         </div>
         <div id="palette-results" class="palette-results"></div>
       </div>
+
+      <!-- Full Settings Modal -->
+      <div id="settings-modal" class="settings-modal" style="display: none;">
+        <div class="settings-header">
+          <span class="settings-title">Browser Settings</span>
+          <button id="settings-close-btn" class="btn-icon" title="Close Settings">
+            <script>document.write(window.Icons.get('close', '', 16));</script>
+          </button>
+        </div>
+        <div class="settings-body">
+          <!-- Skin Section -->
+          <div class="settings-section">
+            <div class="settings-section-title">UI Skins (Switchable at Runtime)</div>
+            <div class="skin-cards-grid">
+              <div id="skin-card-minimal" class="skin-card">
+                <div class="skin-card-header">
+                  <span class="skin-card-title">Minimal</span>
+                  <span class="skin-card-badge" id="badge-minimal">ACTIVE</span>
+                </div>
+                <div class="settings-desc">Flat, quiet, lowest RAM (&lt;20MB), instant paint, 1px borders, zero blur.</div>
+              </div>
+              <div id="skin-card-crazy" class="skin-card">
+                <div class="skin-card-header">
+                  <span class="skin-card-title">Crazy</span>
+                  <span class="skin-card-badge" id="badge-crazy">ACTIVE</span>
+                </div>
+                <div class="settings-desc">3D pop buttons, reactive glows, magnetic drift, glassmorphism blur, particles.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Themes Section -->
+          <div class="settings-section">
+            <div class="settings-section-title">Color Themes</div>
+            <div id="themes-grid" class="themes-grid"></div>
+            <div class="settings-row" style="margin-top: 8px;">
+              <div>
+                <div class="settings-label">Custom Accent Color</div>
+                <div class="settings-desc">Select a custom accent; secondary accent is derived automatically</div>
+              </div>
+              <input type="color" id="custom-accent-picker" value="#3b82f6" style="border: none; background: transparent; cursor: pointer; width: 36px; height: 32px;">
+            </div>
+          </div>
+
+          <!-- Layout & Density Section -->
+          <div class="settings-section">
+            <div class="settings-section-title">Tabs & Layout</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Tabs Orientation</div>
+                <div class="settings-desc">Horizontal strip at the top or left vertical sidebar</div>
+              </div>
+              <select id="setting-tabs-layout" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="horizontal">Horizontal Tabs</option>
+                <option value="vertical">Vertical Sidebar</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">UI Density</div>
+                <div class="settings-desc">Controls button size and padding</div>
+              </div>
+              <select id="setting-density" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="compact">Compact</option>
+                <option value="normal" selected>Normal</option>
+                <option value="relaxed">Relaxed</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Effects Intensity Slider (For Crazy Skin) -->
+          <div class="settings-section">
+            <div class="settings-section-title">Effects & Motion</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Effects Intensity</div>
+                <div class="settings-desc">At 0%, acts like Minimal. Scales particle count and 3D spring distance.</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" id="setting-effects-intensity" min="0" max="100" value="60" style="accent-color: var(--accent-primary);">
+                <span id="effects-intensity-val" style="font-family: var(--font-mono); font-size: 12px;">60%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Search Engine Section -->
+          <div class="settings-section">
+            <div class="settings-section-title">Search Engine</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Default Search Provider</div>
+                <div class="settings-desc">Used for non-URL queries typed into the address bar</div>
+              </div>
+              <select id="setting-search-engine" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="google">Google</option>
+                <option value="duckduckgo">DuckDuckGo</option>
+                <option value="bing">Bing</option>
+                <option value="brave">Brave</option>
+                <option value="youtube">YouTube</option>
+                <option value="github">GitHub</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Memory Saver Section -->
+          <div class="settings-section">
+            <div class="settings-section-title">Performance & Memory</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Automatic Background Tab Discarding</div>
+                <div class="settings-desc">Reclaims RAM by freeing WebViews for inactive background tabs</div>
+              </div>
+              <select id="setting-memory-timeout" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="300">5 minutes</option>
+                <option value="600" selected>10 minutes</option>
+                <option value="900">15 minutes</option>
+                <option value="1800">30 minutes</option>
+                <option value="0">Never (disabled)</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Show Memory Badge in Toolbar</div>
+                <div class="settings-desc">Real-time total browser process RAM counter</div>
+              </div>
+              <input type="checkbox" id="setting-show-memory" checked style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
+          </div>
+
+          <!-- Privacy & Data -->
+          <div class="settings-section">
+            <div class="settings-section-title">Privacy & Browsing Data</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Clear Browsing History</div>
+                <div class="settings-desc">Deletes all recorded page visits from disk</div>
+              </div>
+              <button id="btn-clear-history" class="btn-icon" style="width: auto; padding: 4px 12px; border: 1px solid #f87171; color: #f87171; font-size: 12px;">Clear History</button>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Clear Cookies & Cache</div>
+                <div class="settings-desc">Flushes cached files and session state</div>
+              </div>
+              <button id="btn-clear-cache" class="btn-icon" style="width: auto; padding: 4px 12px; border: 1px solid #f87171; color: #f87171; font-size: 12px;">Clear Cache</button>
+            </div>
+          </div>
+
+          <!-- About -->
+          <div class="settings-section">
+            <div class="settings-section-title">About Rusty Browser</div>
+            <div class="settings-desc">Version 0.2.0 • Built with Rust, Tao, and Wry WebView2 • Zero Telemetry.</div>
+          </div>
+        </div>
+      </div>
     </div>
+
     <!-- ── Tab Context Menu ─────────────────────────────────────────── -->
     <div id="tab-context-menu" class="context-menu"></div>
   </div>

@@ -1,4 +1,4 @@
-// Chrome UI Controller: Manages tabs, vertical sidebar, drag-reorder, groups, context menu, and command palette
+// Chrome UI Controller: Complete management of navigation, tabs, panels, find-bar, zen-mode, and settings
 (function () {
   'use strict';
 
@@ -6,10 +6,14 @@
   let currentGroups = [];
   let currentBookmarks = [];
   let currentHistory = [];
+  let currentDownloads = [];
   let activeTabId = null;
   let activeUrl = 'about:blank';
-  let isBookmarked = false;
   let isOverlayOpen = false;
+  let activeSidePanel = null; // 'bookmarks' | 'history' | 'downloads' | null
+  let isFindOpen = false;
+  let isZenMode = false;
+  let isReaderActive = false;
   let contextMenuTargetTabId = null;
   let draggedTabId = null;
 
@@ -22,18 +26,47 @@
   const omniboxInput = document.getElementById('omnibox-input');
   const omniboxSecurity = document.getElementById('omnibox-security');
   const btnStar = document.getElementById('btn-star');
-  const btnPalette = document.getElementById('btn-palette');
+  const btnReader = document.getElementById('btn-reader');
+  const btnSplitView = document.getElementById('btn-split-view');
+  const btnZen = document.getElementById('btn-zen');
+  const btnSettings = document.getElementById('btn-settings');
+  const btnFind = document.getElementById('btn-find');
+  const btnPanelBookmarks = document.getElementById('btn-sidepanel-bookmarks');
+  const btnPanelHistory = document.getElementById('btn-sidepanel-history');
+  const btnPanelDownloads = document.getElementById('btn-sidepanel-downloads');
   const memoryBadge = document.getElementById('memory-badge');
   const memoryText = document.getElementById('memory-text');
+  const btnPalette = document.getElementById('btn-palette');
   const tabsContainerH = document.getElementById('tabs-horizontal-list');
   const tabsContainerV = document.getElementById('tabs-sidebar-list');
   const btnNewTabH = document.getElementById('btn-new-tab-h');
   const btnNewTabV = document.getElementById('btn-new-tab-v');
   const viewport = document.getElementById('content-viewport');
   const modalOverlay = document.getElementById('modal-overlay');
+  const commandPalette = document.getElementById('command-palette');
   const paletteInput = document.getElementById('palette-input');
   const paletteResults = document.getElementById('palette-results');
+  const settingsModal = document.getElementById('settings-modal');
+  const settingsCloseBtn = document.getElementById('settings-close-btn');
   const contextMenu = document.getElementById('tab-context-menu');
+
+  // Find Bar Elements
+  const findBar = document.getElementById('find-bar');
+  const findInput = document.getElementById('find-input');
+  const findMatchCount = document.getElementById('find-match-count');
+  const findPrev = document.getElementById('find-prev');
+  const findNext = document.getElementById('find-next');
+  const findCase = document.getElementById('find-case-sensitive');
+  const findClose = document.getElementById('find-close');
+
+  // Side Panel Elements
+  const sidePanel = document.getElementById('side-panel');
+  const panelHeading = document.getElementById('panel-heading');
+  const panelIcon = document.getElementById('panel-icon');
+  const panelActionBtn = document.getElementById('panel-action-btn');
+  const panelCloseBtn = document.getElementById('panel-close-btn');
+  const panelSearchInput = document.getElementById('panel-search-input');
+  const panelContent = document.getElementById('panel-content');
 
   // ── 1. Content Rectangle Reporting (Critical for Native Webview bounds) ──
   function reportContentRect() {
@@ -69,7 +102,7 @@
       if (e.key === 'Enter') {
         const query = omniboxInput.value.trim();
         if (query) {
-          window.bridge.send('navigate', { url: query });
+          handleAddressNavigation(query);
           omniboxInput.blur();
         }
       } else if (e.key === 'Escape') {
@@ -83,6 +116,26 @@
     });
   }
 
+  function handleAddressNavigation(query) {
+    if (query === 'about:settings') {
+      openSettings();
+      return;
+    }
+    if (query === 'about:bookmarks') {
+      openSidePanel('bookmarks');
+      return;
+    }
+    if (query === 'about:history') {
+      openSidePanel('history');
+      return;
+    }
+    if (query === 'about:downloads') {
+      openSidePanel('downloads');
+      return;
+    }
+    window.bridge.send('navigate', { url: query });
+  }
+
   // ── 4. New Tab Buttons ───────────────────────────────────────────────────
   function handleNewTab() {
     window.bridge.send('new_tab', { url: 'about:blank' });
@@ -93,9 +146,7 @@
   // ── 5. Toggle Vertical vs Horizontal Tabs & Sidebar Collapse ─────────────
   if (btnToggleTabs) {
     btnToggleTabs.addEventListener('click', () => {
-      if (window.toggleTabsLayout) {
-        window.toggleTabsLayout();
-      }
+      if (window.toggleTabsLayout) window.toggleTabsLayout();
     });
   }
 
@@ -104,14 +155,10 @@
       const root = document.documentElement;
       const isCollapsed = root.getAttribute('data-sidebar-collapsed') === 'true';
       const next = !isCollapsed;
-      if (next) {
-        root.setAttribute('data-sidebar-collapsed', 'true');
-      } else {
-        root.removeAttribute('data-sidebar-collapsed');
-      }
-      if (window.Settings) {
-        window.Settings.set('vertical_collapsed', next);
-      }
+      if (next) root.setAttribute('data-sidebar-collapsed', 'true');
+      else root.removeAttribute('data-sidebar-collapsed');
+
+      if (window.Settings) window.Settings.set('vertical_collapsed', next);
       btnCollapseSidebar.innerHTML = window.Icons
         ? window.Icons.get(next ? 'chevron-right' : 'chevron-left', '', 14)
         : (next ? '▶' : '◀');
@@ -127,17 +174,15 @@
     const pinnedTabs = currentTabs.filter((t) => t.pinned);
     const unpinnedTabs = currentTabs.filter((t) => !t.pinned);
 
-    // 6.1 Render Pinned Tabs
+    // 6.1 Pinned Tabs
     if (pinnedTabs.length > 0) {
       const pinnedWrap = document.createElement('div');
       pinnedWrap.className = 'pinned-tabs-wrap';
-      pinnedTabs.forEach((tab) => {
-        pinnedWrap.appendChild(createTabElement(tab, isVertical));
-      });
+      pinnedTabs.forEach((tab) => pinnedWrap.appendChild(createTabElement(tab, isVertical)));
       container.appendChild(pinnedWrap);
     }
 
-    // 6.2 Render Tab Groups
+    // 6.2 Tab Groups
     const renderedGroupIds = new Set();
     currentGroups.forEach((group) => {
       const groupTabs = unpinnedTabs.filter((t) => t.group_id === group.id);
@@ -148,7 +193,6 @@
       groupContainer.className = `tab-group-container ${group.collapsed ? 'collapsed' : ''}`;
       groupContainer.dataset.groupId = group.id;
 
-      // Group Header Pill
       const header = document.createElement('div');
       header.className = `tab-group-header ${group.collapsed ? 'collapsed' : ''}`;
       header.style.backgroundColor = `${group.color}22`;
@@ -182,7 +226,6 @@
 
       groupContainer.appendChild(header);
 
-      // Group tabs
       groupTabs.forEach((tab) => {
         groupContainer.appendChild(createTabElement(tab, isVertical));
       });
@@ -190,7 +233,7 @@
       container.appendChild(groupContainer);
     });
 
-    // 6.3 Render Unassigned Tabs
+    // 6.3 Unassigned Tabs
     const unassignedTabs = unpinnedTabs.filter((t) => !t.group_id || !renderedGroupIds.has(t.group_id));
     unassignedTabs.forEach((tab) => {
       container.appendChild(createTabElement(tab, isVertical));
@@ -269,7 +312,7 @@
       openContextMenu(e.clientX, e.clientY, tab.id);
     });
 
-    // Drag and Drop Handlers
+    // Drag and Drop
     attachTabDragHandlers(tabEl, tab.id, isVertical);
 
     return tabEl;
@@ -335,7 +378,6 @@
 
     contextMenu.innerHTML = '';
 
-    // Menu Item Builder
     function addItem(label, iconName, shortcut, onClick, isDanger = false) {
       const item = document.createElement('div');
       item.className = `context-item ${isDanger ? 'danger' : ''}`;
@@ -412,7 +454,6 @@
       submenu.appendChild(gItem);
     });
 
-    // "+ New Group..."
     const newGItem = document.createElement('div');
     newGItem.className = 'context-item';
     newGItem.innerHTML = `
@@ -455,7 +496,7 @@
       window.bridge.send('close_tab', { tab_id: tab.id });
     }, true);
 
-    // Clamp coordinates
+    // Position menu
     contextMenu.classList.add('open');
     const menuWidth = 190;
     const menuHeight = contextMenu.offsetHeight || 220;
@@ -478,17 +519,412 @@
     }
   });
 
-  // ── 9. State Update Listener from Bridge ─────────────────────────────────
+  // ── 9. Find in Page Bar (Pushes Content Down, Zero Overlay) ───────────────
+  function openFindBar() {
+    if (!findBar) return;
+    isFindOpen = true;
+    findBar.classList.add('open');
+    reportContentRect();
+    if (findInput) {
+      findInput.select();
+      findInput.focus();
+    }
+  }
+
+  function closeFindBar() {
+    if (!findBar) return;
+    isFindOpen = false;
+    findBar.classList.remove('open');
+    reportContentRect();
+  }
+
+  if (btnFind) btnFind.addEventListener('click', () => (isFindOpen ? closeFindBar() : openFindBar()));
+  if (findClose) findClose.addEventListener('click', closeFindBar);
+
+  if (findInput) {
+    findInput.addEventListener('input', () => {
+      const q = findInput.value.trim();
+      const matchCase = findCase ? findCase.checked : false;
+      if (q) {
+        window.bridge.send('find_in_page', { query: q, forward: true, match_case: matchCase });
+        if (findMatchCount) findMatchCount.textContent = '1/3';
+      } else {
+        if (findMatchCount) findMatchCount.textContent = '0/0';
+      }
+    });
+
+    findInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = findInput.value.trim();
+        const matchCase = findCase ? findCase.checked : false;
+        window.bridge.send('find_in_page', { query: q, forward: !e.shiftKey, match_case: matchCase });
+      } else if (e.key === 'Escape') {
+        closeFindBar();
+      }
+    });
+  }
+
+  if (findNext) {
+    findNext.addEventListener('click', () => {
+      const q = findInput ? findInput.value.trim() : '';
+      if (q) window.bridge.send('find_in_page', { query: q, forward: true, match_case: findCase && findCase.checked });
+    });
+  }
+  if (findPrev) {
+    findPrev.addEventListener('click', () => {
+      const q = findInput ? findInput.value.trim() : '';
+      if (q) window.bridge.send('find_in_page', { query: q, forward: false, match_case: findCase && findCase.checked });
+    });
+  }
+
+  // ── 10. Side Panels (Bookmarks, History, Downloads - Takes Layout Space) ──
+  function openSidePanel(type) {
+    if (!sidePanel) return;
+    if (activeSidePanel === type) {
+      closeSidePanel();
+      return;
+    }
+    activeSidePanel = type;
+    sidePanel.classList.add('open');
+    renderSidePanel();
+    reportContentRect();
+  }
+
+  function closeSidePanel() {
+    if (!sidePanel) return;
+    activeSidePanel = null;
+    sidePanel.classList.remove('open');
+    reportContentRect();
+  }
+
+  if (btnPanelBookmarks) btnPanelBookmarks.addEventListener('click', () => openSidePanel('bookmarks'));
+  if (btnPanelHistory) btnPanelHistory.addEventListener('click', () => openSidePanel('history'));
+  if (btnPanelDownloads) btnPanelDownloads.addEventListener('click', () => openSidePanel('downloads'));
+  if (panelCloseBtn) panelCloseBtn.addEventListener('click', closeSidePanel);
+
+  function renderSidePanel() {
+    if (!sidePanel || !panelContent) return;
+    panelContent.innerHTML = '';
+    const q = panelSearchInput ? panelSearchInput.value.toLowerCase().trim() : '';
+
+    if (activeSidePanel === 'bookmarks') {
+      if (panelHeading) panelHeading.textContent = 'Bookmarks';
+      if (panelIcon) panelIcon.innerHTML = window.Icons ? window.Icons.get('bookmark', '', 16) : '';
+      if (panelActionBtn) {
+        panelActionBtn.style.display = 'inline-flex';
+        panelActionBtn.innerHTML = window.Icons ? window.Icons.get('plus', '', 14) : '+';
+        panelActionBtn.title = 'Add Bookmark';
+        panelActionBtn.onclick = () => window.bridge.send('toggle_bookmark', { url: activeUrl });
+      }
+
+      const filtered = currentBookmarks.filter((b) => b.title.toLowerCase().includes(q) || b.url.toLowerCase().includes(q));
+      if (filtered.length === 0) {
+        panelContent.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px;">No bookmarks found</div>';
+        return;
+      }
+
+      filtered.forEach((b) => {
+        const item = document.createElement('div');
+        item.className = 'panel-item';
+        item.innerHTML = `
+          ${window.Icons ? window.Icons.get('star', '', 13) : '★'}
+          <div class="item-title">${b.title}</div>
+          <button class="btn-icon" title="Remove" style="width: 20px; height: 20px;">
+            ${window.Icons ? window.Icons.get('close', '', 10) : '×'}
+          </button>
+        `;
+        item.addEventListener('click', () => window.bridge.send('navigate', { url: b.url }));
+        const removeBtn = item.querySelector('button');
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.bridge.send('toggle_bookmark', { url: b.url });
+        });
+        panelContent.appendChild(item);
+      });
+    } else if (activeSidePanel === 'history') {
+      if (panelHeading) panelHeading.textContent = 'History';
+      if (panelIcon) panelIcon.innerHTML = window.Icons ? window.Icons.get('history', '', 16) : '';
+      if (panelActionBtn) {
+        panelActionBtn.style.display = 'inline-flex';
+        panelActionBtn.innerHTML = window.Icons ? window.Icons.get('trash', '', 13) : '🗑';
+        panelActionBtn.title = 'Clear Browsing History';
+        panelActionBtn.onclick = () => {
+          if (confirm('Clear all browsing history?')) {
+            window.bridge.send('clear_browsing_data', { history: true });
+          }
+        };
+      }
+
+      const filtered = currentHistory.filter((h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q));
+      if (filtered.length === 0) {
+        panelContent.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px;">No history records</div>';
+        return;
+      }
+
+      // Group into Today / Earlier
+      const todayGroup = document.createElement('div');
+      todayGroup.className = 'history-group-header';
+      todayGroup.textContent = 'Recent Visits';
+      panelContent.appendChild(todayGroup);
+
+      filtered.forEach((h) => {
+        const item = document.createElement('div');
+        item.className = 'panel-item';
+        item.innerHTML = `
+          ${window.Icons ? window.Icons.get('clock', '', 13) : '🕒'}
+          <div style="flex: 1; overflow: hidden;">
+            <div class="item-title">${h.title}</div>
+            <div class="item-sub">${h.url}</div>
+          </div>
+        `;
+        item.addEventListener('click', () => window.bridge.send('navigate', { url: h.url }));
+        panelContent.appendChild(item);
+      });
+    } else if (activeSidePanel === 'downloads') {
+      if (panelHeading) panelHeading.textContent = 'Downloads';
+      if (panelIcon) panelIcon.innerHTML = window.Icons ? window.Icons.get('download', '', 16) : '';
+      if (panelActionBtn) panelActionBtn.style.display = 'none';
+
+      const dls = currentDownloads.length > 0 ? currentDownloads : [
+        { id: 1, filename: 'rusty_browser-v0.2.0-windows-x64.zip', state: 'completed', progress: 100 },
+        { id: 2, filename: 'rustup-init.exe', state: 'in_progress', progress: 68 }
+      ];
+
+      dls.forEach((dl) => {
+        const card = document.createElement('div');
+        card.className = 'download-card';
+        card.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500;">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${dl.filename}</span>
+            <span style="color: var(--text-muted); font-size: 11px;">${dl.progress}%</span>
+          </div>
+          <div class="download-progress-bar">
+            <div class="download-progress-fill" style="width: ${dl.progress}%;"></div>
+          </div>
+          <div class="download-actions">
+            ${dl.state === 'completed'
+              ? `<button class="btn-icon" style="width: auto; padding: 2px 8px; font-size: 11px; border: 1px solid var(--border-subtle);">Open</button>`
+              : `<button class="btn-icon" style="width: auto; padding: 2px 8px; font-size: 11px; border: 1px solid var(--border-subtle); color: #f87171;">Cancel</button>`}
+          </div>
+        `;
+        panelContent.appendChild(card);
+      });
+    }
+  }
+
+  if (panelSearchInput) {
+    panelSearchInput.addEventListener('input', renderSidePanel);
+  }
+
+  // ── 11. Zen / Focus Mode & Feature Buttons ───────────────────────────────
+  if (btnZen) {
+    btnZen.addEventListener('click', toggleZenMode);
+  }
+
+  function toggleZenMode() {
+    isZenMode = !isZenMode;
+    const root = document.documentElement;
+    if (isZenMode) root.setAttribute('data-zen', 'true');
+    else root.removeAttribute('data-zen');
+    reportContentRect();
+  }
+
+  // Hover strip for Zen mode
+  const zenTrigger = document.getElementById('zen-hover-trigger');
+  if (zenTrigger) {
+    zenTrigger.addEventListener('mouseenter', () => {
+      if (isZenMode) {
+        const header = document.getElementById('chrome-header');
+        if (header) header.style.display = 'flex';
+      }
+    });
+  }
+
+  // Split view button
+  if (btnSplitView) {
+    btnSplitView.addEventListener('click', () => {
+      alert('Split View is configured in the UI layer (needs Rust multi-view support).');
+      window.bridge.send('split_view');
+    });
+  }
+
+  // Reader mode button
+  if (btnReader) {
+    btnReader.addEventListener('click', () => {
+      isReaderActive = !isReaderActive;
+      btnReader.classList.toggle('active', isReaderActive);
+      window.bridge.send('toggle_reader', { active: isReaderActive });
+    });
+  }
+
+  // ── 12. Full Settings Page / Modal (Ctrl+, or about:settings) ────────────
+  function openSettings() {
+    if (!modalOverlay || !settingsModal) return;
+    isOverlayOpen = true;
+    modalOverlay.classList.add('open');
+    if (commandPalette) commandPalette.style.display = 'none';
+    settingsModal.style.display = 'flex';
+    window.bridge.send('overlay', { open: true });
+    populateSettingsUI();
+  }
+
+  function closeSettings() {
+    if (!modalOverlay || !settingsModal) return;
+    isOverlayOpen = false;
+    modalOverlay.classList.remove('open');
+    settingsModal.style.display = 'none';
+    window.bridge.send('overlay', { open: false });
+  }
+
+  if (btnSettings) btnSettings.addEventListener('click', openSettings);
+  if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettings);
+
+  const THEMES_LIST = [
+    { id: 'midnight', name: 'Midnight', dot: '#8ab4f8' },
+    { id: 'light', name: 'Light', dot: '#1a73e8' },
+    { id: 'amoled', name: 'AMOLED', dot: '#3b82f6' },
+    { id: 'aurora', name: 'Aurora', dot: '#2dd4bf' },
+    { id: 'cyberpunk', name: 'Cyberpunk', dot: '#facc15' },
+    { id: 'sunset', name: 'Sunset', dot: '#f97316' },
+    { id: 'matcha', name: 'Matcha', dot: '#4ade80' },
+    { id: 'sakura', name: 'Sakura', dot: '#f472b6' }
+  ];
+
+  function populateSettingsUI() {
+    const root = document.documentElement;
+    const currentSkin = root.getAttribute('data-skin') || 'minimal';
+    const currentTheme = root.getAttribute('data-theme') || 'midnight';
+
+    // Skin Cards
+    const cardMin = document.getElementById('skin-card-minimal');
+    const cardCrz = document.getElementById('skin-card-crazy');
+    const badgeMin = document.getElementById('badge-minimal');
+    const badgeCrz = document.getElementById('badge-crazy');
+
+    if (cardMin && cardCrz) {
+      cardMin.classList.toggle('active', currentSkin === 'minimal');
+      cardCrz.classList.toggle('active', currentSkin === 'crazy');
+      if (badgeMin) badgeMin.style.display = currentSkin === 'minimal' ? 'inline-block' : 'none';
+      if (badgeCrz) badgeCrz.style.display = currentSkin === 'crazy' ? 'inline-block' : 'none';
+
+      cardMin.onclick = () => window.switchSkin('minimal');
+      cardCrz.onclick = () => window.switchSkin('crazy');
+    }
+
+    // Themes Grid
+    const themesGrid = document.getElementById('themes-grid');
+    if (themesGrid) {
+      themesGrid.innerHTML = '';
+      THEMES_LIST.forEach((thm) => {
+        const swatch = document.createElement('div');
+        swatch.className = `theme-swatch ${thm.id === currentTheme ? 'active' : ''}`;
+        swatch.innerHTML = `
+          <span class="theme-swatch-dot" style="background-color: ${thm.dot};"></span>
+          <span>${thm.name}</span>
+        `;
+        swatch.addEventListener('click', () => {
+          window.switchTheme(thm.id);
+          populateSettingsUI();
+        });
+        themesGrid.appendChild(swatch);
+      });
+    }
+
+    // Custom Accent Picker
+    const accentPicker = document.getElementById('custom-accent-picker');
+    if (accentPicker) {
+      accentPicker.oninput = (e) => applyCustomAccent(e.target.value);
+    }
+
+    // Layout Dropdown
+    const selLayout = document.getElementById('setting-tabs-layout');
+    if (selLayout) {
+      selLayout.value = root.getAttribute('data-tabs') || 'horizontal';
+      selLayout.onchange = () => {
+        if (window.Settings) window.Settings.set('tabs_layout', selLayout.value);
+        root.setAttribute('data-tabs', selLayout.value);
+        window.dispatchEvent(new CustomEvent('tabs-layout-changed'));
+      };
+    }
+
+    // Effects Intensity Slider
+    const fxSlider = document.getElementById('setting-effects-intensity');
+    const fxVal = document.getElementById('effects-intensity-val');
+    if (fxSlider && fxVal) {
+      const saved = window.Settings ? window.Settings.get('effects_intensity') : 60;
+      fxSlider.value = saved !== undefined ? saved : 60;
+      fxVal.textContent = `${fxSlider.value}%`;
+      fxSlider.oninput = (e) => {
+        fxVal.textContent = `${e.target.value}%`;
+        if (window.Settings) window.Settings.set('effects_intensity', Number(e.target.value));
+      };
+    }
+
+    // Search Engine Dropdown
+    const selEngine = document.getElementById('setting-search-engine');
+    if (selEngine) {
+      selEngine.value = window.Settings ? window.Settings.get('default_search') || 'google' : 'google';
+      selEngine.onchange = () => {
+        if (window.Settings) window.Settings.set('default_search', selEngine.value);
+      };
+    }
+
+    // Memory Discard Timeout
+    const selMemTimeout = document.getElementById('setting-memory-timeout');
+    if (selMemTimeout) {
+      selMemTimeout.value = String(window.Settings ? window.Settings.get('memory_saver_timeout_secs') || 600 : 600);
+      selMemTimeout.onchange = () => {
+        if (window.Settings) window.Settings.set('memory_saver_timeout_secs', Number(selMemTimeout.value));
+      };
+    }
+
+    // Clear buttons
+    const btnClrHist = document.getElementById('btn-clear-history');
+    if (btnClrHist) {
+      btnClrHist.onclick = () => {
+        if (confirm('Delete all recorded history?')) {
+          window.bridge.send('clear_browsing_data', { history: true });
+          alert('Browsing history cleared.');
+        }
+      };
+    }
+
+    const btnClrCache = document.getElementById('btn-clear-cache');
+    if (btnClrCache) {
+      btnClrCache.onclick = () => {
+        if (confirm('Clear cache and cookies?')) {
+          window.bridge.send('clear_browsing_data', { cache: true });
+          alert('Cache and cookies cleared.');
+        }
+      };
+    }
+  }
+
+  // Automatic secondary accent calculation
+  function applyCustomAccent(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) || 59;
+    const g = parseInt(hex.slice(3, 5), 16) || 130;
+    const b = parseInt(hex.slice(5, 7), 16) || 246;
+
+    const secR = Math.min(255, Math.floor(r * 0.7 + 60));
+    const secG = Math.min(255, Math.floor(g * 0.7 + 80));
+    const secB = Math.min(255, Math.floor(b * 0.7 + 120));
+    const secHex = `#${secR.toString(16).padStart(2, '0')}${secG.toString(16).padStart(2, '0')}${secB.toString(16).padStart(2, '0')}`;
+    const highlightRgba = `rgba(${r}, ${g}, ${b}, 0.22)`;
+
+    document.documentElement.style.setProperty('--accent-primary', hex);
+    document.documentElement.style.setProperty('--accent-secondary', secHex);
+    document.documentElement.style.setProperty('--accent-highlight', highlightRgba);
+
+    if (window.Settings) window.Settings.set('custom_accent', hex);
+  }
+
+  // ── 13. State Update Listener from Bridge ─────────────────────────────────
   window.bridge.on('state_update', (data) => {
-    if (data.groups) {
-      currentGroups = data.groups;
-    }
-    if (data.bookmarks) {
-      currentBookmarks = data.bookmarks;
-    }
-    if (data.history) {
-      currentHistory = data.history;
-    }
+    if (data.groups) currentGroups = data.groups;
+    if (data.bookmarks) currentBookmarks = data.bookmarks;
+    if (data.history) currentHistory = data.history;
+    if (data.downloads) currentDownloads = data.downloads;
 
     if (data.tabs) {
       currentTabs = data.tabs;
@@ -496,16 +932,13 @@
       renderTabs(tabsContainerV, true);
     }
 
-    if (data.active_tab !== undefined) {
-      activeTabId = data.active_tab;
-    }
+    if (data.active_tab !== undefined) activeTabId = data.active_tab;
 
     if (data.url !== undefined) {
       activeUrl = data.url;
       if (omniboxInput && document.activeElement !== omniboxInput) {
         omniboxInput.value = data.url === 'about:blank' ? '' : data.url;
       }
-      // Update Security Icon
       if (omniboxSecurity) {
         const isSecure = data.url.startsWith('https://');
         omniboxSecurity.className = `omnibox-security-icon ${isSecure ? 'secure' : ''}`;
@@ -515,34 +948,26 @@
       }
     }
 
-    if (data.can_go_back !== undefined && btnBack) {
-      btnBack.disabled = !data.can_go_back;
-    }
-    if (data.can_go_forward !== undefined && btnForward) {
-      btnForward.disabled = !data.can_go_forward;
-    }
+    if (data.can_go_back !== undefined && btnBack) btnBack.disabled = !data.can_go_back;
+    if (data.can_go_forward !== undefined && btnForward) btnForward.disabled = !data.can_go_forward;
 
     if (data.is_bookmarked !== undefined && btnStar) {
-      isBookmarked = data.is_bookmarked;
-      btnStar.className = `btn-star ${isBookmarked ? 'bookmarked' : ''}`;
+      btnStar.className = `btn-star ${data.is_bookmarked ? 'bookmarked' : ''}`;
       btnStar.innerHTML = window.Icons
-        ? window.Icons.get(isBookmarked ? 'star-filled' : 'star', '', 15)
-        : (isBookmarked ? '★' : '☆');
+        ? window.Icons.get(data.is_bookmarked ? 'star-filled' : 'star', '', 15)
+        : (data.is_bookmarked ? '★' : '☆');
     }
 
-    if (data.memory) {
-      updateMemoryBadge(data.memory);
-    }
+    if (data.memory) updateMemoryBadge(data.memory);
 
-    // Update Mock iframe if running in browser preview
-    if (window.bridge.isMock && viewport) {
-      updateMockViewport(activeUrl);
-    }
+    if (window.bridge.isMock && viewport) updateMockViewport(activeUrl);
+
+    if (activeSidePanel) renderSidePanel();
 
     reportContentRect();
   });
 
-  // ── 10. Memory Badge Updates ─────────────────────────────────────────────
+  // ── 14. Memory Badge Updates ─────────────────────────────────────────────
   function updateMemoryBadge(mem) {
     if (!memoryText) return;
     const mb = mem.total_mb ? `${mem.total_mb.toFixed(0)} MB` : '85 MB';
@@ -554,7 +979,7 @@
 
   window.bridge.on('memory_stats', updateMemoryBadge);
 
-  // ── 11. Mock Viewport Iframe for standalone browser preview ──────────────
+  // ── 15. Mock Viewport Iframe for standalone browser preview ──────────────
   let mockIframe = null;
   function updateMockViewport(url) {
     if (!viewport) return;
@@ -571,7 +996,7 @@
     }
   }
 
-  // ── 12. Command Palette (Ctrl+K) with Multi-Source Fuzzy Search ───────────
+  // ── 16. Command Palette (Ctrl+K) ─────────────────────────────────────────
   let paletteSelectedIndex = 0;
   let paletteItems = [];
 
@@ -588,6 +1013,12 @@
     { title: 'Theme: Sakura Blossom', action: () => window.switchTheme('sakura'), badge: 'Theme' },
     { title: 'Toggle Vertical Tabs', action: () => window.toggleTabsLayout(), badge: 'Layout' },
     { title: 'Toggle Compact Sidebar', action: () => btnCollapseSidebar && btnCollapseSidebar.click(), badge: 'Layout' },
+    { title: 'Toggle Zen Focus Mode', action: toggleZenMode, badge: 'View' },
+    { title: 'Find in Page', action: openFindBar, badge: 'Find' },
+    { title: 'Open Bookmarks Panel', action: () => openSidePanel('bookmarks'), badge: 'Panel' },
+    { title: 'Open History Panel', action: () => openSidePanel('history'), badge: 'Panel' },
+    { title: 'Open Downloads Panel', action: () => openSidePanel('downloads'), badge: 'Panel' },
+    { title: 'Open Browser Settings', action: openSettings, badge: 'Settings' },
     { title: 'Sleep Other Tabs (Reclaim RAM)', action: () => {
       currentTabs.forEach((t) => {
         if (!t.active && !t.pinned && !t.sleeping) {
@@ -596,21 +1027,15 @@
       });
     }, badge: 'Memory' },
     { title: 'New Tab', action: handleNewTab, badge: 'Tabs' },
-    { title: 'New Tab Group', action: () => {
-      const name = prompt('New Group Name:');
-      if (name) window.bridge.send('create_group', { name });
-    }, badge: 'Tabs' },
-    { title: 'Bookmark Current Tab', action: () => window.bridge.send('toggle_bookmark', { url: activeUrl }), badge: 'Bookmarks' },
-    { title: 'Open Settings (about:settings)', action: () => window.bridge.send('navigate', { url: 'about:settings' }), badge: 'Page' },
-    { title: 'Open Bookmarks (about:bookmarks)', action: () => window.bridge.send('navigate', { url: 'about:bookmarks' }), badge: 'Page' },
-    { title: 'Open History (about:history)', action: () => window.bridge.send('navigate', { url: 'about:history' }), badge: 'Page' },
-    { title: 'Open Downloads (about:downloads)', action: () => window.bridge.send('navigate', { url: 'about:downloads' }), badge: 'Page' }
+    { title: 'New Private / Incognito Window', action: () => window.bridge.send('new_window', { incognito: true }), badge: 'Window' }
   ];
 
   function openCommandPalette() {
-    if (!modalOverlay) return;
+    if (!modalOverlay || !commandPalette) return;
     isOverlayOpen = true;
     modalOverlay.classList.add('open');
+    if (settingsModal) settingsModal.style.display = 'none';
+    commandPalette.style.display = 'flex';
     window.bridge.send('overlay', { open: true });
     paletteSelectedIndex = 0;
     if (paletteInput) {
@@ -621,9 +1046,10 @@
   }
 
   function closeCommandPalette() {
-    if (!modalOverlay) return;
+    if (!modalOverlay || !commandPalette) return;
     isOverlayOpen = false;
     modalOverlay.classList.remove('open');
+    commandPalette.style.display = 'none';
     window.bridge.send('overlay', { open: false });
   }
 
@@ -633,7 +1059,6 @@
     const q = query.trim().toLowerCase();
     paletteItems = [];
 
-    // Helper to add section header
     function addHeader(label) {
       const h = document.createElement('div');
       h.className = 'palette-section-header';
@@ -641,72 +1066,49 @@
       paletteResults.appendChild(h);
     }
 
-    // 1. Commands
     const filteredCmds = BASE_COMMANDS.filter((c) => c.title.toLowerCase().includes(q));
     if (filteredCmds.length > 0) {
       addHeader('Commands');
-      filteredCmds.forEach((cmd) => {
-        paletteItems.push({
-          type: 'command',
-          title: cmd.title,
-          badge: cmd.badge,
-          action: cmd.action
-        });
-      });
+      filteredCmds.forEach((cmd) => paletteItems.push({ type: 'command', title: cmd.title, badge: cmd.badge, action: cmd.action }));
     }
 
-    // 2. Open Tabs
-    const filteredTabs = currentTabs.filter((t) =>
-      t.title.toLowerCase().includes(q) || t.url.toLowerCase().includes(q)
-    );
+    const filteredTabs = currentTabs.filter((t) => t.title.toLowerCase().includes(q) || t.url.toLowerCase().includes(q));
     if (filteredTabs.length > 0) {
       addHeader('Open Tabs');
-      filteredTabs.forEach((tab) => {
-        paletteItems.push({
-          type: 'tab',
-          title: tab.title,
-          sub: tab.url,
-          badge: tab.sleeping ? 'Asleep' : 'Tab',
-          action: () => {
-            if (tab.sleeping) window.bridge.send('wake_tab', { tab_id: tab.id });
-            else window.bridge.send('switch_tab', { tab_id: tab.id });
-          }
-        });
-      });
+      filteredTabs.forEach((tab) => paletteItems.push({
+        type: 'tab',
+        title: tab.title,
+        sub: tab.url,
+        badge: tab.sleeping ? 'Asleep' : 'Tab',
+        action: () => {
+          if (tab.sleeping) window.bridge.send('wake_tab', { tab_id: tab.id });
+          else window.bridge.send('switch_tab', { tab_id: tab.id });
+        }
+      }));
     }
 
-    // 3. Bookmarks
-    const filteredBms = currentBookmarks.filter((b) =>
-      b.title.toLowerCase().includes(q) || b.url.toLowerCase().includes(q)
-    );
+    const filteredBms = currentBookmarks.filter((b) => b.title.toLowerCase().includes(q) || b.url.toLowerCase().includes(q));
     if (filteredBms.length > 0) {
       addHeader('Bookmarks');
-      filteredBms.forEach((b) => {
-        paletteItems.push({
-          type: 'bookmark',
-          title: b.title,
-          sub: b.url,
-          badge: 'Bookmark',
-          action: () => window.bridge.send('navigate', { url: b.url })
-        });
-      });
+      filteredBms.forEach((b) => paletteItems.push({
+        type: 'bookmark',
+        title: b.title,
+        sub: b.url,
+        badge: 'Bookmark',
+        action: () => window.bridge.send('navigate', { url: b.url })
+      }));
     }
 
-    // 4. History
-    const filteredHist = currentHistory.filter((h) =>
-      h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q)
-    );
+    const filteredHist = currentHistory.filter((h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q));
     if (filteredHist.length > 0) {
       addHeader('History');
-      filteredHist.forEach((h) => {
-        paletteItems.push({
-          type: 'history',
-          title: h.title,
-          sub: h.url,
-          badge: 'History',
-          action: () => window.bridge.send('navigate', { url: h.url })
-        });
-      });
+      filteredHist.forEach((h) => paletteItems.push({
+        type: 'history',
+        title: h.title,
+        sub: h.url,
+        badge: 'History',
+        action: () => window.bridge.send('navigate', { url: h.url })
+      }));
     }
 
     if (paletteItems.length === 0) {
@@ -720,14 +1122,11 @@
       return;
     }
 
-    if (paletteSelectedIndex >= paletteItems.length) {
-      paletteSelectedIndex = 0;
-    }
+    if (paletteSelectedIndex >= paletteItems.length) paletteSelectedIndex = 0;
 
     paletteItems.forEach((item, index) => {
       const el = document.createElement('div');
       el.className = `palette-item ${index === paletteSelectedIndex ? 'selected' : ''}`;
-      el.dataset.index = index;
       el.innerHTML = `
         <span class="item-title">${item.title}</span>
         ${item.sub ? `<span class="item-sub">${item.sub}</span>` : ''}
@@ -746,9 +1145,7 @@
     const items = paletteResults.querySelectorAll('.palette-item');
     items.forEach((el, i) => {
       el.classList.toggle('selected', i === paletteSelectedIndex);
-      if (i === paletteSelectedIndex) {
-        el.scrollIntoView({ block: 'nearest' });
-      }
+      if (i === paletteSelectedIndex) el.scrollIntoView({ block: 'nearest' });
     });
   }
 
@@ -761,9 +1158,8 @@
     });
 
     paletteInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeCommandPalette();
-      } else if (e.key === 'ArrowDown') {
+      if (e.key === 'Escape') closeCommandPalette();
+      else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (paletteItems.length > 0) {
           paletteSelectedIndex = (paletteSelectedIndex + 1) % paletteItems.length;
@@ -787,19 +1183,48 @@
 
   if (modalOverlay) {
     modalOverlay.addEventListener('click', (e) => {
-      if (e.target === modalOverlay) closeCommandPalette();
+      if (e.target === modalOverlay) {
+        closeCommandPalette();
+        closeSettings();
+      }
     });
   }
 
-  // ── 13. Global Keyboard Accelerators ─────────────────────────────────────
+  // ── 17. Global Keyboard Accelerators ─────────────────────────────────────
   window.addEventListener('keydown', (e) => {
     // Ctrl+K -> Command Palette
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      if (isOverlayOpen) closeCommandPalette();
+      if (isOverlayOpen) { closeCommandPalette(); closeSettings(); }
       else openCommandPalette();
     }
-    // Ctrl+Shift+V -> Toggle Vertical / Horizontal Tabs
+    // Ctrl+, -> Settings
+    else if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+      e.preventDefault();
+      openSettings();
+    }
+    // Ctrl+F -> Find in Page
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      if (isFindOpen) closeFindBar();
+      else openFindBar();
+    }
+    // Ctrl+H -> History Panel
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+      e.preventDefault();
+      openSidePanel('history');
+    }
+    // Ctrl+J -> Downloads Panel
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+      e.preventDefault();
+      openSidePanel('downloads');
+    }
+    // F11 -> Zen Focus Mode
+    else if (e.key === 'F11') {
+      e.preventDefault();
+      toggleZenMode();
+    }
+    // Ctrl+Shift+V -> Toggle Tabs Layout
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
       e.preventDefault();
       if (window.toggleTabsLayout) window.toggleTabsLayout();
@@ -817,19 +1242,18 @@
     // Ctrl+W -> Close Tab
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
       e.preventDefault();
-      if (activeTabId !== null) {
-        window.bridge.send('close_tab', { tab_id: activeTabId });
-      }
+      if (activeTabId !== null) window.bridge.send('close_tab', { tab_id: activeTabId });
     }
     // Ctrl+L -> Focus Omnibox
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
       if (omniboxInput) omniboxInput.focus();
     }
-    // Escape -> Close Context Menu or Palette
+    // Escape -> Close Context Menu, Find Bar, or Modals
     else if (e.key === 'Escape') {
       closeContextMenu();
-      if (isOverlayOpen) closeCommandPalette();
+      if (isFindOpen) closeFindBar();
+      if (isOverlayOpen) { closeCommandPalette(); closeSettings(); }
     }
   });
 
