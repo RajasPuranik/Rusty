@@ -196,6 +196,11 @@ impl TabManager {
         self.tabs.iter().map(|t| t.info()).collect()
     }
 
+    /// Return IDs of all open tabs.
+    pub fn all_ids(&self) -> Vec<TabId> {
+        self.tabs.iter().map(|t| t.id).collect()
+    }
+
     /// Number of open tabs.
     #[allow(dead_code)]
     pub fn count(&self) -> usize {

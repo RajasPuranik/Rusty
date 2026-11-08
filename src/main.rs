@@ -517,14 +517,21 @@ fn main() -> Result<()> {
     // ── Parse command line arguments ───────────────────────────────────
     let args: Vec<String> = env::args().skip(1).collect();
     let is_incognito = args.iter().any(|a| a == "--incognito" || a == "--private" || a == "-p");
+    let load_all_tabs = args.iter().any(|a| a == "--load-all-tabs");
     let non_flag_args: Vec<String> = args
         .into_iter()
         .filter(|a| !a.starts_with("--") && a != "-p")
         .collect();
-    let initial_url = if non_flag_args.is_empty() {
-        None
+
+    let initial_urls: Vec<String> = if non_flag_args.is_empty() {
+        vec!["about:blank".to_owned()]
+    } else if non_flag_args.len() == 1 {
+        vec![url_resolver::resolve(&non_flag_args[0])]
     } else {
-        Some(url_resolver::resolve(&non_flag_args.join(" ")))
+        non_flag_args
+            .iter()
+            .map(|u| url_resolver::resolve(u))
+            .collect()
     };
 
     let discard_timeout = get_discard_timeout();
@@ -561,27 +568,60 @@ fn main() -> Result<()> {
     // ── Toolbar webview ────────────────────────────────────────────────
     let toolbar_wv = build_toolbar_webview(&window, proxy.clone(), DEFAULT_WIDTH)?;
 
-    // ── Create the first tab (lazy creation) ───────────────────────────
-    let first_url = initial_url.unwrap_or_else(|| "about:blank".to_owned());
-    let first_url_display = first_url.clone();
-    let _first_tab_id = tabs.create_tab(first_url);
+    // ── Create tabs for initial URLs ───────────────────────────────────
+    for (i, url) in initial_urls.iter().enumerate() {
+        let id = tabs.create_tab(url.clone());
+        if i == 0 {
+            tabs.switch_to(id);
+        }
+    }
 
     let mut win_width = DEFAULT_WIDTH;
     let mut win_height = DEFAULT_HEIGHT;
 
-    // Lazily create the webview for the initial active tab
-    ensure_active_tab_webview(
-        &window,
-        &mut tabs,
-        &mut content_webviews,
-        &proxy,
-        win_width,
-        win_height,
-        &mut storage,
-        is_incognito,
-    )?;
+    if load_all_tabs {
+        println!("[benchmark] Pre-creating live WebViews for all {} tabs", tabs.count());
+        for tab_id in tabs.all_ids() {
+            if let Some(t) = tabs.get(tab_id) {
+                let url = t.url.clone();
+                let settings = storage.settings().clone();
+                if let Ok(wv) = build_content_webview(ContentWebViewParams {
+                    window: &window,
+                    url: &url,
+                    tab_id,
+                    proxy: proxy.clone(),
+                    window_width: win_width,
+                    window_height: win_height,
+                    scroll_y: 0.0,
+                    zoom_level: t.zoom_level,
+                    is_incognito,
+                    block_camera: settings.block_camera,
+                    block_microphone: settings.block_microphone,
+                    block_geolocation: settings.block_geolocation,
+                }) {
+                    load_target_url(&wv, &url, &mut storage);
+                    if Some(tab_id) != tabs.active_id() {
+                        let _ = wv.set_visible(false);
+                    }
+                    content_webviews.insert(tab_id, wv);
+                }
+            }
+        }
+    } else {
+        // Lazily create the webview for the initial active tab
+        ensure_active_tab_webview(
+            &window,
+            &mut tabs,
+            &mut content_webviews,
+            &proxy,
+            win_width,
+            win_height,
+            &mut storage,
+            is_incognito,
+        )?;
+    }
 
-    println!("[rusty_browser] Started with: {first_url_display}");
+    println!("[rusty_browser] Started with {} tabs", tabs.count());
 
     // ── Event loop ─────────────────────────────────────────────────────
     event_loop.run(move |event, _event_loop, control_flow| {
