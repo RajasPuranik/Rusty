@@ -102,6 +102,13 @@ pub const TOOLBAR_HTML: &str = r##"<!DOCTYPE html>
   }
   .tab:hover { background: #3c4043; }
   .tab.active { background: #202124; }
+  .tab.discarded {
+    opacity: 0.6;
+    font-style: italic;
+  }
+  .tab.discarded:hover {
+    opacity: 0.9;
+  }
   .tab-title {
     flex: 1;
     overflow: hidden;
@@ -162,6 +169,9 @@ pub const TOOLBAR_HTML: &str = r##"<!DOCTYPE html>
     <input class="addr-input" id="addrInput" type="text"
            placeholder="Search or enter URL" spellcheck="false" autocomplete="off">
   </div>
+
+  <!-- Memory saver: Sleep inactive background tabs -->
+  <button class="nav-btn" id="discardBtn" title="Sleep Background Tabs (Free Memory)">💤</button>
 </div>
 
 <script>
@@ -178,6 +188,7 @@ const fwdBtn    = document.getElementById('fwdBtn');
 const reloadBtn = document.getElementById('reloadBtn');
 const stopBtn   = document.getElementById('stopBtn');
 const newTabBtn = document.getElementById('newTabBtn');
+const discardBtn = document.getElementById('discardBtn');
 
 // ── Navigation button handlers ──────────────────────────────────────────
 backBtn.addEventListener('click', () => send({ action: 'back' }));
@@ -185,6 +196,7 @@ fwdBtn.addEventListener('click', () => send({ action: 'forward' }));
 reloadBtn.addEventListener('click', () => send({ action: 'reload' }));
 stopBtn.addEventListener('click', () => send({ action: 'stop' }));
 newTabBtn.addEventListener('click', () => send({ action: 'new_tab' }));
+discardBtn.addEventListener('click', () => send({ action: 'discard_background_tabs' }));
 
 // ── Address bar ─────────────────────────────────────────────────────────
 addrInput.addEventListener('keydown', (e) => {
@@ -232,9 +244,15 @@ function renderTabs(tabs, activeId) {
   tabBar.innerHTML = '';
   tabs.forEach(tab => {
     const el = document.createElement('div');
-    el.className = 'tab' + (tab.id === activeId ? ' active' : '');
+    let classes = 'tab' + (tab.id === activeId ? ' active' : '');
+    if (tab.is_discarded) classes += ' discarded';
+    el.className = classes;
+    const titleText = (tab.is_discarded ? '💤 ' : '') + (tab.title || 'New Tab');
+    el.title = tab.is_discarded
+      ? `${tab.title || 'New Tab'} (Sleeping to save memory — click to restore)`
+      : (tab.title || 'New Tab');
     el.innerHTML = `
-      <span class="tab-title">${escapeHtml(tab.title || 'New Tab')}</span>
+      <span class="tab-title">${escapeHtml(titleText)}</span>
       <button class="tab-close" data-id="${tab.id}">&times;</button>
     `;
     el.addEventListener('click', (e) => {
