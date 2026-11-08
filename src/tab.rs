@@ -21,6 +21,7 @@ pub struct TabInfo {
     pub title: String,
     pub url: String,
     pub is_discarded: bool,
+    pub zoom_percent: u32,
 }
 
 /// Internal state for a tab.
@@ -36,6 +37,8 @@ pub struct Tab {
     pub last_active: Instant,
     /// Saved vertical scroll position restored when waking a discarded tab.
     pub scroll_y: f64,
+    /// Current zoom level factor (1.0 = 100%).
+    pub zoom_level: f64,
 }
 
 impl Tab {
@@ -48,6 +51,7 @@ impl Tab {
             is_discarded: false,
             last_active: Instant::now(),
             scroll_y: 0.0,
+            zoom_level: 1.0,
         }
     }
 
@@ -57,6 +61,7 @@ impl Tab {
             title: self.title.clone(),
             url: self.url.clone(),
             is_discarded: self.is_discarded,
+            zoom_percent: (self.zoom_level * 100.0).round() as u32,
         }
     }
 }

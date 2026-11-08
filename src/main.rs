@@ -1,15 +1,16 @@
-//! Rusty Browser – Milestone 3
+//! Rusty Browser – Milestone 4
 //!
-//! Multi-tab browser with address bar, navigation buttons, keyboard shortcuts,
-//! lazy webview creation, and inactivity-based tab discarding.
-//!
-//! Efficiency Architecture (Milestone 3):
-//!   1. Lazy creation: Webviews are only allocated when a tab is first viewed.
-//!   2. Tab discarding: Inactive background tabs (> 10 min, or manual/configured)
-//!      are dropped from RAM completely, freeing their Edge/WebKit/Blink process tree.
-//!   3. Seamless restore: Saved URL, title, and scroll position are restored when clicked.
-//!   4. Zero prefetching or background prerendering.
+//! Features (Milestone 4):
+//!   1. History, Bookmarks, and Settings stored locally in `%APPDATA%\rusty_browser\data.json`
+//!      with lazy initialization on first use (zero cold-start penalty).
+//!   2. Persistent sessions and cookies via `WebContext` pointing to user data directory.
+//!   3. Find-in-page (Ctrl+F, Next, Prev, Match search via `window.find()`, Esc to dismiss).
+//!   4. Downloads Manager with start/completion tracking and `about:downloads` viewer.
+//!   5. Page Zoom (Ctrl++, Ctrl+-, Ctrl+0, reset) using native `WebView::zoom`.
+//!   6. Built-in `about:` pages: `about:history`, `about:bookmarks`, `about:downloads`.
+//!   7. Bookmark star button in address bar (Ctrl+D to toggle).
 
+mod storage;
 mod tab;
 mod ui;
 mod url_resolver;
@@ -28,6 +29,7 @@ use tao::{
 };
 use wry::{WebView, WebViewBuilder};
 
+use storage::Storage;
 use tab::{TabId, TabManager};
 
 /// Height of the toolbar in logical pixels.
@@ -51,6 +53,10 @@ enum UserEvent {
     TitleChanged(TabId, String),
     /// URL changed in a content webview.
     UrlChanged(TabId, String),
+    /// Download started (url, filename).
+    DownloadStarted(String, String),
+    /// Download finished (url, destination path, success).
+    DownloadCompleted(String, String, bool),
 }
 
 /// IPC command from toolbar or content script.
@@ -60,6 +66,8 @@ struct IpcCommand {
     url: Option<String>,
     tab_id: Option<TabId>,
     scroll_y: Option<f64>,
+    query: Option<String>,
+    backwards: Option<bool>,
 }
 
 /// Injected into every content webview to capture keyboard accelerators
@@ -79,6 +87,27 @@ window.addEventListener('keydown', (e) => {
     } else if (ctrl && e.key.toLowerCase() === 'l') {
         e.preventDefault();
         window.ipc.postMessage(JSON.stringify({ action: 'focus_address_bar' }));
+    } else if (ctrl && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'open_find_bar' }));
+    } else if (ctrl && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'toggle_bookmark' }));
+    } else if (ctrl && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'navigate', url: 'about:history' }));
+    } else if (ctrl && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'navigate', url: 'about:downloads' }));
+    } else if (ctrl && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'zoom_in' }));
+    } else if (ctrl && e.key === '-') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'zoom_out' }));
+    } else if (ctrl && e.key === '0') {
+        e.preventDefault();
+        window.ipc.postMessage(JSON.stringify({ action: 'zoom_reset' }));
     } else if (ctrl && e.key === 'Tab') {
         e.preventDefault();
         window.ipc.postMessage(JSON.stringify({ action: e.shiftKey ? 'prev_tab' : 'next_tab' }));
@@ -98,18 +127,36 @@ fn get_discard_timeout() -> Duration {
     Duration::from_secs(600) // Default: 10 minutes
 }
 
-/// Build a content webview for a tab positioned below the toolbar.
-fn build_content_webview(
-    window: &Window,
-    url: &str,
+/// Parameters for constructing a content webview.
+struct ContentWebViewParams<'a> {
+    window: &'a Window,
+    url: &'a str,
     tab_id: TabId,
     proxy: tao::event_loop::EventLoopProxy<UserEvent>,
     window_width: f64,
     window_height: f64,
     scroll_y: f64,
-) -> Result<WebView> {
+    zoom_level: f64,
+}
+
+/// Build a content webview for a tab positioned below the toolbar.
+fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
+    let ContentWebViewParams {
+        window,
+        url,
+        tab_id,
+        proxy,
+        window_width,
+        window_height,
+        scroll_y,
+        zoom_level,
+    } = params;
+
     let title_proxy = proxy.clone();
     let url_proxy = proxy.clone();
+    let dl_start_proxy = proxy.clone();
+    let dl_done_proxy = proxy.clone();
+    let dl_dir = Storage::resolve_downloads_dir();
 
     // Script to restore scroll position if waking from a discarded state
     let scroll_restore = if scroll_y > 0.0 {
@@ -143,13 +190,27 @@ fn build_content_webview(
         })
         .with_navigation_handler(move |url| {
             let _ = url_proxy.send_event(UserEvent::UrlChanged(tab_id, url.clone()));
-            // Allow http/https/about navigation; block file:// and arbitrary schemes
             if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("about:") {
                 true
             } else {
                 eprintln!("[security] Blocked navigation to: {url}");
                 false
             }
+        })
+        .with_download_started_handler(move |url, destination| {
+            let filename = destination
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "download".to_owned());
+            *destination = dl_dir.join(&filename);
+            println!("[download] Starting: {url} -> {}", destination.display());
+            let _ = dl_start_proxy.send_event(UserEvent::DownloadStarted(url, filename));
+            true
+        })
+        .with_download_completed_handler(move |url, dest, success| {
+            let path_str = dest.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+            println!("[download] Finished (success={success}): {url} -> {path_str}");
+            let _ = dl_done_proxy.send_event(UserEvent::DownloadCompleted(url, path_str, success));
         });
 
     #[cfg(any(
@@ -175,6 +236,11 @@ fn build_content_webview(
         builder.build_gtk(vbox).context("Failed to create content WebView (GTK)")?
     };
 
+    // Apply zoom if non-default
+    if (zoom_level - 1.0).abs() > 0.01 {
+        let _ = webview.zoom(zoom_level);
+    }
+
     Ok(webview)
 }
 
@@ -193,7 +259,6 @@ fn build_toolbar_webview(
         .with_ipc_handler(move |req| {
             let _ = proxy.send_event(UserEvent::ToolbarIpc(req.body().to_string()));
         })
-        // Prevent the toolbar from navigating away
         .with_navigation_handler(|_url| false)
         .with_devtools(cfg!(debug_assertions));
 
@@ -228,6 +293,7 @@ fn sync_toolbar(
     toolbar_wv: &WebView,
     tabs: &TabManager,
     content_webviews: &HashMap<TabId, WebView>,
+    storage: &mut Storage,
 ) {
     let tab_infos = tabs.all_info();
     let active_id = tabs.active_id().unwrap_or(0);
@@ -236,13 +302,21 @@ fn sync_toolbar(
         .map(|t| t.url.as_str())
         .unwrap_or("");
 
-    let (can_back, can_fwd) = if let Some(wv) = content_webviews.get(&active_id) {
+    let (can_back, can_fwd, zoom_percent) = if let Some(wv) = content_webviews.get(&active_id) {
+        let zoom = tabs.get(active_id).map(|t| t.zoom_level).unwrap_or(1.0);
         (
             wv.can_go_back().unwrap_or(false),
             wv.can_go_forward().unwrap_or(false),
+            (zoom * 100.0).round() as u32,
         )
     } else {
-        (false, false)
+        (false, false, 100)
+    };
+
+    let is_bookmarked = if !active_url.is_empty() && !active_url.starts_with("about:") {
+        storage.is_bookmarked(active_url)
+    } else {
+        false
     };
 
     let state = json!({
@@ -251,13 +325,15 @@ fn sync_toolbar(
         "url": active_url,
         "can_go_back": can_back,
         "can_go_forward": can_fwd,
+        "is_bookmarked": is_bookmarked,
+        "zoom_percent": zoom_percent,
     });
 
     let js = format!("updateState({})", state);
     let _ = toolbar_wv.evaluate_script(&js);
 }
 
-/// Resize all active/visible webviews when the window size changes.
+/// Resize all active webviews when window size changes.
 fn resize_webviews(
     toolbar_wv: &WebView,
     content_webviews: &HashMap<TabId, WebView>,
@@ -286,8 +362,31 @@ fn resize_webviews(
     }
 }
 
+/// Load content into a webview, supporting built-in `about:` pages.
+fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
+    match url {
+        "about:blank" | "about:newtab" => {
+            let _ = wv.load_html(ui::new_tab::NEW_TAB_HTML);
+        }
+        "about:history" => {
+            let recent = storage.recent_history(200);
+            let _ = wv.load_html(&ui::pages::render_history_page(&recent));
+        }
+        "about:bookmarks" => {
+            let bms = storage.bookmarks();
+            let _ = wv.load_html(&ui::pages::render_bookmarks_page(bms));
+        }
+        "about:downloads" => {
+            let dls = storage.downloads();
+            let _ = wv.load_html(&ui::pages::render_downloads_page(dls));
+        }
+        other => {
+            let _ = wv.load_url(other);
+        }
+    }
+}
+
 /// Ensure the active tab has a live webview allocated.
-/// If it was discarded or never loaded (lazy loading), this creates it.
 fn ensure_active_tab_webview(
     window: &Window,
     tabs: &mut TabManager,
@@ -295,6 +394,7 @@ fn ensure_active_tab_webview(
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
     win_width: f64,
     win_height: f64,
+    storage: &mut Storage,
 ) -> Result<()> {
     let active_id = match tabs.active_id() {
         Some(id) => id,
@@ -303,26 +403,24 @@ fn ensure_active_tab_webview(
 
     match content_webviews.entry(active_id) {
         std::collections::hash_map::Entry::Vacant(entry) => {
-            let (url, scroll_y) = match tabs.get(active_id) {
-                Some(t) => (t.url.clone(), t.scroll_y),
+            let (url, scroll_y, zoom) = match tabs.get(active_id) {
+                Some(t) => (t.url.clone(), t.scroll_y, t.zoom_level),
                 None => return Ok(()),
             };
 
             println!("[memory] Lazily creating webview for tab #{active_id} (url={url}, scroll={scroll_y:.0}px)");
-            let wv = build_content_webview(
+            let wv = build_content_webview(ContentWebViewParams {
                 window,
-                &url,
-                active_id,
-                proxy.clone(),
-                win_width,
-                win_height,
+                url: &url,
+                tab_id: active_id,
+                proxy: proxy.clone(),
+                window_width: win_width,
+                window_height: win_height,
                 scroll_y,
-            )?;
+                zoom_level: zoom,
+            })?;
 
-            if url == "about:blank" {
-                let _ = wv.load_html(ui::new_tab::NEW_TAB_HTML);
-            }
-
+            load_target_url(&wv, &url, storage);
             tabs.mark_restored(active_id);
             entry.insert(wv);
         }
@@ -338,6 +436,10 @@ fn ensure_active_tab_webview(
                     win_height - TOOLBAR_HEIGHT,
                 )),
             });
+            // Reapply tab's zoom
+            if let Some(t) = tabs.get(active_id) {
+                let _ = wv.zoom(t.zoom_level);
+            }
         }
     }
 
@@ -345,12 +447,12 @@ fn ensure_active_tab_webview(
 }
 
 /// Discard inactive background tabs to reclaim RAM.
-/// Destroys their WebView instances while preserving URL, title, and scroll position.
 fn discard_inactive_tabs(
     tabs: &mut TabManager,
     content_webviews: &mut HashMap<TabId, WebView>,
     threshold: Duration,
     toolbar_wv: &WebView,
+    storage: &mut Storage,
 ) {
     let to_discard = tabs.tabs_to_discard(threshold);
     for id in &to_discard {
@@ -360,7 +462,7 @@ fn discard_inactive_tabs(
         println!("[memory] Discarded inactive tab #{id} from RAM (scroll={scroll:.0}px)");
     }
     if !to_discard.is_empty() {
-        sync_toolbar(toolbar_wv, tabs, content_webviews);
+        sync_toolbar(toolbar_wv, tabs, content_webviews, storage);
     }
 }
 
@@ -381,6 +483,10 @@ fn main() -> Result<()> {
         discard_timeout.as_secs()
     );
 
+    // ── Lazy persistent storage (data.json) ─────────────────────────────
+    let mut storage = Storage::new();
+    println!("[storage] Data directory: {}", storage.data_dir().display());
+
     // ── Event loop with custom UserEvent ────────────────────────────────
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -399,12 +505,11 @@ fn main() -> Result<()> {
     // ── Toolbar webview ────────────────────────────────────────────────
     let toolbar_wv = build_toolbar_webview(&window, proxy.clone(), DEFAULT_WIDTH)?;
 
-    // ── Create the first tab (lazy creation via ensure_active_tab_webview)
+    // ── Create the first tab (lazy creation) ───────────────────────────
     let first_url = initial_url.unwrap_or_else(|| "about:blank".to_owned());
     let first_url_display = first_url.clone();
     let _first_tab_id = tabs.create_tab(first_url);
 
-    // Track current window size
     let mut win_width = DEFAULT_WIDTH;
     let mut win_height = DEFAULT_HEIGHT;
 
@@ -416,13 +521,13 @@ fn main() -> Result<()> {
         &proxy,
         win_width,
         win_height,
+        &mut storage,
     )?;
 
     println!("[rusty_browser] Started with: {first_url_display}");
 
     // ── Event loop ─────────────────────────────────────────────────────
     event_loop.run(move |event, _event_loop, control_flow| {
-        // Schedule periodic wakeups to check for inactive tabs to discard
         *control_flow = ControlFlow::WaitUntil(
             std::time::Instant::now() + DISCARD_CHECK_INTERVAL,
         );
@@ -435,6 +540,7 @@ fn main() -> Result<()> {
                     &mut content_webviews,
                     discard_timeout,
                     &toolbar_wv,
+                    &mut storage,
                 );
             }
 
@@ -475,17 +581,21 @@ fn main() -> Result<()> {
 
                 match cmd.action.as_str() {
                     "toolbar_ready" => {
-                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                     }
 
                     "navigate" => {
                         if let Some(raw_url) = cmd.url {
-                            let url = url_resolver::resolve(&raw_url);
+                            let url = if raw_url.starts_with("about:") {
+                                raw_url
+                            } else {
+                                url_resolver::resolve(&raw_url)
+                            };
+
                             if let Some(active_id) = tabs.active_id() {
                                 if let Some(tab) = tabs.get_mut(active_id) {
                                     tab.url = url.clone();
                                 }
-                                // Ensure webview exists (wake if discarded)
                                 let _ = ensure_active_tab_webview(
                                     &window,
                                     &mut tabs,
@@ -493,12 +603,17 @@ fn main() -> Result<()> {
                                     &proxy,
                                     win_width,
                                     win_height,
+                                    &mut storage,
                                 );
                                 if let Some(wv) = content_webviews.get(&active_id) {
-                                    let _ = wv.load_url(&url);
+                                    load_target_url(wv, &url, &mut storage);
+                                    if !url.starts_with("about:") {
+                                        let title = tabs.get(active_id).map(|t| t.title.as_str()).unwrap_or("");
+                                        storage.record_history(&url, title);
+                                    }
                                 }
                             }
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                         }
                     }
 
@@ -527,10 +642,11 @@ fn main() -> Result<()> {
                                 &proxy,
                                 win_width,
                                 win_height,
+                                &mut storage,
                             );
                             if let Some(wv) = content_webviews.get(&active_id) {
-                                let url = tabs.get(active_id).map(|t| t.url.as_str()).unwrap_or("about:blank");
-                                let _ = wv.load_url(url);
+                                let url = tabs.get(active_id).map(|t| t.url.clone()).unwrap_or_else(|| "about:blank".to_owned());
+                                load_target_url(wv, &url, &mut storage);
                             }
                         }
                     }
@@ -547,8 +663,83 @@ fn main() -> Result<()> {
                         let _ = toolbar_wv.evaluate_script("window.focusAddressBar && window.focusAddressBar();");
                     }
 
+                    "open_find_bar" => {
+                        let _ = toolbar_wv.evaluate_script("window.openFindBar && window.openFindBar();");
+                    }
+
+                    "find_in_page" => {
+                        if let Some(query) = cmd.query {
+                            if let Some(active_id) = tabs.active_id() {
+                                if let Some(wv) = content_webviews.get(&active_id) {
+                                    let backwards = cmd.backwards.unwrap_or(false);
+                                    let js = format!(
+                                        "window.find({:?}, false, {}, true, false, false, false);",
+                                        query, backwards
+                                    );
+                                    let _ = wv.evaluate_script(&js);
+                                }
+                            }
+                        }
+                    }
+
+                    "find_close" => {
+                        if let Some(active_id) = tabs.active_id() {
+                            if let Some(wv) = content_webviews.get(&active_id) {
+                                let _ = wv.evaluate_script(
+                                    "window.getSelection() && window.getSelection().removeAllRanges();",
+                                );
+                            }
+                        }
+                    }
+
+                    "toggle_bookmark" => {
+                        if let Some(active_id) = tabs.active_id() {
+                            if let Some(tab) = tabs.get(active_id) {
+                                storage.toggle_bookmark(&tab.url, &tab.title);
+                            }
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        }
+                    }
+
+                    "zoom_in" => {
+                        if let Some(active_id) = tabs.active_id() {
+                            if let Some(tab) = tabs.get_mut(active_id) {
+                                tab.zoom_level = (tab.zoom_level + 0.1).min(3.0);
+                                let zoom = tab.zoom_level;
+                                if let Some(wv) = content_webviews.get(&active_id) {
+                                    let _ = wv.zoom(zoom);
+                                }
+                            }
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        }
+                    }
+
+                    "zoom_out" => {
+                        if let Some(active_id) = tabs.active_id() {
+                            if let Some(tab) = tabs.get_mut(active_id) {
+                                tab.zoom_level = (tab.zoom_level - 0.1).max(0.3);
+                                let zoom = tab.zoom_level;
+                                if let Some(wv) = content_webviews.get(&active_id) {
+                                    let _ = wv.zoom(zoom);
+                                }
+                            }
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        }
+                    }
+
+                    "zoom_reset" => {
+                        if let Some(active_id) = tabs.active_id() {
+                            if let Some(tab) = tabs.get_mut(active_id) {
+                                tab.zoom_level = 1.0;
+                                if let Some(wv) = content_webviews.get(&active_id) {
+                                    let _ = wv.zoom(1.0);
+                                }
+                            }
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
+                        }
+                    }
+
                     "new_tab" => {
-                        // Save scroll and hide old active tab
                         if let Some(old_id) = tabs.active_id() {
                             if let Some(wv) = content_webviews.get(&old_id) {
                                 let _ = wv.evaluate_script(
@@ -561,7 +752,6 @@ fn main() -> Result<()> {
                         let new_id = tabs.create_tab("about:blank".to_owned());
                         tabs.switch_to(new_id);
 
-                        // Lazily create webview for the new tab on demand
                         let _ = ensure_active_tab_webview(
                             &window,
                             &mut tabs,
@@ -569,9 +759,10 @@ fn main() -> Result<()> {
                             &proxy,
                             win_width,
                             win_height,
+                            &mut storage,
                         );
 
-                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                        sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                     }
 
                     "close_tab" | "close_current_tab" => {
@@ -594,8 +785,9 @@ fn main() -> Result<()> {
                                     &proxy,
                                     win_width,
                                     win_height,
+                                    &mut storage,
                                 );
-                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                             } else {
                                 *control_flow = ControlFlow::Exit;
                             }
@@ -606,7 +798,6 @@ fn main() -> Result<()> {
                         if let Some(target_id) = cmd.tab_id {
                             let old_id = tabs.active_id();
                             if old_id != Some(target_id) {
-                                // Save scroll and hide old webview
                                 if let Some(old) = old_id {
                                     if let Some(wv) = content_webviews.get(&old) {
                                         let _ = wv.evaluate_script(
@@ -623,8 +814,9 @@ fn main() -> Result<()> {
                                     &proxy,
                                     win_width,
                                     win_height,
+                                    &mut storage,
                                 );
-                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                             }
                         }
                     }
@@ -649,8 +841,9 @@ fn main() -> Result<()> {
                                 &proxy,
                                 win_width,
                                 win_height,
+                                &mut storage,
                             );
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                         }
                     }
 
@@ -674,33 +867,21 @@ fn main() -> Result<()> {
                                 &proxy,
                                 win_width,
                                 win_height,
+                                &mut storage,
                             );
-                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                            sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                         }
                     }
 
-                    // ── Manual memory saver: Discard all background tabs ──
                     "discard_background_tabs" => {
                         println!("[memory] Manual tab discard triggered: sleeping all background tabs");
                         discard_inactive_tabs(
                             &mut tabs,
                             &mut content_webviews,
-                            Duration::ZERO, // Discard ALL background tabs immediately
+                            Duration::ZERO,
                             &toolbar_wv,
+                            &mut storage,
                         );
-                    }
-
-                    // ── Manual discard for a specific tab ──────────────────
-                    "discard_tab" => {
-                        if let Some(id) = cmd.tab_id {
-                            if tabs.active_id() != Some(id) {
-                                content_webviews.remove(&id);
-                                let scroll = tabs.get(id).map(|t| t.scroll_y).unwrap_or(0.0);
-                                tabs.mark_discarded(id, scroll);
-                                println!("[memory] Discarded tab #{id} from RAM");
-                                sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
-                            }
-                        }
                     }
 
                     other => {
@@ -712,24 +893,45 @@ fn main() -> Result<()> {
             // ── Title changed ──────────────────────────────────────────
             Event::UserEvent(UserEvent::TitleChanged(tab_id, title)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
-                    tab.title = title;
+                    tab.title = title.clone();
+                    if !tab.url.starts_with("about:") {
+                        storage.record_history(&tab.url, &title);
+                    }
                 }
                 if tabs.active_id() == Some(tab_id) {
                     if let Some(tab) = tabs.get(tab_id) {
                         window.set_title(&format!("{} — Rusty Browser", tab.title));
                     }
                 }
-                sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
             }
 
             // ── URL changed ────────────────────────────────────────────
             Event::UserEvent(UserEvent::UrlChanged(tab_id, url)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
-                    tab.url = url;
+                    tab.url = url.clone();
+                    if !url.starts_with("about:") {
+                        storage.record_history(&url, &tab.title);
+                    }
                 }
                 if tabs.active_id() == Some(tab_id) {
-                    sync_toolbar(&toolbar_wv, &tabs, &content_webviews);
+                    sync_toolbar(&toolbar_wv, &tabs, &content_webviews, &mut storage);
                 }
+            }
+
+            // ── Download Started ───────────────────────────────────────
+            Event::UserEvent(UserEvent::DownloadStarted(_url, filename)) => {
+                println!("[download] Notification: Started downloading {filename}");
+            }
+
+            // ── Download Completed ─────────────────────────────────────
+            Event::UserEvent(UserEvent::DownloadCompleted(url, path, success)) => {
+                let filename = std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "download".to_owned());
+                storage.record_download(&url, &filename, &path, success);
+                println!("[download] Saved download to history: {filename} (success={success})");
             }
 
             // ── Content IPC ────────────────────────────────────────────
@@ -742,7 +944,6 @@ fn main() -> Result<()> {
                         return;
                     }
                 }
-                // Forward shortcuts from content webview as toolbar IPC commands
                 let _ = proxy.send_event(UserEvent::ToolbarIpc(msg));
             }
 
