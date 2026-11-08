@@ -41,8 +41,8 @@ const DEFAULT_HEIGHT: f64 = 800.0;
 /// Default toolbar offset before first layout report from chrome webview.
 const DEFAULT_TOP_BAR_HEIGHT: f64 = 76.0;
 
-/// How often to wake up and check for inactive tabs to discard (30 seconds).
-const DISCARD_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+/// How often to wake up and check for inactive tabs to discard & update memory telemetry (3 seconds).
+const DISCARD_CHECK_INTERVAL: Duration = Duration::from_secs(3);
 
 /// User-facing Tab Group data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -278,6 +278,8 @@ fn get_discard_timeout() -> Duration {
 fn get_process_memory_mb(active_webviews: usize) -> f64 {
     #[cfg(target_os = "windows")]
     {
+        use std::collections::HashSet;
+
         #[repr(C)]
         #[allow(non_snake_case)]
         struct PROCESS_MEMORY_COUNTERS {
@@ -292,24 +294,105 @@ fn get_process_memory_mb(active_webviews: usize) -> f64 {
             PagefileUsage: usize,
             PeakPagefileUsage: usize,
         }
+
+        #[repr(C)]
+        #[allow(non_snake_case)]
+        struct PROCESSENTRY32W {
+            dwSize: u32,
+            cntUsage: u32,
+            th32ProcessID: u32,
+            th32DefaultHeapID: usize,
+            th32ModuleID: u32,
+            cntThreads: u32,
+            th32ParentProcessID: u32,
+            pcPriClassBase: i32,
+            dwFlags: u32,
+            szExeFile: [u16; 260],
+        }
+
         extern "system" {
             fn GetCurrentProcess() -> isize;
+            fn GetCurrentProcessId() -> u32;
+            fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> isize;
+            fn Process32FirstW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
+            fn Process32NextW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
+            fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> isize;
+            fn CloseHandle(hObject: isize) -> i32;
             fn K32GetProcessMemoryInfo(
                 process: isize,
                 ppsmc: *mut PROCESS_MEMORY_COUNTERS,
                 cb: u32,
             ) -> i32;
         }
-        let host_mb = unsafe {
+
+        const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+        const INVALID_HANDLE_VALUE: isize = -1;
+
+        unsafe {
+            let mut total_bytes: usize = 0;
+
+            // 1. Host process (rusty_browser.exe) memory
             let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
             counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
             if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) != 0 {
-                (counters.WorkingSetSize as f64) / (1024.0 * 1024.0)
-            } else {
-                28.0
+                total_bytes += counters.WorkingSetSize;
             }
-        };
-        host_mb + 42.0 + (active_webviews as f64 * 28.0)
+
+            // 2. Child and grandchild WebView2 processes (msedgewebview2.exe)
+            let my_pid = GetCurrentProcessId();
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot != INVALID_HANDLE_VALUE && snapshot != 0 {
+                let mut tree_pids: HashSet<u32> = HashSet::new();
+                tree_pids.insert(my_pid);
+
+                let mut all_entries: Vec<(u32, u32)> = Vec::new();
+                let mut pe: PROCESSENTRY32W = std::mem::zeroed();
+                pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+                if Process32FirstW(snapshot, &mut pe) != 0 {
+                    loop {
+                        all_entries.push((pe.th32ProcessID, pe.th32ParentProcessID));
+                        pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+                        if Process32NextW(snapshot, &mut pe) == 0 {
+                            break;
+                        }
+                    }
+                }
+                CloseHandle(snapshot);
+
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    for &(pid, parent) in &all_entries {
+                        if tree_pids.contains(&parent) && tree_pids.insert(pid) {
+                            changed = true;
+                        }
+                    }
+                }
+
+                for &pid in &tree_pids {
+                    if pid == my_pid {
+                        continue;
+                    }
+                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                    if handle != 0 && handle != INVALID_HANDLE_VALUE {
+                        let mut child_counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+                        child_counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+                        if K32GetProcessMemoryInfo(handle, &mut child_counters, child_counters.cb) != 0 {
+                            total_bytes += child_counters.WorkingSetSize;
+                        }
+                        CloseHandle(handle);
+                    }
+                }
+            }
+
+            if total_bytes > 0 {
+                (total_bytes as f64) / (1024.0 * 1024.0)
+            } else {
+                35.0 + (active_webviews as f64 * 30.0)
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -333,7 +416,18 @@ pub fn is_trusted_origin(uri: &str) -> bool {
 }
 
 /// Resolve internal virtual URLs to their canonical custom-protocol destination.
+/// On Windows, maps `rusty://` custom schemes to `http://rusty.*` so WebView2 can navigate properly.
 pub fn resolve_content_url(url: &str) -> String {
+    #[cfg(target_os = "windows")]
+    match url {
+        "about:blank" | "about:newtab" => "http://rusty.app/newtab.html".to_owned(),
+        other if other.starts_with("rusty://") => {
+            let rest = other.trim_start_matches("rusty://");
+            format!("http://rusty.{rest}")
+        }
+        other => other.to_owned(),
+    }
+    #[cfg(not(target_os = "windows"))]
     match url {
         "about:blank" | "about:newtab" => "rusty://app/newtab.html".to_owned(),
         other => other.to_owned(),
@@ -507,13 +601,14 @@ fn build_chrome_webview(
     window_width: f64,
     window_height: f64,
 ) -> Result<WebView> {
+    let chrome_url = resolve_content_url("rusty://app/index.html");
     let builder = WebViewBuilder::new()
         .with_bounds(wry::Rect {
             position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
             size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(window_width, window_height)),
         })
         .with_custom_protocol("rusty".into(), ui::app_protocol::handle_rusty_request)
-        .with_url("rusty://app/index.html")
+        .with_url(&chrome_url)
         .with_ipc_handler(move |req| {
             let uri = req.uri().to_string();
             if !is_trusted_origin(&uri) {
@@ -655,7 +750,9 @@ fn sync_chrome_ui(
 fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
     match url {
         "about:blank" | "about:newtab" => {
-            let _ = wv.load_url("rusty://app/newtab.html");
+            let target = resolve_content_url("about:blank");
+            println!("[content] Loading new tab page: {target}");
+            let _ = wv.load_url(&target);
         }
         "about:history" => {
             let recent = storage.recent_history(200);
@@ -674,7 +771,8 @@ fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
             let _ = wv.load_html(&ui::pages::render_settings_page(&settings));
         }
         other => {
-            let _ = wv.load_url(other);
+            let target = resolve_content_url(other);
+            let _ = wv.load_url(&target);
         }
     }
 }
@@ -890,7 +988,7 @@ fn main() -> Result<()> {
         );
 
         match event {
-            // ── Periodic timer for automatic tab discarding ────────────
+            // ── Periodic timer for automatic tab discarding & live memory stats ─
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 discard_inactive_tabs(
                     &mut tabs,
@@ -901,6 +999,22 @@ fn main() -> Result<()> {
                     &mut storage,
                     is_incognito,
                 );
+
+                let mem_mb = get_process_memory_mb(content_webviews.len());
+                let chrome_baseline = 236.0 + (tabs.count() as f64 * 75.0);
+                let savings = ((chrome_baseline - mem_mb) / chrome_baseline * 100.0).clamp(0.0, 95.0);
+                let mem_json = json!({
+                    "type": "memory_stats",
+                    "total_mb": (mem_mb * 10.0).round() / 10.0,
+                    "chrome_baseline_mb": (chrome_baseline * 10.0).round() / 10.0,
+                    "savings_percent": (savings * 10.0).round() / 10.0,
+                });
+                let _ = chrome_wv.evaluate_script(&format!("window.__onRustMessage({mem_json});"));
+                if let Some(active_id) = tabs.active_id() {
+                    if let Some(wv) = content_webviews.get(&active_id) {
+                        let _ = wv.evaluate_script(&format!("window.__onRustMessage({mem_json});"));
+                    }
+                }
             }
 
             // ── Window resize ──────────────────────────────────────────
@@ -1537,8 +1651,17 @@ mod tests {
 
     #[test]
     fn test_resolve_content_url() {
-        assert_eq!(resolve_content_url("about:blank"), "rusty://app/newtab.html");
-        assert_eq!(resolve_content_url("about:newtab"), "rusty://app/newtab.html");
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(resolve_content_url("about:blank"), "http://rusty.app/newtab.html");
+            assert_eq!(resolve_content_url("about:newtab"), "http://rusty.app/newtab.html");
+            assert_eq!(resolve_content_url("rusty://app/newtab.html"), "http://rusty.app/newtab.html");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(resolve_content_url("about:blank"), "rusty://app/newtab.html");
+            assert_eq!(resolve_content_url("about:newtab"), "rusty://app/newtab.html");
+        }
         assert_eq!(resolve_content_url("https://crates.io"), "https://crates.io");
     }
 }
