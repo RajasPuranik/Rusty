@@ -317,6 +317,29 @@ fn get_process_memory_mb(active_webviews: usize) -> f64 {
     }
 }
 
+/// Validate whether an origin URI corresponds to trusted internal browser chrome/pages.
+/// Handles both raw custom protocol `rusty://app/...` and WebView2-mapped `http(s)://rusty.app/...`.
+pub fn is_trusted_origin(uri: &str) -> bool {
+    if let Some(rest) = uri.strip_prefix("rusty://") {
+        return rest.starts_with("app") || rest.starts_with('/');
+    }
+    if let Some(rest) = uri.strip_prefix("http://rusty.app") {
+        return rest.is_empty() || rest.starts_with('/') || rest.starts_with('?');
+    }
+    if let Some(rest) = uri.strip_prefix("https://rusty.app") {
+        return rest.is_empty() || rest.starts_with('/') || rest.starts_with('?');
+    }
+    uri.starts_with("data:text/html")
+}
+
+/// Resolve internal virtual URLs to their canonical custom-protocol destination.
+pub fn resolve_content_url(url: &str) -> String {
+    match url {
+        "about:blank" | "about:newtab" => "rusty://app/newtab.html".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
 /// Parameters for constructing a content webview.
 struct ContentWebViewParams<'a> {
     window: &'a Window,
@@ -373,7 +396,7 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
         .with_ipc_handler(move |req| {
             let uri = req.uri().to_string();
             let body = req.body().to_string();
-            if uri.starts_with("rusty://app") || uri.starts_with("rusty://") {
+            if is_trusted_origin(&uri) {
                 // Trusted internal page (e.g. newtab.html) - full IPC access
                 let _ = proxy.send_event(UserEvent::ChromeIpc(body));
             } else {
@@ -404,7 +427,7 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
             let _ = title_proxy.send_event(UserEvent::TitleChanged(tab_id, title));
         })
         .with_navigation_handler(move |url| {
-            if url.starts_with("rusty://") || url.starts_with("data:text/html") {
+            if is_trusted_origin(&url) {
                 true
             } else if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("about:") {
                 let _ = url_proxy.send_event(UserEvent::UrlChanged(tab_id, url.clone()));
@@ -493,7 +516,7 @@ fn build_chrome_webview(
         .with_url("rusty://app/index.html")
         .with_ipc_handler(move |req| {
             let uri = req.uri().to_string();
-            if !uri.starts_with("rusty://app") && !uri.starts_with("rusty://") {
+            if !is_trusted_origin(&uri) {
                 eprintln!("[security] Blocked IPC from unauthorized origin in chrome webview: {uri}");
                 return;
             }
@@ -680,11 +703,12 @@ fn ensure_active_tab_webview(
                 None => return Ok(()),
             };
 
+            let initial_url = resolve_content_url(&url);
             let settings = storage.settings().clone();
             println!("[memory] Lazily creating webview for tab #{active_id} (url={url}, scroll={scroll_y:.0}px, incognito={is_incognito})");
             let wv = build_content_webview(ContentWebViewParams {
                 window,
-                url: &url,
+                url: &initial_url,
                 tab_id: active_id,
                 proxy: proxy.clone(),
                 content_rect,
@@ -818,10 +842,11 @@ fn main() -> Result<()> {
         for tab_id in tabs.all_ids() {
             if let Some(t) = tabs.get(tab_id) {
                 let url = t.url.clone();
+                let initial_url = resolve_content_url(&url);
                 let settings = storage.settings().clone();
                 if let Ok(wv) = build_content_webview(ContentWebViewParams {
                     window: &window,
-                    url: &url,
+                    url: &initial_url,
                     tab_id,
                     proxy: proxy.clone(),
                     content_rect: current_content_rect,
@@ -1436,7 +1461,7 @@ fn main() -> Result<()> {
             Event::UserEvent(UserEvent::TitleChanged(tab_id, title)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
                     tab.title = title.clone();
-                    if !is_incognito && !tab.url.starts_with("about:") && !tab.url.starts_with("rusty:") {
+                    if !is_incognito && !tab.url.starts_with("about:") && !is_trusted_origin(&tab.url) {
                         storage.record_history(&tab.url, &title);
                     }
                 }
@@ -1453,7 +1478,7 @@ fn main() -> Result<()> {
             Event::UserEvent(UserEvent::UrlChanged(tab_id, url)) => {
                 if let Some(tab) = tabs.get_mut(tab_id) {
                     tab.url = url.clone();
-                    if !is_incognito && !url.starts_with("about:") && !url.starts_with("rusty:") {
+                    if !is_incognito && !url.starts_with("about:") && !is_trusted_origin(&url) {
                         storage.record_history(&url, &tab.title);
                     }
                 }
@@ -1483,4 +1508,37 @@ fn main() -> Result<()> {
             _ => {}
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_trusted_origin_matches_internal() {
+        assert!(is_trusted_origin("rusty://app/index.html"));
+        assert!(is_trusted_origin("rusty://app/newtab.html"));
+        assert!(is_trusted_origin("http://rusty.app"));
+        assert!(is_trusted_origin("http://rusty.app/"));
+        assert!(is_trusted_origin("http://rusty.app/index.html"));
+        assert!(is_trusted_origin("http://rusty.app/newtab.html"));
+        assert!(is_trusted_origin("https://rusty.app/index.html"));
+        assert!(is_trusted_origin("data:text/html;charset=utf-8,<html></html>"));
+    }
+
+    #[test]
+    fn test_is_trusted_origin_rejects_external_and_spoofed() {
+        assert!(!is_trusted_origin("https://google.com"));
+        assert!(!is_trusted_origin("http://example.com/index.html"));
+        assert!(!is_trusted_origin("http://rusty.app.evil.com/index.html"));
+        assert!(!is_trusted_origin("https://rusty.app.evil.com/"));
+        assert!(!is_trusted_origin("http://rusty.app:8080/index.html"));
+    }
+
+    #[test]
+    fn test_resolve_content_url() {
+        assert_eq!(resolve_content_url("about:blank"), "rusty://app/newtab.html");
+        assert_eq!(resolve_content_url("about:newtab"), "rusty://app/newtab.html");
+        assert_eq!(resolve_content_url("https://crates.io"), "https://crates.io");
+    }
 }

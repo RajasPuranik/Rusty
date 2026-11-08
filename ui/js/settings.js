@@ -2,17 +2,17 @@
 (function (root) {
   'use strict';
 
-  const STORAGE_KEY = 'rusty_browser_settings';
+  const STORAGE_KEY = 'rusty_browser_settings_v4';
 
   const DEFAULT_SETTINGS = {
-    skin: 'minimal',                 // 'minimal' | 'crazy'
-    theme: 'midnight',                // 'midnight' | 'light' | 'amoled' | 'aurora' | 'cyberpunk' | 'sunset' | 'matcha' | 'sakura'
-    custom_accent: '#3b82f6',
+    skin: 'crazy',                    // 'crazy' | 'minimal'
+    theme: 'sunset',                  // 'sunset' | 'midnight' | 'light' | 'amoled' | 'aurora' | 'cyberpunk' | 'matcha' | 'sakura'
+    custom_accent: '#f97316',
     tabs_layout: 'horizontal',        // 'horizontal' | 'vertical'
     vertical_collapsed: false,
     density: 'normal',               // 'compact' | 'normal' | 'relaxed'
     default_search: 'google',        // 'google' | 'duckduckgo' | 'bing' | 'brave' | 'youtube' | 'github'
-    effects_intensity: 60,           // 0 to 100
+    effects_intensity: 80,           // 0 to 100
     fx_glow: true,
     fx_tilt: true,
     fx_magnetic: true,

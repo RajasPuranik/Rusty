@@ -2,6 +2,8 @@
 (function () {
   'use strict';
 
+  const STORAGE_KEY = 'rusty_browser_settings_v4';
+
   // 1. Parse URL overrides (e.g., ?skin=crazy&theme=aurora&tabs=side)
   const urlParams = new URLSearchParams(window.location.search);
   const paramSkin = urlParams.get('skin');
@@ -10,13 +12,13 @@
 
   // 2. Load stored settings from localStorage with default fallbacks
   let settings = {
-    skin: 'minimal',
-    theme: 'midnight',
+    skin: 'crazy',
+    theme: 'sunset',
     tabs_layout: 'horizontal', // 'horizontal' | 'vertical'
     vertical_collapsed: false,
     density: 'normal',
-    accent_custom: '#3b82f6',
-    effects_intensity: 60,
+    accent_custom: '#f97316',
+    effects_intensity: 80,
     fx_glow: true,
     fx_tilt: true,
     fx_magnetic: true,
@@ -27,7 +29,7 @@
   };
 
   try {
-    const raw = localStorage.getItem('rusty_browser_settings');
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       settings = Object.assign(settings, JSON.parse(raw));
     }
@@ -69,7 +71,7 @@
     if (newSkin !== 'minimal' && newSkin !== 'crazy') return;
     settings.skin = newSkin;
     try {
-      localStorage.setItem('rusty_browser_settings', JSON.stringify(settings));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch (_) {}
     if (window.bridge && typeof window.bridge.send === 'function') {
       window.bridge.send('set_setting', { key: 'skin', value: newSkin });
@@ -81,7 +83,7 @@
   window.switchTheme = function (newTheme) {
     settings.theme = newTheme;
     try {
-      localStorage.setItem('rusty_browser_settings', JSON.stringify(settings));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch (_) {}
     root.setAttribute('data-theme', newTheme);
     if (window.bridge && typeof window.bridge.send === 'function') {
@@ -94,7 +96,7 @@
     root.setAttribute('data-tabs', next);
     settings.tabs_layout = next;
     try {
-      localStorage.setItem('rusty_browser_settings', JSON.stringify(settings));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch (_) {}
     if (window.bridge && typeof window.bridge.send === 'function') {
       window.bridge.send('set_setting', { key: 'tabs_layout', value: next });

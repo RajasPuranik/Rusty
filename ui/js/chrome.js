@@ -106,7 +106,8 @@
           omniboxInput.blur();
         }
       } else if (e.key === 'Escape') {
-        omniboxInput.value = activeUrl === 'about:blank' ? '' : activeUrl;
+        const isNewTab = !activeUrl || activeUrl === 'about:blank' || activeUrl === 'about:newtab' || activeUrl.includes('newtab.html');
+        omniboxInput.value = isNewTab ? '' : activeUrl;
         omniboxInput.blur();
       }
     });
@@ -971,7 +972,8 @@
     if (data.url !== undefined) {
       activeUrl = data.url;
       if (omniboxInput && document.activeElement !== omniboxInput) {
-        omniboxInput.value = data.url === 'about:blank' ? '' : data.url;
+        const isNewTab = !data.url || data.url === 'about:blank' || data.url === 'about:newtab' || data.url.includes('newtab.html');
+        omniboxInput.value = isNewTab ? '' : data.url;
       }
       if (omniboxSecurity) {
         const isSecure = data.url.startsWith('https://');

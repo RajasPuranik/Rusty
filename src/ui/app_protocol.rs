@@ -32,7 +32,9 @@ const CSP_VALUE: &str = "default-src 'self' 'unsafe-inline' data:; script-src 's
 
 /// Handle incoming HTTP requests on the `rusty://` custom protocol scheme.
 pub fn handle_rusty_request(_id: WebViewId, req: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
-    let path = req.uri().path().trim_start_matches('/');
+    let raw = req.uri().path().trim_start_matches('/');
+    let stripped = raw.strip_prefix("app/").unwrap_or(raw);
+    let path = stripped.split('?').next().unwrap_or(stripped).trim_end_matches('/');
 
     let (content_type, body): (&str, &'static [u8]) = match path {
         "" | "index.html" | "chrome" => ("text/html; charset=utf-8", INDEX_HTML),
