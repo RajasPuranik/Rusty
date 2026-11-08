@@ -292,6 +292,9 @@
       closeEl.title = 'Close tab (Ctrl+W)';
       closeEl.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (window.fxTabPoof) {
+          window.fxTabPoof(e.clientX, e.clientY);
+        }
         window.bridge.send('close_tab', { tab_id: tab.id });
       });
       tabEl.appendChild(closeEl);
