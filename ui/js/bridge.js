@@ -310,6 +310,11 @@
         Bridge.dispatch('memory_stats', mockMemory);
       }, 5000);
     }, 50);
+  } else {
+    // Real IPC: notify Rust backend that UI webview is ready to receive state
+    setTimeout(() => {
+      Bridge.send('ui_ready');
+    }, 10);
   }
 
   root.bridge = Bridge;

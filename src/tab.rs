@@ -20,7 +20,12 @@ pub struct TabInfo {
     pub id: TabId,
     pub title: String,
     pub url: String,
+    pub active: bool,
     pub is_discarded: bool,
+    pub sleeping: bool,
+    pub pinned: bool,
+    pub muted: bool,
+    pub group_id: Option<String>,
     pub zoom_percent: u32,
 }
 
@@ -33,6 +38,12 @@ pub struct Tab {
     pub has_webview: bool,
     /// Whether this tab has been discarded from RAM due to inactivity.
     pub is_discarded: bool,
+    /// Whether the tab is pinned.
+    pub pinned: bool,
+    /// Whether the tab audio is muted.
+    pub muted: bool,
+    /// Associated tab group ID.
+    pub group_id: Option<String>,
     /// When the tab was last viewed or interacted with.
     pub last_active: Instant,
     /// Saved vertical scroll position restored when waking a discarded tab.
@@ -49,18 +60,26 @@ impl Tab {
             url,
             has_webview: false,
             is_discarded: false,
+            pinned: false,
+            muted: false,
+            group_id: None,
             last_active: Instant::now(),
             scroll_y: 0.0,
             zoom_level: 1.0,
         }
     }
 
-    pub fn info(&self) -> TabInfo {
+    pub fn info(&self, active_id: Option<TabId>) -> TabInfo {
         TabInfo {
             id: self.id,
             title: self.title.clone(),
             url: self.url.clone(),
+            active: Some(self.id) == active_id,
             is_discarded: self.is_discarded,
+            sleeping: self.is_discarded,
+            pinned: self.pinned,
+            muted: self.muted,
+            group_id: self.group_id.clone(),
             zoom_percent: (self.zoom_level * 100.0).round() as u32,
         }
     }
@@ -191,9 +210,111 @@ impl TabManager {
         self.active.and_then(|id| self.get(id))
     }
 
-    /// Get info for all tabs (for toolbar rendering).
+    /// Get info for all tabs (for UI rendering).
     pub fn all_info(&self) -> Vec<TabInfo> {
-        self.tabs.iter().map(|t| t.info()).collect()
+        self.tabs.iter().map(|t| t.info(self.active)).collect()
+    }
+
+    /// Reorder tabs via drag-and-drop.
+    pub fn reorder(&mut self, from_id: TabId, to_id: TabId, position: &str) {
+        let from_idx = match self.tabs.iter().position(|t| t.id == from_id) {
+            Some(i) => i,
+            None => return,
+        };
+        let to_idx = match self.tabs.iter().position(|t| t.id == to_id) {
+            Some(i) => i,
+            None => return,
+        };
+        if from_idx == to_idx {
+            return;
+        }
+
+        let mut moved = self.tabs.remove(from_idx);
+        let target_idx = self.tabs.iter().position(|t| t.id == to_id).unwrap_or(0);
+        // Adopt group of adjacent tab if not pinned
+        if !moved.pinned {
+            if let Some(target) = self.tabs.get(target_idx) {
+                moved.group_id = target.group_id.clone();
+            }
+        }
+
+        let insert_idx = if position == "after" {
+            (target_idx + 1).min(self.tabs.len())
+        } else {
+            target_idx
+        };
+        self.tabs.insert(insert_idx, moved);
+    }
+
+    /// Pin or unpin a tab.
+    pub fn set_pinned(&mut self, id: TabId, pinned: bool) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.pinned = pinned;
+        }
+    }
+
+    /// Mute or unmute tab audio.
+    pub fn set_muted(&mut self, id: TabId, muted: bool) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.muted = muted;
+        }
+    }
+
+    /// Duplicate an existing tab. Returns ID of the newly created tab.
+    pub fn duplicate(&mut self, id: TabId) -> Option<TabId> {
+        let (url, title, zoom) = {
+            let tab = self.get(id)?;
+            (tab.url.clone(), tab.title.clone(), tab.zoom_level)
+        };
+        let new_id = self.next_id;
+        self.next_id += 1;
+        let mut new_tab = Tab::new(new_id, url);
+        new_tab.title = format!("{title} (Copy)");
+        new_tab.zoom_level = zoom;
+        let pos = self.tabs.iter().position(|t| t.id == id).unwrap_or(self.tabs.len());
+        self.tabs.insert(pos + 1, new_tab);
+        Some(new_id)
+    }
+
+    /// Close all tabs except `id` and pinned tabs. Returns IDs of closed tabs.
+    pub fn close_others(&mut self, id: TabId) -> Vec<TabId> {
+        let mut closed = Vec::new();
+        self.tabs.retain(|t| {
+            if t.id == id || t.pinned {
+                true
+            } else {
+                closed.push(t.id);
+                false
+            }
+        });
+        self.active = Some(id);
+        closed
+    }
+
+    /// Close all tabs after `id` except pinned tabs. Returns IDs of closed tabs.
+    pub fn close_below(&mut self, id: TabId) -> Vec<TabId> {
+        let pos = match self.tabs.iter().position(|t| t.id == id) {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let mut closed = Vec::new();
+        let mut keep = Vec::new();
+        for (i, t) in self.tabs.drain(..).enumerate() {
+            if i <= pos || t.pinned {
+                keep.push(t);
+            } else {
+                closed.push(t.id);
+            }
+        }
+        self.tabs = keep;
+        closed
+    }
+
+    /// Assign or remove tab from a group.
+    pub fn set_group(&mut self, id: TabId, group_id: Option<String>) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.group_id = group_id;
+        }
     }
 
     /// Return IDs of all open tabs.
@@ -356,5 +477,82 @@ mod tests {
         assert_eq!(info.len(), 2);
         assert!(!info[0].is_discarded);
         assert!(info[1].is_discarded);
+    }
+
+    #[test]
+    fn tab_reordering() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("https://1.com".into());
+        let t2 = mgr.create_tab("https://2.com".into());
+        let t3 = mgr.create_tab("https://3.com".into());
+
+        assert_eq!(mgr.all_ids(), vec![t1, t2, t3]);
+
+        // Move t1 after t2 -> [t2, t1, t3]
+        mgr.reorder(t1, t2, "after");
+        assert_eq!(mgr.all_ids(), vec![t2, t1, t3]);
+
+        // Move t3 before t2 -> [t3, t2, t1]
+        mgr.reorder(t3, t2, "before");
+        assert_eq!(mgr.all_ids(), vec![t3, t2, t1]);
+    }
+
+    #[test]
+    fn tab_pin_mute_group() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("https://1.com".into());
+
+        mgr.set_pinned(t1, true);
+        assert!(mgr.get(t1).unwrap().pinned);
+
+        mgr.set_muted(t1, true);
+        assert!(mgr.get(t1).unwrap().muted);
+
+        mgr.set_group(t1, Some("group_a".into()));
+        assert_eq!(mgr.get(t1).unwrap().group_id, Some("group_a".into()));
+    }
+
+    #[test]
+    fn tab_duplication() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("https://example.com".into());
+        if let Some(t) = mgr.get_mut(t1) {
+            t.title = "Example".into();
+            t.zoom_level = 1.25;
+        }
+
+        let dup_id = mgr.duplicate(t1).expect("duplication failed");
+        let dup = mgr.get(dup_id).expect("dup tab exists");
+        assert_eq!(dup.url, "https://example.com");
+        assert_eq!(dup.title, "Example (Copy)");
+        assert_eq!(dup.zoom_level, 1.25);
+        assert_eq!(mgr.all_ids(), vec![t1, dup_id]);
+    }
+
+    #[test]
+    fn close_others_and_below() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("https://1.com".into());
+        let t2 = mgr.create_tab("https://2.com".into());
+        let t3 = mgr.create_tab("https://3.com".into());
+        let t4 = mgr.create_tab("https://4.com".into());
+
+        // Pin t1
+        mgr.set_pinned(t1, true);
+
+        // Close others of t3 -> t2 and t4 should be closed, t1 (pinned) and t3 remain
+        let closed = mgr.close_others(t3);
+        assert_eq!(closed, vec![t2, t4]);
+        assert_eq!(mgr.all_ids(), vec![t1, t3]);
+
+        // Add more tabs
+        let t5 = mgr.create_tab("https://5.com".into());
+        let t6 = mgr.create_tab("https://6.com".into());
+        assert_eq!(mgr.all_ids(), vec![t1, t3, t5, t6]);
+
+        // Close below t3 -> t5 and t6 should be closed
+        let closed_below = mgr.close_below(t3);
+        assert_eq!(closed_below, vec![t5, t6]);
+        assert_eq!(mgr.all_ids(), vec![t1, t3]);
     }
 }
