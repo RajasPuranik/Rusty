@@ -1,0 +1,204 @@
+/* ==========================================================================
+   THEMES (CSS Custom Properties)
+   Independent of skins. Selectable via data-theme attribute.
+   ========================================================================== */
+
+/* ── 1. Midnight (Default: dark navy matching existing UI screenshot) ───── */
+:root, [data-theme="midnight"] {
+  --bg-primary: #1e1e2e;
+  --bg-surface: #202124;
+  --bg-surface-alt: #181824;
+  --bg-canvas: #151520;
+  --bg-subtle: #2b2c34;
+  --bg-hover: #323440;
+  --bg-input: #303134;
+  --bg-input-focus: #202124;
+  --bg-tab: #222330;
+  --bg-tab-active: #2d2e40;
+
+  --border-subtle: #383a48;
+  --border-active: #8ab4f8;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-primary: #8ab4f8;
+  --accent-secondary: #38bdf8;
+  --accent-highlight: rgba(138, 180, 248, 0.2);
+}
+
+/* ── 2. Light Theme ──────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-alt: #f1f5f9;
+  --bg-canvas: #e2e8f0;
+  --bg-subtle: #e2e8f0;
+  --bg-hover: #e2e8f0;
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --bg-tab: #f1f5f9;
+  --bg-tab-active: #ffffff;
+
+  --border-subtle: #cbd5e1;
+  --border-active: #1a73e8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+
+  --accent-primary: #1a73e8;
+  --accent-secondary: #0284c7;
+  --accent-highlight: rgba(26, 115, 232, 0.15);
+}
+
+/* ── 3. AMOLED Black (True 0x000000 for OLED efficiency) ─────────────────── */
+[data-theme="amoled"] {
+  --bg-primary: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-surface-alt: #050505;
+  --bg-canvas: #000000;
+  --bg-subtle: #171717;
+  --bg-hover: #262626;
+  --bg-input: #121212;
+  --bg-input-focus: #000000;
+  --bg-tab: #080808;
+  --bg-tab-active: #1a1a1a;
+
+  --border-subtle: #262626;
+  --border-active: #3b82f6;
+
+  --text-primary: #fafafa;
+  --text-secondary: #d4d4d4;
+  --text-muted: #737373;
+
+  --accent-primary: #3b82f6;
+  --accent-secondary: #60a5fa;
+  --accent-highlight: rgba(59, 130, 246, 0.25);
+}
+
+/* ── 4. Aurora (Deep Northern Teal & Emerald) ────────────────────────────── */
+[data-theme="aurora"] {
+  --bg-primary: #09171e;
+  --bg-surface: #0f2430;
+  --bg-surface-alt: #0b1a23;
+  --bg-canvas: #061015;
+  --bg-subtle: #193849;
+  --bg-hover: #214b62;
+  --bg-input: #122b39;
+  --bg-input-focus: #0f2430;
+  --bg-tab: #0d202b;
+  --bg-tab-active: #1b3e51;
+
+  --border-subtle: #25526c;
+  --border-active: #2dd4bf;
+
+  --text-primary: #f0fdfa;
+  --text-secondary: #ccfbf1;
+  --text-muted: #5eead4;
+
+  --accent-primary: #2dd4bf;
+  --accent-secondary: #34d399;
+  --accent-highlight: rgba(45, 212, 191, 0.25);
+}
+
+/* ── 5. Cyberpunk (Neon Yellow, Electric Magenta & Cyan) ─────────────────── */
+[data-theme="cyberpunk"] {
+  --bg-primary: #0f0f17;
+  --bg-surface: #181926;
+  --bg-surface-alt: #12121d;
+  --bg-canvas: #0a0a10;
+  --bg-subtle: #292a3e;
+  --bg-hover: #363852;
+  --bg-input: #202133;
+  --bg-input-focus: #181926;
+  --bg-tab: #141421;
+  --bg-tab-active: #2a2b42;
+
+  --border-subtle: #3d3e5e;
+  --border-active: #facc15;
+
+  --text-primary: #fffbeb;
+  --text-secondary: #fef08a;
+  --text-muted: #a1a1aa;
+
+  --accent-primary: #facc15;
+  --accent-secondary: #ec4899;
+  --accent-highlight: rgba(250, 204, 21, 0.3);
+}
+
+/* ── 6. Sunset (Warm Twilight, Tangerine & Rose) ─────────────────────────── */
+[data-theme="sunset"] {
+  --bg-primary: #1f121d;
+  --bg-surface: #2b1a29;
+  --bg-surface-alt: #221420;
+  --bg-canvas: #170d16;
+  --bg-subtle: #3d253a;
+  --bg-hover: #4f304b;
+  --bg-input: #331f31;
+  --bg-input-focus: #2b1a29;
+  --bg-tab: #251623;
+  --bg-tab-active: #40273d;
+
+  --border-subtle: #573552;
+  --border-active: #f97316;
+
+  --text-primary: #fff7ed;
+  --text-secondary: #fed7aa;
+  --text-muted: #fb7185;
+
+  --accent-primary: #f97316;
+  --accent-secondary: #fb7185;
+  --accent-highlight: rgba(249, 115, 22, 0.25);
+}
+
+/* ── 7. Matcha (Forest Sage & Soothing Leaf Green) ───────────────────────── */
+[data-theme="matcha"] {
+  --bg-primary: #141915;
+  --bg-surface: #1c241e;
+  --bg-surface-alt: #161d18;
+  --bg-canvas: #0f1310;
+  --bg-subtle: #2a372d;
+  --bg-hover: #36473a;
+  --bg-input: #232d26;
+  --bg-input-focus: #1c241e;
+  --bg-tab: #18201a;
+  --bg-tab-active: #2f3e33;
+
+  --border-subtle: #3d4f41;
+  --border-active: #4ade80;
+
+  --text-primary: #f0fdf4;
+  --text-secondary: #bbf7d0;
+  --text-muted: #86efac;
+
+  --accent-primary: #4ade80;
+  --accent-secondary: #22c55e;
+  --accent-highlight: rgba(74, 222, 128, 0.22);
+}
+
+/* ── 8. Sakura (Blossom Plum & Soft Rose) ────────────────────────────────── */
+[data-theme="sakura"] {
+  --bg-primary: #1c1419;
+  --bg-surface: #271c23;
+  --bg-surface-alt: #1f161c;
+  --bg-canvas: #150e12;
+  --bg-subtle: #3a2a34;
+  --bg-hover: #4a3643;
+  --bg-input: #2f222b;
+  --bg-input-focus: #271c23;
+  --bg-tab: #221820;
+  --bg-tab-active: #412f3b;
+
+  --border-subtle: #543d4c;
+  --border-active: #f472b6;
+
+  --text-primary: #fdf2f8;
+  --text-secondary: #fbcfe8;
+  --text-muted: #f472b6;
+
+  --accent-primary: #f472b6;
+  --accent-secondary: #fda4af;
+  --accent-highlight: rgba(244, 114, 182, 0.25);
+}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Tab</title>
+  <!-- Base layout, Themes, and NTP Styling -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/themes.css">
+  <link rel="stylesheet" href="css/newtab.css">
+
+  <!-- Early boot loader -->
+  <script src="js/boot.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/bridge.js"></script>
+  <script src="js/settings.js"></script>
+</head>
+<body class="ntp-body">
+  <!-- Interactive canvas background for Crazy skin -->
+  <canvas id="ntp-canvas"></canvas>
+
+  <div class="ntp-container">
+    <!-- ── Top Bar: Weather Widget Slot (Placeholder) ────────────────── -->
+    <header class="ntp-header">
+      <!-- /* PLACEHOLDER: weather widget data source */ -->
+      <div class="weather-widget" title="Local weather placeholder">
+        <script>document.write(window.Icons.get('weather', '', 14));</script>
+        <span id="weather-text">--°C Offline</span>
+      </div>
+    </header>
+
+    <!-- ── Digital Clock & Greeting ──────────────────────────────────── -->
+    <section class="clock-section">
+      <div id="clock-time" class="clock-time">12:00</div>
+      <div id="clock-greeting" class="clock-greeting">Good afternoon</div>
+    </section>
+
+    <!-- ── Large Centered Search Bar ─────────────────────────────────── -->
+    <section class="search-section">
+      <div class="search-box">
+        <span class="search-icon">
+          <script>document.write(window.Icons.get('search', '', 18));</script>
+        </span>
+        <input id="search-input" class="search-input" type="text" placeholder="Search the web or type a URL..." autocomplete="off" spellcheck="false" autofocus>
+        <span class="search-key-badge">/</span>
+      </div>
+
+      <!-- Search Engine Chips -->
+      <div id="engine-chips" class="engine-chips">
+        <button class="chip active" data-engine="google">Google</button>
+        <button class="chip" data-engine="duckduckgo">DuckDuckGo</button>
+        <button class="chip" data-engine="bing">Bing</button>
+        <button class="chip" data-engine="brave">Brave</button>
+        <button class="chip" data-engine="youtube">YouTube</button>
+        <button class="chip" data-engine="github">GitHub</button>
+      </div>
+    </section>
+
+    <!-- ── Speed Dial Grid ───────────────────────────────────────────── -->
+    <section class="speed-dial-section">
+      <div class="section-label">Top Sites</div>
+      <div id="speed-dial-grid" class="speed-dial-grid"></div>
+    </section>
+
+    <!-- ── Lower Grid: Scratchpad & Recently Closed Tabs ─────────────── -->
+    <section class="lower-grid">
+      <!-- Quick Notes Scratchpad -->
+      <div class="widget-card">
+        <div class="widget-header">
+          <span class="section-label">Quick Notes</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Auto-saved</span>
+        </div>
+        <textarea id="scratchpad" class="scratchpad-area" placeholder="Jot down notes or snippets here..."></textarea>
+      </div>
+
+      <!-- Recently Closed Tabs -->
+      <div class="widget-card">
+        <div class="widget-header">
+          <span class="section-label">Recently Closed Tabs</span>
+        </div>
+        <div id="recent-tabs-list" class="recent-tabs-list"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="js/newtab.js"></script>
+</body>
+</html>

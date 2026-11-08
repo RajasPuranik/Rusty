@@ -1,0 +1,93 @@
+/* ==========================================================================
+   SKIN: CRAZY (3D Pop, Glassmorphism, Conic Glow, Spring Physics)
+   Loaded only when data-skin="crazy"
+   ========================================================================== */
+
+[data-skin="crazy"] {
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+/* ── Glassmorphism Chrome Bars ───────────────────────────────────────────── */
+[data-skin="crazy"] #chrome-header {
+  background: rgba(32, 33, 36, 0.75) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-skin="crazy"] #tabs-horizontal,
+[data-skin="crazy"] #tabs-sidebar {
+  background: rgba(24, 24, 36, 0.65) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* ── 3D Pop Buttons with Ledge & Spring Physics ──────────────────────────── */
+[data-skin="crazy"] .btn-icon,
+[data-skin="crazy"] .btn-new-tab {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.01) 100%), var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease, background 0.15s ease;
+}
+
+[data-skin="crazy"] .btn-icon:hover,
+[data-skin="crazy"] .btn-new-tab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+[data-skin="crazy"] .btn-icon:active,
+[data-skin="crazy"] .btn-new-tab:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Omnibox: Animated Conic Gradient Border on Focus ────────────────────── */
+[data-skin="crazy"] .omnibox-wrapper {
+  position: relative;
+}
+
+[data-skin="crazy"] .omnibox {
+  position: relative;
+  background: rgba(20, 20, 28, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: box-shadow 0.25s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-skin="crazy"] .omnibox:focus-within {
+  transform: scale(1.01);
+  box-shadow: 0 0 20px rgba(138, 180, 248, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+/* ── 3D Tabs ─────────────────────────────────────────────────────────────── */
+[data-skin="crazy"] .tab-item {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.1) 100%), var(--bg-surface-alt);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+}
+
+[data-skin="crazy"] .tab-item:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+[data-skin="crazy"] .tab-item.active {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%), var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* ── Modals with Blurred Dimmed Backdrop ─────────────────────────────────── */
+[data-skin="crazy"] #modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}

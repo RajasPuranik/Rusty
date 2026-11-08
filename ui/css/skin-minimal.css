@@ -1,0 +1,95 @@
+/* ==========================================================================
+   SKIN: MINIMAL (Low profile, lowest RAM, fastest first-paint)
+   Flat, quiet, 1px borders, small radii, zero blur, zero box-shadows.
+   Transitions strictly capped at 100ms color fades.
+   ========================================================================== */
+
+[data-skin="minimal"] {
+  /* Radius overrides: small, quiet corners */
+  --radius-xs: 1px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-full: 4px; /* flat omnibox in minimal mode */
+}
+
+/* ── Surfaces: Pure flat colors, no shadows, no blur ────────────────────── */
+[data-skin="minimal"] #chrome-header,
+[data-skin="minimal"] #tabs-horizontal,
+[data-skin="minimal"] #tabs-sidebar,
+[data-skin="minimal"] .command-palette,
+[data-skin="minimal"] .omnibox {
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── 100ms Transitions Only on Hover ────────────────────────────────────── */
+[data-skin="minimal"] .btn-icon,
+[data-skin="minimal"] .tab-item,
+[data-skin="minimal"] .omnibox,
+[data-skin="minimal"] .btn-new-tab,
+[data-skin="minimal"] .memory-badge,
+[data-skin="minimal"] .palette-item {
+  transition: background-color 0.1s linear, color 0.1s linear, border-color 0.1s linear !important;
+}
+
+/* ── Tabs Styling ───────────────────────────────────────────────────────── */
+[data-skin="minimal"] .tab-item {
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-sm);
+}
+
+[data-skin="minimal"] .tab-item.active {
+  background-color: var(--bg-primary);
+  border-color: var(--border-subtle);
+  border-bottom: 2px solid var(--accent-primary);
+  font-weight: 500;
+}
+
+[data-skin="minimal"] .tab-item:hover:not(.active) {
+  background-color: var(--bg-hover);
+}
+
+/* Tab Loading Spinner (CSS-only, low CPU) */
+[data-skin="minimal"] .tab-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: minimal-spin 0.8s linear infinite;
+}
+
+@keyframes minimal-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Omnibox ────────────────────────────────────────────────────────────── */
+[data-skin="minimal"] .omnibox {
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-skin="minimal"] .omnibox:focus-within {
+  border-color: var(--accent-primary);
+  background-color: var(--bg-input-focus);
+}
+
+/* ── Memory Badge ───────────────────────────────────────────────────────── */
+[data-skin="minimal"] .memory-badge {
+  border-radius: var(--radius-sm);
+}
+
+/* ── Command Palette ────────────────────────────────────────────────────── */
+[data-skin="minimal"] .command-palette {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-skin="minimal"] #modal-overlay {
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: none !important;
+}

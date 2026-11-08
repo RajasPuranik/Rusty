@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rusty Browser</title>
+  <!-- Base layout & Themes -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/themes.css">
+  
+  <!-- Early boot: injects active skin CSS (and fx-crazy.js if active) -->
+  <script src="js/boot.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/bridge.js"></script>
+  <script src="js/settings.js"></script>
+</head>
+<body>
+  <div id="app-shell">
+    <!-- ── Top Chrome Bar ──────────────────────────────────────────────── -->
+    <header id="chrome-header">
+      <div class="nav-group">
+        <button id="btn-back" class="btn-icon" title="Click to go back (Alt+Left)" disabled>
+          <script>document.write(window.Icons.get('arrow-left', '', 16));</script>
+        </button>
+        <button id="btn-forward" class="btn-icon" title="Click to go forward (Alt+Right)" disabled>
+          <script>document.write(window.Icons.get('arrow-right', '', 16));</script>
+        </button>
+        <button id="btn-reload" class="btn-icon" title="Reload page (Ctrl+R)">
+          <script>document.write(window.Icons.get('reload', '', 15));</script>
+        </button>
+        <button id="btn-toggle-tabs" class="btn-icon" title="Toggle Horizontal / Vertical Tabs">
+          <script>document.write(window.Icons.get('vertical-tabs', '', 16));</script>
+        </button>
+      </div>
+
+      <!-- Omnibox / Address Bar -->
+      <div class="omnibox-wrapper">
+        <div class="omnibox">
+          <div id="omnibox-security" class="omnibox-security-icon" title="Security Details">
+            <script>document.write(window.Icons.get('lock', '', 14));</script>
+          </div>
+          <input id="omnibox-input" class="omnibox-input" type="text" placeholder="Search with Google or enter address" autocomplete="off" spellcheck="false">
+          <div class="omnibox-actions">
+            <button id="btn-star" class="btn-star btn-icon" title="Bookmark this tab">
+              <script>document.write(window.Icons.get('star', '', 15));</script>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions & Utilities -->
+      <div class="actions-group">
+        <div id="memory-badge" class="memory-badge" title="Live process memory">
+          <span class="memory-dot"></span>
+          <span id="memory-text">85 MB</span>
+        </div>
+        <button id="btn-palette" class="btn-icon" title="Command Palette (Ctrl+K)">
+          <script>document.write(window.Icons.get('command', '', 16));</script>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Horizontal Tabs Strip ────────────────────────────────────────── -->
+    <nav id="tabs-horizontal">
+      <div id="tabs-horizontal-list" style="display: flex; gap: 4px; align-items: center;"></div>
+      <button id="btn-new-tab-h" class="btn-new-tab" title="New Tab (Ctrl+T)">
+        <script>document.write(window.Icons.get('plus', '', 14));</script>
+      </button>
+    </nav>
+
+    <!-- ── Main Workspace Body: Sidebar + Content Viewport ─────────────── -->
+    <div id="body-container">
+      <!-- Vertical Tabs Sidebar -->
+      <aside id="tabs-sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title" style="font-weight: 500; font-size: 12px; color: var(--text-secondary);">TABS</span>
+          <button id="btn-new-tab-v" class="btn-icon" title="New Tab (Ctrl+T)">
+            <script>document.write(window.Icons.get('plus', '', 14));</script>
+          </button>
+        </div>
+        <div id="tabs-sidebar-list" class="sidebar-tabs-list"></div>
+      </aside>
+
+      <!-- Content Viewport (Child WebView2 sits here, or mock iframe in standalone browser) -->
+      <main id="content-viewport"></main>
+    </div>
+
+    <!-- ── Modal Overlay for Command Palette (Ctrl+K) ───────────────────── -->
+    <div id="modal-overlay">
+      <div class="command-palette">
+        <div class="palette-input-wrap">
+          <script>document.write(window.Icons.get('search', '', 16));</script>
+          <input id="palette-input" class="palette-input" type="text" placeholder="Type a command or search tabs (e.g. skin, theme, tabs)..." autocomplete="off" spellcheck="false">
+        </div>
+        <div id="palette-results" class="palette-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/chrome.js"></script>
+</body>
+</html>
