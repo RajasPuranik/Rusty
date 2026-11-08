@@ -16,71 +16,207 @@
   <script src="js/settings.js"></script>
 </head>
 <body class="ntp-body">
-  <!-- Interactive canvas background for Crazy skin -->
+  <!-- Interactive constellation canvas for Crazy skin -->
   <canvas id="ntp-canvas"></canvas>
 
-  <div class="ntp-container">
-    <!-- ── Top Bar: Weather Widget Slot (Placeholder) ────────────────── -->
-    <header class="ntp-header">
+  <div class="ntp-shell">
+    <!-- ── Left Rail: Navigation Dock & Workspaces ──────────────────── -->
+    <aside class="ntp-left-rail">
+      <!-- Icon dock -->
+      <nav class="dock-icons">
+        <button class="dock-btn active" title="Home"><script>document.write(window.Icons.get('home', '', 18));</script></button>
+        <button class="dock-btn" title="Apps"><script>document.write(window.Icons.get('grid', '', 18));</script></button>
+        <button class="dock-btn" title="Spaces"><script>document.write(window.Icons.get('layers', '', 18));</script></button>
+        <button class="dock-btn ai-badge" title="AI Assistant"><script>document.write(window.Icons.get('cpu', '', 18));</script></button>
+        <button class="dock-btn" title="Gaming"><script>document.write(window.Icons.get('gamepad', '', 18));</script></button>
+        <button class="dock-btn" title="Projects"><script>document.write(window.Icons.get('briefcase', '', 18));</script></button>
+        <button class="dock-btn" title="Tools"><script>document.write(window.Icons.get('box', '', 18));</script></button>
+        <button class="dock-btn" title="Settings" id="dock-btn-settings"><script>document.write(window.Icons.get('settings', '', 18));</script></button>
+      </nav>
+
+      <!-- Workspaces List -->
+      <div class="workspaces-section">
+        <div class="workspaces-header">
+          <span class="workspaces-title">Workspaces</span>
+          <button class="btn-icon-xs" id="btn-add-workspace" title="Add Workspace"><script>document.write(window.Icons.get('plus', '', 12));</script></button>
+        </div>
+        <div class="workspaces-list" id="workspaces-list">
+          <button class="workspace-chip active" data-ws="main"><script>document.write(window.Icons.get('home', '', 14));</script><span>Main</span></button>
+          <button class="workspace-chip" data-ws="college"><script>document.write(window.Icons.get('folder', '', 14));</script><span>College</span></button>
+          <button class="workspace-chip" data-ws="projects"><span>&lt;/&gt; Projects</span></button>
+          <button class="workspace-chip" data-ws="media"><script>document.write(window.Icons.get('play', '', 12));</script><span>Media</span></button>
+          <button class="workspace-chip" data-ws="games"><script>document.write(window.Icons.get('gamepad', '', 14));</script><span>Games</span></button>
+        </div>
+      </div>
+
+      <!-- Glowing planet decoration at bottom -->
+      <div class="planet-decoration">
+        <div class="planet-sphere"></div>
+      </div>
+    </aside>
+
+    <!-- ── Center Stage: Hero, Search, Dials, & Feature Cards ──────── -->
+    <main class="ntp-center">
+      <!-- Hero Brand -->
+      <header class="brand-hero">
+        <div class="brand-logo-wrap">
+          <img src="assets/logo.svg" alt="Rusty Browser" class="brand-logo-img">
+          <h1 class="brand-title">Rusty Browser</h1>
+        </div>
+        <p class="brand-tagline">Browse • Create • Focus • Automate</p>
+      </header>
+
+      <!-- Radiant Central Search Bar -->
+      <section class="search-section">
+        <div class="search-box glow-conic-box">
+          <span class="search-icon"><script>document.write(window.Icons.get('search', '', 18));</script></span>
+          <input id="search-input" class="search-input" type="text" placeholder="Search the web, ask AI, or run a command..." autocomplete="off" spellcheck="false" autofocus>
+          <button class="btn-ai-sparkle" id="btn-search-ai" title="AI Command Prompt"><script>document.write(window.Icons.get('sparkles', '', 16));</script></button>
+          <span class="search-key-badge">/</span>
+        </div>
+
+        <!-- Search Engine Chips -->
+        <div id="engine-chips" class="engine-chips">
+          <button class="chip active" data-engine="google">Google</button>
+          <button class="chip" data-engine="duckduckgo">DuckDuckGo</button>
+          <button class="chip" data-engine="bing">Bing</button>
+          <button class="chip" data-engine="brave">Brave</button>
+          <button class="chip" data-engine="youtube">YouTube</button>
+          <button class="chip" data-engine="github">GitHub</button>
+        </div>
+      </section>
+
+      <!-- Speed Dial Pill Row -->
+      <section class="speed-dial-section">
+        <div id="speed-dial-grid" class="speed-dial-row"></div>
+      </section>
+
+      <!-- Bottom Quick-Access Action Cards -->
+      <section class="action-cards-grid">
+        <div class="action-card" data-action="ai">
+          <div class="action-card-icon icon-ai"><script>document.write(window.Icons.get('sparkles', '', 18));</script></div>
+          <div class="action-card-text">
+            <div class="action-card-title">AI Assistant</div>
+            <div class="action-card-desc">Summarize, explain, write, create or automate...</div>
+          </div>
+        </div>
+        <div class="action-card" data-action="spaces">
+          <div class="action-card-icon icon-spaces"><script>document.write(window.Icons.get('layers', '', 18));</script></div>
+          <div class="action-card-text">
+            <div class="action-card-title">Spaces</div>
+            <div class="action-card-desc">Organize tabs, tools and projects</div>
+          </div>
+        </div>
+        <div class="action-card" data-action="media">
+          <div class="action-card-icon icon-media"><script>document.write(window.Icons.get('play', '', 16));</script></div>
+          <div class="action-card-text">
+            <div class="action-card-title">Media Hub</div>
+            <div class="action-card-desc">Videos, music, downloads & more</div>
+          </div>
+        </div>
+        <div class="action-card" data-action="tools">
+          <div class="action-card-icon icon-tools"><script>document.write(window.Icons.get('box', '', 18));</script></div>
+          <div class="action-card-text">
+            <div class="action-card-title">Tools</div>
+            <div class="action-card-desc">Image, PDF, Code, Converters & utilities</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ── Right Rail: Widgets Dashboard ───────────────────────────── -->
+    <aside class="ntp-right-rail">
+      <!-- Clock Card with Planet Graphic -->
+      <div class="widget-card widget-clock-card">
+        <div class="clock-display">
+          <div id="clock-time" class="clock-time">02:14 <span class="clock-ampm">AM</span></div>
+          <div id="clock-date" class="clock-date">Sat, Nov 7</div>
+        </div>
+        <div class="clock-planet-graphic"></div>
+      </div>
+
+      <!-- Weather Card (Placeholder) -->
       <!-- /* PLACEHOLDER: weather widget data source */ -->
-      <div class="weather-widget" title="Local weather placeholder">
-        <script>document.write(window.Icons.get('weather', '', 14));</script>
-        <span id="weather-text">--°C Offline</span>
-      </div>
-    </header>
-
-    <!-- ── Digital Clock & Greeting ──────────────────────────────────── -->
-    <section class="clock-section">
-      <div id="clock-time" class="clock-time">12:00</div>
-      <div id="clock-greeting" class="clock-greeting">Good afternoon</div>
-    </section>
-
-    <!-- ── Large Centered Search Bar ─────────────────────────────────── -->
-    <section class="search-section">
-      <div class="search-box">
-        <span class="search-icon">
-          <script>document.write(window.Icons.get('search', '', 18));</script>
-        </span>
-        <input id="search-input" class="search-input" type="text" placeholder="Search the web or type a URL..." autocomplete="off" spellcheck="false" autofocus>
-        <span class="search-key-badge">/</span>
-      </div>
-
-      <!-- Search Engine Chips -->
-      <div id="engine-chips" class="engine-chips">
-        <button class="chip active" data-engine="google">Google</button>
-        <button class="chip" data-engine="duckduckgo">DuckDuckGo</button>
-        <button class="chip" data-engine="bing">Bing</button>
-        <button class="chip" data-engine="brave">Brave</button>
-        <button class="chip" data-engine="youtube">YouTube</button>
-        <button class="chip" data-engine="github">GitHub</button>
-      </div>
-    </section>
-
-    <!-- ── Speed Dial Grid ───────────────────────────────────────────── -->
-    <section class="speed-dial-section">
-      <div class="section-label">Top Sites</div>
-      <div id="speed-dial-grid" class="speed-dial-grid"></div>
-    </section>
-
-    <!-- ── Lower Grid: Scratchpad & Recently Closed Tabs ─────────────── -->
-    <section class="lower-grid">
-      <!-- Quick Notes Scratchpad -->
-      <div class="widget-card">
-        <div class="widget-header">
-          <span class="section-label">Quick Notes</span>
-          <span style="font-size: 11px; color: var(--text-muted);">Auto-saved</span>
+      <div class="widget-card widget-weather-card">
+        <div class="weather-left">
+          <span class="weather-icon-wrap"><script>document.write(window.Icons.get('weather', '', 20));</script></span>
+          <div>
+            <div class="weather-temp" id="weather-temp">24°C</div>
+            <div class="weather-location" id="weather-location">Indore</div>
+          </div>
         </div>
-        <textarea id="scratchpad" class="scratchpad-area" placeholder="Jot down notes or snippets here..."></textarea>
+        <span class="weather-chevron"><script>document.write(window.Icons.get('chevron-right', '', 14));</script></span>
       </div>
 
-      <!-- Recently Closed Tabs -->
-      <div class="widget-card">
+      <!-- Quick Notes Checklist Card -->
+      <div class="widget-card widget-notes-card">
         <div class="widget-header">
-          <span class="section-label">Recently Closed Tabs</span>
+          <div class="widget-title-wrap">
+            <span class="widget-icon text-orange"><script>document.write(window.Icons.get('pencil', '', 14));</script></span>
+            <span class="widget-title">Quick Notes</span>
+          </div>
+          <button class="btn-icon-xs" id="btn-add-note" title="Add Note Item"><script>document.write(window.Icons.get('plus', '', 12));</script></button>
         </div>
-        <div id="recent-tabs-list" class="recent-tabs-list"></div>
+        <div class="notes-checklist" id="notes-checklist">
+          <!-- Populated by JS -->
+        </div>
+        <textarea id="scratchpad" class="scratchpad-area" placeholder="Or type freeform scratchpad notes here..."></textarea>
       </div>
-    </section>
+
+      <!-- Focus / Pomodoro Timer Card -->
+      <div class="widget-card widget-focus-card">
+        <div class="widget-header">
+          <div class="widget-title-wrap">
+            <span class="widget-icon text-orange"><script>document.write(window.Icons.get('target', '', 14));</script></span>
+            <span class="widget-title">Focus</span>
+          </div>
+          <button class="btn-icon-xs" id="btn-focus-settings" title="Reset Timer"><script>document.write(window.Icons.get('reload', '', 12));</script></button>
+        </div>
+        <div class="focus-modes">
+          <button class="focus-mode-btn active" data-mode="study"><script>document.write(window.Icons.get('pencil', '', 12));</script><span>Study</span></button>
+          <button class="focus-mode-btn" data-mode="work"><script>document.write(window.Icons.get('briefcase', '', 12));</script><span>Work</span></button>
+          <button class="focus-mode-btn" data-mode="deep"><script>document.write(window.Icons.get('sparkles', '', 12));</script><span>Deep</span></button>
+        </div>
+        <div class="focus-timer-row">
+          <div class="focus-time-display" id="focus-time-display">25:00</div>
+          <button class="btn-focus-play" id="btn-focus-play" title="Start/Pause Timer"><script>document.write(window.Icons.get('play', '', 14));</script></button>
+        </div>
+      </div>
+
+      <!-- System Monitor Card -->
+      <div class="widget-card widget-monitor-card">
+        <div class="widget-header">
+          <div class="widget-title-wrap">
+            <span class="widget-icon text-orange"><script>document.write(window.Icons.get('activity', '', 14));</script></span>
+            <span class="widget-title">System Monitor</span>
+          </div>
+          <span class="chevron-xs"><script>document.write(window.Icons.get('chevron-right', '', 12));</script></span>
+        </div>
+        <div class="monitor-metrics">
+          <div class="monitor-row">
+            <span class="monitor-label">CPU</span>
+            <svg class="sparkline-svg" viewBox="0 0 100 20" id="cpu-sparkline">
+              <path d="M0,15 Q20,5 40,12 T80,8 T100,10" fill="none" stroke="#38bdf8" stroke-width="2"/>
+            </svg>
+            <span class="monitor-value" id="cpu-val">12%</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">RAM</span>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" id="ram-fill" style="width: 38%;"></div>
+            </div>
+            <span class="monitor-value" id="ram-val">38%</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">GPU</span>
+            <svg class="sparkline-svg" viewBox="0 0 100 20" id="gpu-sparkline">
+              <path d="M0,18 Q25,10 50,16 T75,4 T100,14" fill="none" stroke="#34d399" stroke-width="2"/>
+            </svg>
+            <span class="monitor-value" id="gpu-val">6%</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <script src="js/newtab.js"></script>

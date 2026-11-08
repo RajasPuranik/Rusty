@@ -29,10 +29,10 @@ comment in its respective source file.
    - How to replace: Supply a `faviconUrl` string in the speed-dial entry object.
 
 4. WALLPAPERS (OPTIONAL)
-   - Files: ui/css/newtab.css, ui/newtab.html
-   - Purpose: Custom user wallpapers for the new tab page.
-   - Status: CSS gradient / procedural canvas background (Constellation / Aurora).
-   - How to replace: Set CSS `--ntp-wallpaper-url: url('path/to/image.jpg')`.
+   - Files: ui/assets/wallpaper.jpg, ui/css/newtab.css, ui/newtab.html
+   - Purpose: Cinematic cosmic planetary landscape wallpaper for the Crazy skin new tab page.
+   - Status: Photorealistic planetary sunrise astronaut wallpaper asset (303 KB).
+   - How to replace: Drop any 1920x1080 or 4K wallpaper JPEG into `ui/assets/wallpaper.jpg`.
 
 5. DISPLAY FONT FOR CLOCK (OPTIONAL)
    - Files: ui/css/newtab.css, ui/newtab.html

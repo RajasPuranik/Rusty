@@ -26,6 +26,7 @@ static JS_NEWTAB: &[u8] = include_bytes!("../../ui/js/newtab.js");
 static JS_FX_CRAZY: &[u8] = include_bytes!("../../ui/js/fx-crazy.js");
 
 static ASSET_LOGO: &[u8] = include_bytes!("../../ui/assets/logo.svg");
+static ASSET_WALLPAPER: &[u8] = include_bytes!("../../ui/assets/wallpaper.jpg");
 
 const CSP_VALUE: &str = "default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';";
 
@@ -52,6 +53,7 @@ pub fn handle_rusty_request(_id: WebViewId, req: Request<Vec<u8>>) -> Response<C
         "js/fx-crazy.js" => ("text/javascript; charset=utf-8", JS_FX_CRAZY),
 
         "assets/logo.svg" => ("image/svg+xml", ASSET_LOGO),
+        "assets/wallpaper.jpg" => ("image/jpeg", ASSET_WALLPAPER),
 
         _ => {
             return Response::builder()

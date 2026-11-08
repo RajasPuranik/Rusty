@@ -150,8 +150,8 @@
 
 [data-skin="crazy"] .tab-item.active {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.03) 100%), var(--bg-surface);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--accent-primary, #f97316);
+  box-shadow: 0 0 16px var(--accent-glow, rgba(249, 115, 22, 0.45)), 0 4px 14px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 /* ── Live Memory Badge with Pulsing Green Dot ────────────────────────────── */

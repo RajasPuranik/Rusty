@@ -93,3 +93,20 @@
   background-color: rgba(0, 0, 0, 0.4);
   backdrop-filter: none !important;
 }
+
+/* ── Minimal NTP Dashboard Overrides ─────────────────────────────────────── */
+[data-skin="minimal"] .ntp-left-rail,
+[data-skin="minimal"] .widget-card,
+[data-skin="minimal"] .action-card,
+[data-skin="minimal"] .dial-pill {
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  background-color: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  transform: none !important;
+}
+
+[data-skin="minimal"] .planet-decoration {
+  display: none !important;
+}
+

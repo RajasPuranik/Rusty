@@ -26,6 +26,7 @@
   --accent-primary: #8ab4f8;
   --accent-secondary: #38bdf8;
   --accent-highlight: rgba(138, 180, 248, 0.2);
+  --accent-glow: rgba(138, 180, 248, 0.45);
 }
 
 /* ── 2. Light Theme ──────────────────────────────────────────────────────── */
@@ -151,6 +152,7 @@
   --accent-primary: #f97316;
   --accent-secondary: #fb7185;
   --accent-highlight: rgba(249, 115, 22, 0.25);
+  --accent-glow: rgba(249, 115, 22, 0.55);
 }
 
 /* ── 7. Matcha (Forest Sage & Soothing Leaf Green) ───────────────────────── */
