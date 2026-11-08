@@ -31,6 +31,33 @@
   const scratchpad = document.getElementById('scratchpad');
   const recentTabsList = document.getElementById('recent-tabs-list');
 
+  // Apply widget visibility from settings
+  try {
+    const rawSettings = localStorage.getItem('rusty_browser_settings');
+    if (rawSettings) {
+      const s = JSON.parse(rawSettings);
+      if (s.ntp_show_clock === false && clockTime) {
+        const cs = clockTime.closest('.clock-section');
+        if (cs) cs.style.display = 'none';
+      }
+      if (s.ntp_show_greeting === false && clockGreeting) {
+        clockGreeting.style.display = 'none';
+      }
+      if (s.ntp_show_speed_dial === false && speedDialGrid) {
+        const wg = speedDialGrid.closest('.widgets-grid');
+        if (wg) wg.style.display = 'none';
+      }
+      if (s.ntp_show_notes === false && scratchpad) {
+        const wc = scratchpad.closest('.widget-card');
+        if (wc) wc.style.display = 'none';
+      }
+      const weatherEl = document.querySelector('.weather-widget');
+      if (s.ntp_show_weather === false && weatherEl) {
+        weatherEl.style.display = 'none';
+      }
+    }
+  } catch (_) {}
+
   // ── 1. Digital Clock & Greeting ──────────────────────────────────────────
   function updateClock() {
     const now = new Date();

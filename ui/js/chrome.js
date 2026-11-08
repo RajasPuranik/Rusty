@@ -863,6 +863,37 @@
       };
     }
 
+    // Individual Effects Toggles
+    const fxToggles = [
+      { id: 'setting-fx-glow', key: 'fx_glow' },
+      { id: 'setting-fx-tilt', key: 'fx_tilt' },
+      { id: 'setting-fx-magnetic', key: 'fx_magnetic' },
+      { id: 'setting-fx-ripple', key: 'fx_ripple' },
+      { id: 'setting-fx-trail', key: 'fx_trail' },
+      { id: 'setting-fx-confetti', key: 'fx_confetti' },
+      { id: 'setting-fx-canvas-bg', key: 'fx_canvas_bg' },
+      { id: 'setting-ntp-clock', key: 'ntp_show_clock' },
+      { id: 'setting-ntp-greeting', key: 'ntp_show_greeting' },
+      { id: 'setting-ntp-speed-dial', key: 'ntp_show_speed_dial' },
+      { id: 'setting-ntp-notes', key: 'ntp_show_notes' },
+      { id: 'setting-ntp-weather', key: 'ntp_show_weather' },
+      { id: 'setting-show-memory', key: 'show_memory_badge' }
+    ];
+
+    fxToggles.forEach(({ id, key }) => {
+      const el = document.getElementById(id);
+      if (el && window.Settings) {
+        const val = window.Settings.get(key);
+        el.checked = val !== undefined ? Boolean(val) : el.checked;
+        el.onchange = () => {
+          window.Settings.set(key, el.checked);
+          if (key === 'show_memory_badge' && memoryBadge) {
+            memoryBadge.style.display = el.checked ? 'flex' : 'none';
+          }
+        };
+      }
+    });
+
     // Search Engine Dropdown
     const selEngine = document.getElementById('setting-search-engine');
     if (selEngine) {

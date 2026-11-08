@@ -17,6 +17,7 @@
   let fxRipple = true;
   let fxTrail = false;
   let fxConfetti = true;
+  let fxCanvasBg = true;
 
   function loadFxSettings() {
     try {
@@ -30,6 +31,7 @@
         if (s.fx_ripple !== undefined) fxRipple = Boolean(s.fx_ripple);
         if (s.fx_trail !== undefined) fxTrail = Boolean(s.fx_trail);
         if (s.fx_confetti !== undefined) fxConfetti = Boolean(s.fx_confetti);
+        if (s.fx_canvas_bg !== undefined) fxCanvasBg = Boolean(s.fx_canvas_bg);
       }
     } catch (_) {}
   }
@@ -243,7 +245,7 @@
 
   // ── 10. Constellation Canvas Background (Cap at 30 FPS, Pause on Hidden) ──
   const canvas = document.getElementById('ntp-canvas');
-  if (canvas) {
+  if (canvas && fxCanvasBg) {
     const ctx = canvas.getContext('2d');
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
