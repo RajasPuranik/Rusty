@@ -1,6 +1,6 @@
 [package]
 name = "rusty_browser"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A minimal, memory-efficient desktop web browser built with Rust + wry"
 license = "MIT OR Apache-2.0"
@@ -20,6 +20,10 @@ percent-encoding = "2"
 
 # Error handling
 anyhow = "1"
+
+# JSON serialization for IPC between toolbar webview and Rust backend
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 opt-level = 3
