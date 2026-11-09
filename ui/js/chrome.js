@@ -18,6 +18,18 @@
   let draggedTabId = null;
   let lastMemoryInfo = null;
   let lastTelemetryInfo = null;
+  let splitState = {
+    enabled: false,
+    ratio: 0.5,
+    focused_pane: 0,
+    left_tab_id: null,
+    right_tab_id: null,
+    left_url: '',
+    right_url: ''
+  };
+  let lastSentRectKey = '';
+  let rectRafId = 0;
+  let isDraggingSplit = false;
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -38,6 +50,7 @@
   const btnReload = document.getElementById('btn-reload');
   const btnToggleTabs = document.getElementById('btn-toggle-tabs');
   const btnCollapseSidebar = document.getElementById('btn-collapse-sidebar');
+  const omniboxEl = document.querySelector('.omnibox');
   const omniboxInput = document.getElementById('omnibox-input');
   const omniboxSecurity = document.getElementById('omnibox-security');
   const btnStar = document.getElementById('btn-star');
@@ -57,12 +70,34 @@
   const btnNewTabH = document.getElementById('btn-new-tab-h');
   const btnNewTabV = document.getElementById('btn-new-tab-v');
   const viewport = document.getElementById('content-viewport');
+  const splitBarLeft = document.getElementById('split-bar-left');
+  const splitBarRight = document.getElementById('split-bar-right');
+  const splitBadgeLeft = document.getElementById('split-badge-left');
+  const splitBadgeRight = document.getElementById('split-badge-right');
+  const splitLeftUrl = document.getElementById('split-left-url');
+  const splitRightUrl = document.getElementById('split-right-url');
+  const btnSplitSwap = document.getElementById('btn-split-swap');
+  const btnSplitClose = document.getElementById('btn-split-close');
+  const splitStage = document.getElementById('split-panes-stage');
+  const splitPaneLeft = document.getElementById('split-pane-left');
+  const splitPaneRight = document.getElementById('split-pane-right');
+  const splitDivider = document.getElementById('split-divider');
   const modalOverlay = document.getElementById('modal-overlay');
   const commandPalette = document.getElementById('command-palette');
   const paletteInput = document.getElementById('palette-input');
   const paletteResults = document.getElementById('palette-results');
   const settingsModal = document.getElementById('settings-modal');
   const settingsCloseBtn = document.getElementById('settings-close-btn');
+  const memoryModal = document.getElementById('memory-modal');
+  const memoryCloseBtn = document.getElementById('memory-close-btn');
+  const btnCloseMemoryFooter = document.getElementById('btn-close-memory-footer');
+  const btnCopyMemoryReport = document.getElementById('btn-copy-memory-report');
+  const memoryCopyStatus = document.getElementById('memory-copy-status');
+  const confirmModal = document.getElementById('confirm-modal');
+  const confirmTitleEl = document.getElementById('confirm-modal-title');
+  const confirmMessageEl = document.getElementById('confirm-modal-message');
+  const confirmOkBtn = document.getElementById('confirm-modal-ok');
+  const confirmCancelBtn = document.getElementById('confirm-modal-cancel');
   const contextMenu = document.getElementById('tab-context-menu');
 
   // Find Bar Elements
@@ -83,36 +118,168 @@
   const panelSearchInput = document.getElementById('panel-search-input');
   const panelContent = document.getElementById('panel-content');
 
-  // ── 1. Content Rectangle Reporting (Critical for Native Webview bounds) ──
-  function reportContentRect() {
+  // Suppress Windows middle-click autoscroll icon across all browser chrome controls
+  document.addEventListener('mousedown', (e) => {
+    if (e.button === 1) {
+      e.preventDefault();
+    }
+  }, true);
+
+  function hideAllModalPanels() {
+    if (commandPalette) commandPalette.style.display = 'none';
+    if (settingsModal) settingsModal.style.display = 'none';
+    if (memoryModal) memoryModal.style.display = 'none';
+    if (confirmModal) confirmModal.style.display = 'none';
+  }
+
+  function closeAllModals() {
+    if (!modalOverlay) return;
+    isOverlayOpen = false;
+    modalOverlay.classList.remove('open');
+    hideAllModalPanels();
+    pendingConfirmCallback = null;
+    if (window.bridge) window.bridge.send('overlay', { open: false });
+  }
+
+  let pendingConfirmCallback = null;
+  function openConfirmModal({ title, message, okLabel, onConfirm }) {
+    if (!modalOverlay || !confirmModal) {
+      if (onConfirm) onConfirm();
+      return;
+    }
+    hideAllModalPanels();
+    isOverlayOpen = true;
+    modalOverlay.classList.add('open');
+    if (confirmTitleEl) confirmTitleEl.textContent = title || 'Confirm';
+    if (confirmMessageEl) confirmMessageEl.textContent = message || 'Are you sure?';
+    if (confirmOkBtn) confirmOkBtn.textContent = okLabel || 'Confirm';
+    pendingConfirmCallback = onConfirm || null;
+    confirmModal.style.display = 'flex';
+    if (window.bridge) window.bridge.send('overlay', { open: true });
+    if (confirmOkBtn) confirmOkBtn.focus();
+  }
+
+  if (confirmCancelBtn) confirmCancelBtn.addEventListener('click', closeAllModals);
+  if (confirmOkBtn) {
+    confirmOkBtn.addEventListener('click', () => {
+      const cb = pendingConfirmCallback;
+      closeAllModals();
+      if (cb) cb();
+    });
+  }
+
+  // ── 1. Content Rectangle Reporting (Deduplicated + RAF Debounced) ──
+  function sendContentRectNow(force = false) {
     if (!viewport) return;
     const rect = viewport.getBoundingClientRect();
-    const payload = {
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height)
-    };
+    const ox = Math.round(rect.left);
+    const oy = Math.round(rect.top);
+    const ow = Math.round(rect.width);
+    const oh = Math.round(rect.height);
+    if (ow < 10 || oh < 10) return;
+
+    const payload = { x: ox, y: oy, width: ow, height: oh };
+    let rectKey = `${ox},${oy},${ow},${oh}|0`;
+
+    if (splitState.enabled && viewport.classList.contains('split-active') && splitPaneLeft && splitPaneRight) {
+      const lr = splitPaneLeft.getBoundingClientRect();
+      const rr = splitPaneRight.getBoundingClientRect();
+      const lx = Math.round(lr.left);
+      const ly = Math.round(lr.top);
+      const lw = Math.round(lr.width);
+      const lh = Math.round(lr.height);
+      const rx = Math.round(rr.left);
+      const ry = Math.round(rr.top);
+      const rw = Math.round(rr.width);
+      const rh = Math.round(rr.height);
+      if (lw >= 10 && lh >= 10 && rw >= 10 && rh >= 10) {
+        payload.left = { x: lx, y: ly, width: lw, height: lh };
+        payload.right = { x: rx, y: ry, width: rw, height: rh };
+        payload.ratio = Number(splitState.ratio.toFixed(4));
+        rectKey = `${ox},${oy},${ow},${oh}|1|${lx},${ly},${lw},${lh}|${rx},${ry},${rw},${rh}|${payload.ratio}`;
+      }
+    }
+
+    if (!force && rectKey === lastSentRectKey) {
+      return;
+    }
+    lastSentRectKey = rectKey;
     if (window.bridge) {
       window.bridge.send('content_rect', payload);
     }
   }
 
-  window.addEventListener('resize', reportContentRect);
-  window.addEventListener('tabs-layout-changed', () => setTimeout(reportContentRect, 50));
+  function reportContentRect(force = false) {
+    if (rectRafId) cancelAnimationFrame(rectRafId);
+    rectRafId = requestAnimationFrame(() => {
+      rectRafId = 0;
+      sendContentRectNow(force === true);
+    });
+  }
 
-  // ── 2. Navigation Actions ────────────────────────────────────────────────
-  if (btnBack) btnBack.addEventListener('click', () => window.bridge.send('back'));
-  if (btnForward) btnForward.addEventListener('click', () => window.bridge.send('forward'));
-  if (btnReload) btnReload.addEventListener('click', () => window.bridge.send('reload'));
+  window.addEventListener('resize', () => reportContentRect(false));
+  window.addEventListener('tabs-layout-changed', () => setTimeout(() => reportContentRect(false), 50));
+
+  // ── 2. Navigation Actions (Click + Middle-click) ─────────────────────────
+  if (btnBack) {
+    btnBack.addEventListener('click', () => window.bridge.send('back'));
+    btnBack.addEventListener('auxclick', (e) => {
+      if (e.button !== 1 || btnBack.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.bridge.send('open_history_entry_in_new_tab', { direction: 'back', background: e.shiftKey ? false : null });
+    });
+  }
+  if (btnForward) {
+    btnForward.addEventListener('click', () => window.bridge.send('forward'));
+    btnForward.addEventListener('auxclick', (e) => {
+      if (e.button !== 1 || btnForward.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.bridge.send('open_history_entry_in_new_tab', { direction: 'forward', background: e.shiftKey ? false : null });
+    });
+  }
+  if (btnReload) {
+    btnReload.addEventListener('click', () => window.bridge.send('reload'));
+    btnReload.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeTabId !== null) {
+        window.bridge.send('duplicate_tab', { tab_id: activeTabId, background: e.shiftKey ? false : null });
+      }
+    });
+  }
   if (btnStar) {
     btnStar.addEventListener('click', () => {
       window.bridge.send('toggle_bookmark', { url: activeUrl });
     });
   }
 
-  // ── 3. Omnibox Enter & URL Detection ─────────────────────────────────────
+  // ── 3. Omnibox Enter, URL Detection & Engine Outline (A4) ─────────────────
+  function updateOmniboxEngineOutline() {
+    if (!omniboxEl || !omniboxInput) return;
+    const enabled = !window.Settings || window.Settings.get('omnibox_engine_outline') !== false;
+    const isSearch = Boolean(
+      enabled &&
+      window.RustyEngines &&
+      window.RustyEngines.isSearchQueryText(omniboxInput.value)
+    );
+    if (isSearch) {
+      const engineId = (window.Settings && window.Settings.get('default_search')) || 'google';
+      const custom = (window.Settings && window.Settings.get('custom_engines')) || [];
+      omniboxEl.classList.add('engine-outline-box', 'omnibox-search-active');
+      window.RustyEngines.applyOutlineStyles(omniboxEl, engineId, custom);
+    } else {
+      omniboxEl.classList.remove('engine-outline-box', 'omnibox-search-active');
+      if (window.RustyEngines) {
+        window.RustyEngines.applyOutlineStyles(omniboxEl, null);
+      }
+    }
+  }
+
   if (omniboxInput) {
+    omniboxInput.addEventListener('input', updateOmniboxEngineOutline);
     omniboxInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const query = omniboxInput.value.trim();
@@ -123,13 +290,16 @@
       } else if (e.key === 'Escape') {
         const isNewTab = !activeUrl || activeUrl === 'about:blank' || activeUrl === 'about:newtab' || activeUrl.includes('newtab.html');
         omniboxInput.value = isNewTab ? '' : activeUrl;
+        updateOmniboxEngineOutline();
         omniboxInput.blur();
       }
     });
 
     omniboxInput.addEventListener('focus', () => {
       omniboxInput.select();
+      updateOmniboxEngineOutline();
     });
+    omniboxInput.addEventListener('blur', updateOmniboxEngineOutline);
   }
 
   function handleAddressNavigation(query) {
@@ -152,12 +322,22 @@
     window.bridge.send('navigate', { url: query });
   }
 
-  // ── 4. New Tab Buttons ───────────────────────────────────────────────────
+  // ── 4. New Tab Buttons (Left-click = New Tab, Middle-click = Paste & Go) ─
   function handleNewTab() {
-    window.bridge.send('new_tab', { url: 'about:blank' });
+    window.bridge.send('new_tab', { url: 'about:blank', background: false });
   }
-  if (btnNewTabH) btnNewTabH.addEventListener('click', handleNewTab);
-  if (btnNewTabV) btnNewTabV.addEventListener('click', handleNewTab);
+  function attachNewTabAuxHandler(btn) {
+    if (!btn) return;
+    btn.addEventListener('click', handleNewTab);
+    btn.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.bridge.send('paste_new_tab');
+    });
+  }
+  attachNewTabAuxHandler(btnNewTabH);
+  attachNewTabAuxHandler(btnNewTabV);
 
   // ── 5. Toggle Vertical vs Horizontal Tabs & Sidebar Collapse ─────────────
   if (btnToggleTabs) {
@@ -326,6 +506,26 @@
       }
     });
 
+    // Middle-click: Close tab (confirm via modal if pinned)
+    tabEl.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (tab.pinned) {
+        openConfirmModal({
+          title: 'Close Pinned Tab',
+          message: `Close pinned tab "${tab.title || tab.url}"?`,
+          okLabel: 'Close Tab',
+          onConfirm: () => window.bridge.send('close_tab', { tab_id: tab.id })
+        });
+      } else {
+        if (window.fxTabPoof) {
+          window.fxTabPoof(e.clientX, e.clientY);
+        }
+        window.bridge.send('close_tab', { tab_id: tab.id });
+      }
+    });
+
     // Right-click: Context Menu
     tabEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -431,7 +631,7 @@
 
     // Duplicate
     addItem('Duplicate tab', 'copy', '', () => {
-      window.bridge.send('duplicate_tab', { tab_id: tab.id });
+      window.bridge.send('duplicate_tab', { tab_id: tab.id, background: false });
     });
 
     // Discard / Sleep (Memory Saver)
@@ -646,6 +846,7 @@
       filtered.forEach((b) => {
         const item = document.createElement('div');
         item.className = 'panel-item';
+        item.title = `${b.url} (Middle-click: open in new tab)`;
         item.innerHTML = `
           ${window.Icons ? window.Icons.get('star', '', 13) : '★'}
           <div class="item-title">${escapeHtml(b.title || b.url)}</div>
@@ -653,8 +854,21 @@
             ${window.Icons ? window.Icons.get('close', '', 10) : '×'}
           </button>
         `;
-        item.addEventListener('click', () => window.bridge.send('navigate', { url: b.url }));
         const removeBtn = item.querySelector('button');
+        item.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            e.preventDefault();
+            window.bridge.send('new_tab', { url: b.url, background: e.shiftKey ? false : null, title: b.title || null });
+          } else {
+            window.bridge.send('navigate', { url: b.url });
+          }
+        });
+        item.addEventListener('auxclick', (e) => {
+          if (e.button !== 1 || removeBtn.contains(e.target)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          window.bridge.send('new_tab', { url: b.url, background: e.shiftKey ? false : null, title: b.title || null });
+        });
         removeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           window.bridge.send('toggle_bookmark', { url: b.url });
@@ -669,9 +883,12 @@
         panelActionBtn.innerHTML = window.Icons ? window.Icons.get('trash', '', 13) : '🗑';
         panelActionBtn.title = 'Clear Browsing History';
         panelActionBtn.onclick = () => {
-          if (confirm('Clear all browsing history?')) {
-            window.bridge.send('clear_browsing_data', { history: true });
-          }
+          openConfirmModal({
+            title: 'Clear Browsing History',
+            message: 'Delete all recorded browsing history from disk?',
+            okLabel: 'Clear History',
+            onConfirm: () => window.bridge.send('clear_browsing_data', { history: true })
+          });
         };
       }
 
@@ -690,6 +907,7 @@
       filtered.forEach((h) => {
         const item = document.createElement('div');
         item.className = 'panel-item';
+        item.title = `${h.url} (Middle-click: open in new tab)`;
         item.innerHTML = `
           ${window.Icons ? window.Icons.get('clock', '', 13) : '🕒'}
           <div style="flex: 1; overflow: hidden;">
@@ -697,7 +915,20 @@
             <div class="item-sub">${escapeHtml(h.url)}</div>
           </div>
         `;
-        item.addEventListener('click', () => window.bridge.send('navigate', { url: h.url }));
+        item.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            e.preventDefault();
+            window.bridge.send('new_tab', { url: h.url, background: e.shiftKey ? false : null, title: h.title || null });
+          } else {
+            window.bridge.send('navigate', { url: h.url });
+          }
+        });
+        item.addEventListener('auxclick', (e) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          e.stopPropagation();
+          window.bridge.send('new_tab', { url: h.url, background: e.shiftKey ? false : null, title: h.title || null });
+        });
         panelContent.appendChild(item);
       });
     } else if (activeSidePanel === 'downloads') {
@@ -713,8 +944,13 @@
 
       dls.forEach((dl) => {
         const pct = Math.max(0, Math.min(100, Number(dl.progress) || 0));
+        const hasUrl = typeof dl.url === 'string' && /^https?:\/\//i.test(dl.url);
         const card = document.createElement('div');
         card.className = 'download-card';
+        if (hasUrl) {
+          card.style.cursor = 'pointer';
+          card.title = `Source: ${dl.url} (Middle-click: open in new tab)`;
+        }
         card.innerHTML = `
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500;">
             <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${escapeHtml(dl.filename)}</span>
@@ -727,6 +963,20 @@
             <span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(dl.state || 'completed')}</span>
           </div>
         `;
+        if (hasUrl) {
+          card.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+              e.preventDefault();
+              window.bridge.send('new_tab', { url: dl.url, background: e.shiftKey ? false : null, title: dl.filename || null });
+            }
+          });
+          card.addEventListener('auxclick', (e) => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            e.stopPropagation();
+            window.bridge.send('new_tab', { url: dl.url, background: e.shiftKey ? false : null, title: dl.filename || null });
+          });
+        }
         panelContent.appendChild(card);
       });
     }
@@ -760,11 +1010,137 @@
     });
   }
 
-  // Split view button
+  // ── 11b. Split View Controls & Draggable Divider ─────────────────────────
+  function isInternalNewTabUrl(u) {
+    return !u || u === 'about:blank' || u === 'about:newtab' || u.includes('newtab.html');
+  }
+
+  function applySplitViewState(sv) {
+    if (!sv || typeof sv !== 'object') return;
+    const enabled = Boolean(sv.enabled);
+    splitState.enabled = enabled;
+    if (typeof sv.ratio === 'number' && !isDraggingSplit) {
+      splitState.ratio = Math.max(0.20, Math.min(0.80, sv.ratio));
+    }
+    splitState.focused_pane = sv.focused_pane === 1 ? 1 : 0;
+    splitState.left_tab_id = sv.left_tab_id ?? null;
+    splitState.right_tab_id = sv.right_tab_id ?? null;
+    splitState.left_url = sv.left_url || '';
+    splitState.right_url = sv.right_url || '';
+
+    if (btnSplitView) btnSplitView.classList.toggle('active', enabled);
+    if (viewport) viewport.classList.toggle('split-active', enabled);
+    if (splitStage) {
+      splitStage.style.setProperty('--split-ratio', `${(splitState.ratio * 100).toFixed(3)}%`);
+    }
+    if (splitBarLeft) splitBarLeft.classList.toggle('focused', enabled && splitState.focused_pane === 0);
+    if (splitBarRight) splitBarRight.classList.toggle('focused', enabled && splitState.focused_pane === 1);
+
+    if (splitLeftUrl && document.activeElement !== splitLeftUrl) {
+      splitLeftUrl.value = isInternalNewTabUrl(splitState.left_url) ? '' : splitState.left_url;
+    }
+    if (splitRightUrl && document.activeElement !== splitRightUrl) {
+      splitRightUrl.value = isInternalNewTabUrl(splitState.right_url) ? '' : splitState.right_url;
+    }
+  }
+
   if (btnSplitView) {
     btnSplitView.addEventListener('click', () => {
-      alert('Split View is configured in the UI layer (needs Rust multi-view support).');
       window.bridge.send('split_view');
+    });
+  }
+  if (btnSplitSwap) {
+    btnSplitSwap.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.bridge.send('split_swap');
+    });
+  }
+  if (btnSplitClose) {
+    btnSplitClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.bridge.send('split_close');
+    });
+  }
+  if (splitBarLeft) {
+    splitBarLeft.addEventListener('click', (e) => {
+      if (e.target === splitLeftUrl) return;
+      window.bridge.send('split_focus', { pane: 0 });
+    });
+  }
+  if (splitBarRight) {
+    splitBarRight.addEventListener('click', (e) => {
+      if (e.target === splitRightUrl || (btnSplitSwap && btnSplitSwap.contains(e.target)) || (btnSplitClose && btnSplitClose.contains(e.target))) return;
+      window.bridge.send('split_focus', { pane: 1 });
+    });
+  }
+
+  function wireSplitUrlInput(inputEl, paneIdx) {
+    if (!inputEl) return;
+    inputEl.addEventListener('focus', () => {
+      window.bridge.send('split_focus', { pane: paneIdx });
+      inputEl.select();
+    });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = inputEl.value.trim();
+        if (q) {
+          window.bridge.send('split_navigate', { pane: paneIdx, url: q });
+          inputEl.blur();
+        }
+      } else if (e.key === 'Escape') {
+        const cur = paneIdx === 0 ? splitState.left_url : splitState.right_url;
+        inputEl.value = isInternalNewTabUrl(cur) ? '' : cur;
+        inputEl.blur();
+      }
+    });
+  }
+  wireSplitUrlInput(splitLeftUrl, 0);
+  wireSplitUrlInput(splitRightUrl, 1);
+
+  if (splitDivider && splitStage) {
+    const applyDividerRatio = (clientX, forceSend) => {
+      const stageRect = splitStage.getBoundingClientRect();
+      if (stageRect.width < 40) return;
+      const rawRatio = (clientX - stageRect.left) / stageRect.width;
+      const clamped = Math.max(0.20, Math.min(0.80, rawRatio));
+      splitState.ratio = clamped;
+      splitStage.style.setProperty('--split-ratio', `${(clamped * 100).toFixed(3)}%`);
+      reportContentRect(forceSend);
+    };
+
+    const endDividerDrag = (e) => {
+      if (!isDraggingSplit) return;
+      isDraggingSplit = false;
+      splitDivider.classList.remove('dragging');
+      if (splitStage) splitStage.classList.remove('dragging-split');
+      try {
+        if (e && e.pointerId !== undefined && splitDivider.hasPointerCapture(e.pointerId)) {
+          splitDivider.releasePointerCapture(e.pointerId);
+        }
+      } catch (_) {}
+      reportContentRect(true);
+    };
+
+    splitDivider.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !splitState.enabled) return;
+      e.preventDefault();
+      isDraggingSplit = true;
+      splitDivider.classList.add('dragging');
+      if (splitStage) splitStage.classList.add('dragging-split');
+      try { splitDivider.setPointerCapture(e.pointerId); } catch (_) {}
+      applyDividerRatio(e.clientX, false);
+    });
+    splitDivider.addEventListener('pointermove', (e) => {
+      if (!isDraggingSplit) return;
+      applyDividerRatio(e.clientX, false);
+    });
+    splitDivider.addEventListener('pointerup', endDividerDrag);
+    splitDivider.addEventListener('pointercancel', endDividerDrag);
+    splitDivider.addEventListener('dblclick', () => {
+      if (!splitState.enabled) return;
+      splitState.ratio = 0.5;
+      splitStage.style.setProperty('--split-ratio', '50%');
+      reportContentRect(true);
     });
   }
 
@@ -780,20 +1156,16 @@
   // ── 12. Full Settings Page / Modal (Ctrl+, or about:settings) ────────────
   function openSettings() {
     if (!modalOverlay || !settingsModal) return;
+    hideAllModalPanels();
     isOverlayOpen = true;
     modalOverlay.classList.add('open');
-    if (commandPalette) commandPalette.style.display = 'none';
     settingsModal.style.display = 'flex';
     window.bridge.send('overlay', { open: true });
     populateSettingsUI();
   }
 
   function closeSettings() {
-    if (!modalOverlay || !settingsModal) return;
-    isOverlayOpen = false;
-    modalOverlay.classList.remove('open');
-    settingsModal.style.display = 'none';
-    window.bridge.send('overlay', { open: false });
+    closeAllModals();
   }
 
   if (btnSettings) btnSettings.addEventListener('click', openSettings);
@@ -901,8 +1273,10 @@
       };
     }
 
-    // Individual Effects Toggles
+    // Individual Effects, Tabs & Widget Toggles
     const fxToggles = [
+      { id: 'setting-open-tabs-background', key: 'open_tabs_in_background' },
+      { id: 'setting-omnibox-outline', key: 'omnibox_engine_outline' },
       { id: 'setting-fx-glow', key: 'fx_glow' },
       { id: 'setting-fx-tilt', key: 'fx_tilt' },
       { id: 'setting-fx-magnetic', key: 'fx_magnetic' },
@@ -915,6 +1289,7 @@
       { id: 'setting-ntp-speed-dial', key: 'ntp_show_speed_dial' },
       { id: 'setting-ntp-notes', key: 'ntp_show_notes' },
       { id: 'setting-ntp-weather', key: 'ntp_show_weather' },
+      { id: 'setting-ntp-globe-clouds', key: 'ntp_globe_clouds' },
       { id: 'setting-show-memory', key: 'show_memory_badge' }
     ];
 
@@ -928,17 +1303,221 @@
           if (key === 'show_memory_badge' && memoryBadge) {
             memoryBadge.style.display = el.checked ? 'inline-flex' : 'none';
           }
+          if (key === 'omnibox_engine_outline') {
+            updateOmniboxEngineOutline();
+          }
         };
       }
     });
 
-    // Search Engine Dropdown
-    const selEngine = document.getElementById('setting-search-engine');
-    if (selEngine) {
-      selEngine.value = window.Settings ? window.Settings.get('default_search') || 'google' : 'google';
-      selEngine.onchange = () => {
-        if (window.Settings) window.Settings.set('default_search', selEngine.value);
-        updateOmniboxPlaceholder(selEngine.value);
+    // Weather & Globe City setting (Priority 1 location source)
+    const inpWeatherCity = document.getElementById('setting-weather-location');
+    const btnApplyWeatherCity = document.getElementById('btn-apply-weather-location');
+    if (inpWeatherCity && window.Settings) {
+      const savedCity = window.Settings.get('weather_location') || '';
+      if (document.activeElement !== inpWeatherCity) {
+        inpWeatherCity.value = savedCity;
+      }
+      const commitWeatherCity = () => {
+        const raw = inpWeatherCity.value.trim().slice(0, 64);
+        const nextVal = raw.toLowerCase() === 'auto' ? '' : raw;
+        inpWeatherCity.value = nextVal;
+        window.Settings.set('weather_location', nextVal);
+      };
+      if (btnApplyWeatherCity) btnApplyWeatherCity.onclick = commitWeatherCity;
+      inpWeatherCity.onchange = commitWeatherCity;
+      inpWeatherCity.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitWeatherCity();
+        }
+      };
+    }
+
+    // Companion Pet Section (Crazy skin only)
+    const petMinimalNote = document.getElementById('settings-pet-minimal-note');
+    const petCrazyControls = document.getElementById('settings-pet-crazy-controls');
+    if (petMinimalNote && petCrazyControls) {
+      const isCrazy = currentSkin === 'crazy';
+      petMinimalNote.style.display = isCrazy ? 'none' : 'block';
+      petCrazyControls.style.display = isCrazy ? 'block' : 'none';
+      if (isCrazy && window.Settings) {
+        const selPetType = document.getElementById('setting-pet-type');
+        const inpPetName = document.getElementById('setting-pet-name');
+        const inpPetColor = document.getElementById('setting-pet-color');
+        const selPetAcc = document.getElementById('setting-pet-accessory');
+        const cbPetRoam = document.getElementById('setting-pet-roam');
+        const moodLabel = document.getElementById('setting-pet-mood-label');
+        const btnPetTreat = document.getElementById('btn-settings-pet-treat');
+        const btnPetRemove = document.getElementById('btn-settings-pet-remove');
+
+        const refreshPetControls = () => {
+          const pType = window.Settings.get('pet_type') || '';
+          const pName = window.Settings.get('pet_name') || 'Pixel';
+          const pColor = window.Settings.get('pet_color') || '#f97316';
+          const pAcc = window.Settings.get('pet_accessory') || 'none';
+          const pRoam = Boolean(window.Settings.get('pet_roam'));
+          const pMood = window.Settings.get('pet_mood') || 'content';
+          const hasPet = Boolean(pType);
+
+          if (selPetType) selPetType.value = pType;
+          if (inpPetName) {
+            if (document.activeElement !== inpPetName) inpPetName.value = pName;
+            inpPetName.disabled = !hasPet;
+          }
+          if (inpPetColor) {
+            inpPetColor.value = /^#[0-9a-fA-F]{6}$/.test(pColor) ? pColor : '#f97316';
+            inpPetColor.disabled = !hasPet;
+          }
+          if (selPetAcc) {
+            selPetAcc.value = pAcc;
+            selPetAcc.disabled = !hasPet;
+          }
+          if (cbPetRoam) {
+            cbPetRoam.checked = pRoam;
+            cbPetRoam.disabled = !hasPet;
+          }
+          if (moodLabel) {
+            moodLabel.textContent = hasPet ? `Mood: ${pMood}` : 'No companion adopted yet';
+          }
+          if (btnPetTreat) {
+            const petState = window.RustyPet && typeof window.RustyPet.getState === 'function'
+              ? window.RustyPet.getState()
+              : null;
+            const cd = petState ? Number(petState.treatCooldownRemainingSec || 0) : 0;
+            btnPetTreat.disabled = !hasPet || cd > 0;
+            btnPetTreat.textContent = cd > 0 ? `Cooldown (${cd}s)` : 'Feed Treat';
+          }
+          if (btnPetRemove) {
+            btnPetRemove.disabled = !hasPet;
+          }
+        };
+
+        refreshPetControls();
+
+        if (selPetType) {
+          selPetType.onchange = () => {
+            const nextType = selPetType.value;
+            if (!nextType) {
+              window.Settings.setMany({ pet_type: '', pet_roam: false });
+            } else {
+              window.Settings.set('pet_type', nextType);
+            }
+            refreshPetControls();
+          };
+        }
+        if (inpPetName) {
+          inpPetName.onchange = () => {
+            const clean = inpPetName.value.trim().slice(0, 24) || 'Pixel';
+            inpPetName.value = clean;
+            window.Settings.set('pet_name', clean);
+          };
+        }
+        if (inpPetColor) {
+          inpPetColor.onchange = () => {
+            window.Settings.set('pet_color', inpPetColor.value || '#f97316');
+          };
+        }
+        if (selPetAcc) {
+          selPetAcc.onchange = () => {
+            window.Settings.set('pet_accessory', selPetAcc.value || 'none');
+          };
+        }
+        if (cbPetRoam) {
+          cbPetRoam.onchange = () => {
+            window.Settings.set('pet_roam', cbPetRoam.checked);
+          };
+        }
+        if (btnPetTreat) {
+          btnPetTreat.onclick = () => {
+            if (window.RustyPet && typeof window.RustyPet.feedTreat === 'function') {
+              window.RustyPet.feedTreat();
+            } else if (window.Settings) {
+              window.Settings.set('pet_mood', 'happy');
+            }
+            refreshPetControls();
+          };
+        }
+        if (btnPetRemove) {
+          btnPetRemove.onclick = () => {
+            window.Settings.setMany({ pet_type: '', pet_roam: false, pet_mood: 'content' });
+            refreshPetControls();
+          };
+        }
+      }
+    }
+
+    // Search Engine Dropdown + Custom Search Engines Manager
+    function renderSearchEngineSettingsSection() {
+      const selEngine = document.getElementById('setting-search-engine');
+      const customListEl = document.getElementById('custom-engines-list');
+      const engines = window.RustyEngines ? window.RustyEngines.getAll() : [];
+      const activeId = (window.Settings && window.Settings.get('default_search')) || 'google';
+
+      if (selEngine) {
+        if (engines.length > 0) {
+          selEngine.innerHTML = '';
+          engines.forEach((eng) => {
+            const opt = document.createElement('option');
+            opt.value = eng.id;
+            opt.textContent = eng.builtin ? eng.name : `${eng.name} (Custom)`;
+            selEngine.appendChild(opt);
+          });
+        }
+        selEngine.value = activeId;
+        selEngine.onchange = () => {
+          if (window.Settings) window.Settings.set('default_search', selEngine.value);
+          updateOmniboxPlaceholder(selEngine.value);
+          updateOmniboxEngineOutline();
+        };
+      }
+
+      if (customListEl && window.RustyEngines) {
+        const customs = window.RustyEngines.getCustomEngines();
+        customListEl.innerHTML = '';
+        customs.forEach((eng) => {
+          const resolved = window.RustyEngines.resolveOutlineColors(eng);
+          const row = document.createElement('div');
+          row.className = 'custom-engine-row';
+          row.innerHTML = `
+            <span class="custom-engine-swatch" style="background: ${escapeHtml(resolved.swatch)};"></span>
+            <span class="custom-engine-name">${escapeHtml(eng.name)}</span>
+            <span class="custom-engine-tpl">${escapeHtml(eng.template)}</span>
+            <button type="button" class="btn-icon" title="Remove ${escapeHtml(eng.name)}" style="width: 22px; height: 22px;">×</button>
+          `;
+          row.querySelector('button').addEventListener('click', () => {
+            window.RustyEngines.removeCustomEngine(eng.id);
+            renderSearchEngineSettingsSection();
+            updateOmniboxPlaceholder(window.Settings ? window.Settings.get('default_search') : 'google');
+            updateOmniboxEngineOutline();
+          });
+          customListEl.appendChild(row);
+        });
+      }
+    }
+    renderSearchEngineSettingsSection();
+
+    const customEngineForm = document.getElementById('settings-custom-engine-form');
+    const customNameInput = document.getElementById('custom-engine-name');
+    const customTplInput = document.getElementById('custom-engine-template');
+    const customColorInput = document.getElementById('custom-engine-color');
+    if (customColorInput && window.RustyEngines) {
+      customColorInput.value = window.RustyEngines.getDefaultAccentHex();
+    }
+    if (customEngineForm && window.RustyEngines) {
+      customEngineForm.onsubmit = (e) => {
+        e.preventDefault();
+        const name = customNameInput ? customNameInput.value.trim() : '';
+        const template = customTplInput ? customTplInput.value.trim() : '';
+        const color = customColorInput ? customColorInput.value : window.RustyEngines.getDefaultAccentHex();
+        if (!name || !template) return;
+        const added = window.RustyEngines.addCustomEngine({ name, template, color });
+        if (added) {
+          if (customNameInput) customNameInput.value = '';
+          if (customTplInput) customTplInput.value = '';
+          renderSearchEngineSettingsSection();
+          updateOmniboxEngineOutline();
+        }
       };
     }
 
@@ -952,39 +1531,37 @@
       };
     }
 
-    // Clear buttons
+    // Clear buttons (non-blocking confirmation modal)
     const btnClrHist = document.getElementById('btn-clear-history');
     if (btnClrHist) {
       btnClrHist.onclick = () => {
-        if (confirm('Delete all recorded history?')) {
-          window.bridge.send('clear_browsing_data', { history: true });
-          alert('Browsing history cleared.');
-        }
+        openConfirmModal({
+          title: 'Clear Browsing History',
+          message: 'Delete all recorded browsing history from disk?',
+          okLabel: 'Clear History',
+          onConfirm: () => window.bridge.send('clear_browsing_data', { history: true })
+        });
       };
     }
 
     const btnClrCache = document.getElementById('btn-clear-cache');
     if (btnClrCache) {
       btnClrCache.onclick = () => {
-        if (confirm('Clear cache and cookies?')) {
-          window.bridge.send('clear_browsing_data', { cache: true });
-          alert('Cache and cookies cleared.');
-        }
+        openConfirmModal({
+          title: 'Clear Cookies & Cache',
+          message: 'Clear cached files, cookies, and browsing session state?',
+          okLabel: 'Clear Cache',
+          onConfirm: () => window.bridge.send('clear_browsing_data', { cache: true })
+        });
       };
     }
   }
 
   function updateOmniboxPlaceholder(engineId) {
     if (!omniboxInput) return;
-    const names = {
-      google: 'Google',
-      duckduckgo: 'DuckDuckGo',
-      bing: 'Bing',
-      brave: 'Brave Search',
-      youtube: 'YouTube',
-      github: 'GitHub'
-    };
-    const label = names[engineId] || 'Google';
+    const custom = (window.Settings && window.Settings.get('custom_engines')) || [];
+    const eng = window.RustyEngines ? window.RustyEngines.getById(engineId || 'google', custom) : null;
+    const label = eng ? eng.name : 'Google';
     omniboxInput.placeholder = `Search with ${label} or enter address`;
   }
 
@@ -1017,6 +1594,7 @@
     if (s.default_search) {
       updateOmniboxPlaceholder(s.default_search);
     }
+    updateOmniboxEngineOutline();
     if (settingsModal && settingsModal.style.display === 'flex') {
       populateSettingsUI();
     }
@@ -1026,6 +1604,7 @@
   if (window.Settings && window.Settings.data) {
     applyHostSettingsToChrome(window.Settings.data);
   }
+  window.addEventListener('settings-changed', () => updateOmniboxEngineOutline());
 
   window.bridge.on('ui_settings_sync', (data) => {
     if (!data || !data.settings) return;
@@ -1045,6 +1624,12 @@
   window.bridge.on('open_command_palette', openCommandPalette);
   window.bridge.on('open_side_panel', (data) => openSidePanel((data && data.panel) || 'bookmarks'));
   window.bridge.on('open_find_bar', openFindBar);
+  window.bridge.on('focus_omnibox', () => {
+    if (omniboxInput) {
+      omniboxInput.focus();
+      omniboxInput.select();
+    }
+  });
 
   // ── 13. State Update Listener from Bridge ─────────────────────────────────
   window.bridge.on('state_update', (data) => {
@@ -1067,6 +1652,7 @@
         const isNewTab = !data.url || data.url === 'about:blank' || data.url === 'about:newtab' || data.url.includes('newtab.html');
         omniboxInput.value = isNewTab ? '' : data.url;
       }
+      updateOmniboxEngineOutline();
       if (omniboxSecurity) {
         const isSecure = data.url.startsWith('https://');
         omniboxSecurity.className = `omnibox-security-icon ${isSecure ? 'secure' : ''}`;
@@ -1088,6 +1674,8 @@
 
     if (data.memory) updateMemoryBadge(data.memory);
 
+    if (data.split_view) applySplitViewState(data.split_view);
+
     if (window.bridge.isMock && viewport) updateMockViewport(activeUrl);
 
     if (activeSidePanel) renderSidePanel();
@@ -1095,30 +1683,197 @@
     reportContentRect();
   });
 
-  // ── 14. Memory Badge Updates ─────────────────────────────────────────────
+  // ── 14. Memory Badge Updates & Process Breakdown Modal ────────────────────
+  function getMemoryPrivateWs(mem) {
+    if (!mem) return 0;
+    return typeof mem.private_ws_mb === 'number' ? mem.private_ws_mb : (Number(mem.total_mb) || 0);
+  }
+
   function refreshMemoryBadgeDisplay() {
     if (!memoryText || !lastMemoryInfo) return;
-    const totalMb = lastMemoryInfo.total_mb;
-    memoryText.textContent = totalMb ? `${totalMb.toFixed(0)} MB` : '-- MB';
+    const privateWs = getMemoryPrivateWs(lastMemoryInfo);
+    const workingSet = Number(lastMemoryInfo.working_set_mb) || privateWs;
+    const commitMb = Number(lastMemoryInfo.commit_mb) || privateWs;
+    const hostMb = Number(lastMemoryInfo.host_private_ws_mb) || 0;
+    const procCount = Number(lastMemoryInfo.process_count) || (Array.isArray(lastMemoryInfo.processes) ? lastMemoryInfo.processes.length : 1);
+
+    memoryText.textContent = privateWs > 0 ? `${privateWs.toFixed(0)} MB` : '-- MB';
     if (memoryBadge) {
-      const parts = [];
-      if (totalMb) {
-        parts.push(`Browser RAM tree: ${totalMb.toFixed(1)} MB`);
-      }
+      const lines = [
+        `Metric: Private Working Set (Task Manager "Memory" column)`,
+        `Browser Tree Total: ${privateWs.toFixed(1)} MB across ${procCount} processes (Host: ${hostMb.toFixed(1)} MB)`,
+        `Working Set (incl. shared): ${workingSet.toFixed(1)} MB • Commit: ${commitMb.toFixed(1)} MB`
+      ];
       if (lastMemoryInfo.savings_percent !== undefined) {
-        parts.push(`${lastMemoryInfo.savings_percent.toFixed(1)}% less than Chrome baseline`);
+        const cmpMode = lastMemoryInfo.chrome_live_measured
+          ? `live Chrome tree (${Number(lastMemoryInfo.chrome_baseline_mb).toFixed(1)} MB Private WS, ${lastMemoryInfo.chrome_process_count} procs)`
+          : `Chrome Private WS baseline (${Number(lastMemoryInfo.chrome_baseline_mb).toFixed(1)} MB)`;
+        const sav = Number(lastMemoryInfo.savings_percent);
+        const dirWord = sav >= 0 ? 'less' : 'more';
+        lines.push(`${Math.abs(sav).toFixed(1)}% ${dirWord} vs ${cmpMode}`);
       }
       if (lastTelemetryInfo) {
-        parts.push(`OS CPU: ${Math.round(lastTelemetryInfo.sys_cpu_percent)}%`);
-        parts.push(`OS RAM: ${Math.round(lastTelemetryInfo.sys_ram_percent)}% (${lastTelemetryInfo.sys_ram_used_gb}/${lastTelemetryInfo.sys_ram_total_gb} GB)`);
+        lines.push(`OS CPU: ${Math.round(lastTelemetryInfo.sys_cpu_percent)}% • OS RAM: ${Math.round(lastTelemetryInfo.sys_ram_percent)}% (${lastTelemetryInfo.sys_ram_used_gb}/${lastTelemetryInfo.sys_ram_total_gb} GB)`);
       }
-      memoryBadge.title = parts.join(' • ') || 'Live process memory';
+      lines.push('Click for per-process breakdown & Task Manager guide');
+      memoryBadge.title = lines.join('\n');
     }
+  }
+
+  function renderMemoryModal() {
+    const subEl = document.getElementById('memory-modal-subtitle');
+    const summaryEl = document.getElementById('memory-summary-grid');
+    const noteEl = document.getElementById('memory-taskmgr-note');
+    const tbody = document.getElementById('memory-table-body');
+    const tfoot = document.getElementById('memory-table-foot');
+    if (!summaryEl || !tbody || !tfoot) return;
+
+    const mem = lastMemoryInfo || {
+      private_ws_mb: 0,
+      total_mb: 0,
+      working_set_mb: 0,
+      commit_mb: 0,
+      host_private_ws_mb: 0,
+      process_count: 0,
+      processes: []
+    };
+
+    const pws = getMemoryPrivateWs(mem);
+    const ws = Number(mem.working_set_mb) || 0;
+    const commit = Number(mem.commit_mb) || 0;
+    const host = Number(mem.host_private_ws_mb) || 0;
+    const webviewPrivate = Math.max(0, pws - host);
+    const procs = Array.isArray(mem.processes) ? mem.processes : [];
+    const procCount = Number(mem.process_count) || procs.length;
+
+    if (subEl) {
+      subEl.textContent = `Metric: Private Working Set (Task Manager "Memory" column) • ${procCount} process(es) in Rusty Browser tree`;
+    }
+
+    const sav = Number(mem.savings_percent || 0);
+    const chromeMb = Number(mem.chrome_baseline_mb || 0);
+    const chromeText = mem.chrome_live_measured
+      ? `Chrome live tree: ${chromeMb.toFixed(1)} MB (${mem.chrome_process_count} procs)`
+      : `Chrome baseline: ${chromeMb.toFixed(1)} MB Private WS`;
+
+    summaryEl.innerHTML = `
+      <div class="memory-summary-card">
+        <div class="memory-summary-label">Private Working Set</div>
+        <div class="memory-summary-value">${pws.toFixed(1)} MB</div>
+        <div class="memory-summary-sub">Host ${host.toFixed(1)} MB + WebView2 ${webviewPrivate.toFixed(1)} MB</div>
+      </div>
+      <div class="memory-summary-card">
+        <div class="memory-summary-label">Working Set (Shared)</div>
+        <div class="memory-summary-value">${ws.toFixed(1)} MB</div>
+        <div class="memory-summary-sub">Includes shared DLL &amp; GPU pages</div>
+      </div>
+      <div class="memory-summary-card">
+        <div class="memory-summary-label">Private Commit</div>
+        <div class="memory-summary-value">${commit.toFixed(1)} MB</div>
+        <div class="memory-summary-sub">Pagefile-backed virtual commit</div>
+      </div>
+      <div class="memory-summary-card">
+        <div class="memory-summary-label">vs Chrome (Private WS)</div>
+        <div class="memory-summary-value">${sav >= 0 ? `-${sav.toFixed(1)}%` : `+${Math.abs(sav).toFixed(1)}%`}</div>
+        <div class="memory-summary-sub">${escapeHtml(chromeText)}</div>
+      </div>
+    `;
+
+    if (noteEl) {
+      noteEl.innerHTML = `<strong>Which Task Manager row matches?</strong> Windows lists the tiny Rust host (<code>${host.toFixed(1)} MB</code>) separately from <code>msedgewebview2.exe</code> children in the Processes tab unless grouped under the app. Open <strong>Task Manager → Details</strong>, enable the <strong>"Memory (active private working set)"</strong> column, and look up the PIDs below — their Private WS sum matches the badge.`;
+    }
+
+    tbody.innerHTML = '';
+    procs.forEach((p) => {
+      const tr = document.createElement('tr');
+      const roleClass = String(p.kind || '').includes('Host') ? 'role-host' : '';
+      tr.innerHTML = `
+        <td class="${roleClass}">${escapeHtml(p.kind || 'Process')}</td>
+        <td><code>${escapeHtml(p.exe_name || '')}</code></td>
+        <td>${Number(p.pid) || 0}</td>
+        <td class="num"><strong>${Number(p.private_ws_mb || 0).toFixed(1)} MB</strong></td>
+        <td class="num">${Number(p.working_set_mb || 0).toFixed(1)} MB</td>
+        <td class="num">${Number(p.commit_mb || 0).toFixed(1)} MB</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    tfoot.innerHTML = `
+      <tr>
+        <td colspan="3">Total (${procCount} processes)</td>
+        <td class="num">${pws.toFixed(1)} MB</td>
+        <td class="num">${ws.toFixed(1)} MB</td>
+        <td class="num">${commit.toFixed(1)} MB</td>
+      </tr>
+    `;
+  }
+
+  function openMemoryModal() {
+    if (!modalOverlay || !memoryModal) return;
+    hideAllModalPanels();
+    isOverlayOpen = true;
+    modalOverlay.classList.add('open');
+    memoryModal.style.display = 'flex';
+    if (memoryCopyStatus) memoryCopyStatus.textContent = '';
+    window.bridge.send('overlay', { open: true });
+    renderMemoryModal();
+  }
+
+  function buildMemoryReportText() {
+    const mem = lastMemoryInfo;
+    if (!mem) return 'No memory telemetry sampled yet.';
+    const pws = getMemoryPrivateWs(mem);
+    const ws = Number(mem.working_set_mb) || 0;
+    const commit = Number(mem.commit_mb) || 0;
+    const procs = Array.isArray(mem.processes) ? mem.processes : [];
+    const lines = [
+      `Rusty Browser Memory Report (${new Date().toISOString()})`,
+      `Headline Metric: Private Working Set (Task Manager "Memory" metric)`,
+      `Total Private Working Set: ${pws.toFixed(1)} MB (${mem.process_count || procs.length} processes)`,
+      `Total Working Set (incl. shared): ${ws.toFixed(1)} MB`,
+      `Total Commit Charge: ${commit.toFixed(1)} MB`,
+      `Host Process Private WS: ${Number(mem.host_private_ws_mb || 0).toFixed(1)} MB`,
+      mem.chrome_live_measured
+        ? `Comparison vs Live Chrome Tree (Private WS): ${Number(mem.savings_percent || 0).toFixed(1)}% (${Number(mem.chrome_baseline_mb || 0).toFixed(1)} MB across ${mem.chrome_process_count} Chrome processes)`
+        : `Comparison vs Chrome Private WS Baseline: ${Number(mem.savings_percent || 0).toFixed(1)}% (${Number(mem.chrome_baseline_mb || 0).toFixed(1)} MB baseline)`,
+      ``,
+      `PID\tPPID\tRole\tExecutable\tPrivateWS_MB\tWorkingSet_MB\tCommit_MB`
+    ];
+    procs.forEach((p) => {
+      lines.push(
+        `${p.pid}\t${p.parent_pid}\t${p.kind}\t${p.exe_name}\t${Number(p.private_ws_mb || 0).toFixed(1)}\t${Number(p.working_set_mb || 0).toFixed(1)}\t${Number(p.commit_mb || 0).toFixed(1)}`
+      );
+    });
+    return lines.join('\n');
+  }
+
+  if (memoryBadge) memoryBadge.addEventListener('click', openMemoryModal);
+  if (memoryCloseBtn) memoryCloseBtn.addEventListener('click', closeAllModals);
+  if (btnCloseMemoryFooter) btnCloseMemoryFooter.addEventListener('click', closeAllModals);
+  if (btnCopyMemoryReport) {
+    btnCopyMemoryReport.addEventListener('click', () => {
+      const reportText = buildMemoryReportText();
+      if (window.bridge) {
+        window.bridge.send('copy_to_clipboard', { text: reportText });
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(reportText).catch(() => {});
+      }
+      if (memoryCopyStatus) {
+        memoryCopyStatus.textContent = 'Copied report to clipboard!';
+        setTimeout(() => {
+          if (memoryCopyStatus) memoryCopyStatus.textContent = '';
+        }, 2500);
+      }
+    });
   }
 
   function updateMemoryBadge(mem) {
     lastMemoryInfo = mem;
     refreshMemoryBadgeDisplay();
+    if (memoryModal && memoryModal.style.display === 'flex') {
+      renderMemoryModal();
+    }
   }
 
   window.bridge.on('memory_stats', updateMemoryBadge);
@@ -1129,8 +1884,49 @@
 
   // ── 15. Mock Viewport Iframe for standalone browser preview ──────────────
   let mockIframe = null;
+  let mockSplitLeftIframe = null;
+  let mockSplitRightIframe = null;
+
+  function resolveMockSrc(url, skin, theme) {
+    return (!url || url === 'about:blank' || url.startsWith('about:') || url.includes('newtab.html'))
+      ? `newtab.html?skin=${encodeURIComponent(skin)}&theme=${encodeURIComponent(theme)}`
+      : url;
+  }
+
   function updateMockViewport(url) {
     if (!viewport) return;
+    const root = document.documentElement;
+    const skin = root.getAttribute('data-skin') || 'crazy';
+    const theme = root.getAttribute('data-theme') || 'sunset';
+
+    if (splitState.enabled && splitPaneLeft && splitPaneRight) {
+      if (mockIframe) mockIframe.style.display = 'none';
+      if (!mockSplitLeftIframe) {
+        mockSplitLeftIframe = document.createElement('iframe');
+        mockSplitLeftIframe.style.cssText = 'width:100%;height:100%;border:none;';
+        splitPaneLeft.appendChild(mockSplitLeftIframe);
+      }
+      if (!mockSplitRightIframe) {
+        mockSplitRightIframe = document.createElement('iframe');
+        mockSplitRightIframe.style.cssText = 'width:100%;height:100%;border:none;';
+        splitPaneRight.appendChild(mockSplitRightIframe);
+      }
+      mockSplitLeftIframe.style.display = 'block';
+      mockSplitRightIframe.style.display = 'block';
+
+      const leftSrc = resolveMockSrc(splitState.left_url || 'about:blank', skin, theme);
+      const rightSrc = resolveMockSrc(splitState.right_url || 'about:blank', skin, theme);
+      if (mockSplitLeftIframe.src !== leftSrc && !mockSplitLeftIframe.src.endsWith(leftSrc)) {
+        mockSplitLeftIframe.src = leftSrc;
+      }
+      if (mockSplitRightIframe.src !== rightSrc && !mockSplitRightIframe.src.endsWith(rightSrc)) {
+        mockSplitRightIframe.src = rightSrc;
+      }
+      return;
+    }
+
+    if (mockSplitLeftIframe) mockSplitLeftIframe.style.display = 'none';
+    if (mockSplitRightIframe) mockSplitRightIframe.style.display = 'none';
     if (!mockIframe) {
       mockIframe = document.createElement('iframe');
       mockIframe.style.width = '100%';
@@ -1138,12 +1934,8 @@
       mockIframe.style.border = 'none';
       viewport.appendChild(mockIframe);
     }
-    const root = document.documentElement;
-    const skin = root.getAttribute('data-skin') || 'crazy';
-    const theme = root.getAttribute('data-theme') || 'sunset';
-    const targetSrc = (url === 'about:blank' || url.startsWith('about:'))
-      ? `newtab.html?skin=${encodeURIComponent(skin)}&theme=${encodeURIComponent(theme)}`
-      : url;
+    mockIframe.style.display = 'block';
+    const targetSrc = resolveMockSrc(url, skin, theme);
     if (mockIframe.src !== targetSrc && !mockIframe.src.endsWith(targetSrc)) {
       mockIframe.src = targetSrc;
     }
@@ -1164,6 +1956,7 @@
     { title: 'Theme: Sunset Dusk', action: () => window.switchTheme('sunset'), badge: 'Theme' },
     { title: 'Theme: Matcha Sage', action: () => window.switchTheme('matcha'), badge: 'Theme' },
     { title: 'Theme: Sakura Blossom', action: () => window.switchTheme('sakura'), badge: 'Theme' },
+    { title: 'Toggle Split View', action: () => window.bridge.send('split_view'), badge: 'Layout' },
     { title: 'Toggle Vertical Tabs', action: () => window.toggleTabsLayout(), badge: 'Layout' },
     { title: 'Toggle Compact Sidebar', action: () => btnCollapseSidebar && btnCollapseSidebar.click(), badge: 'Layout' },
     { title: 'Toggle Zen Focus Mode', action: toggleZenMode, badge: 'View' },
@@ -1171,6 +1964,7 @@
     { title: 'Open Bookmarks Panel', action: () => openSidePanel('bookmarks'), badge: 'Panel' },
     { title: 'Open History Panel', action: () => openSidePanel('history'), badge: 'Panel' },
     { title: 'Open Downloads Panel', action: () => openSidePanel('downloads'), badge: 'Panel' },
+    { title: 'Inspect Process Memory Breakdown', action: openMemoryModal, badge: 'Memory' },
     { title: 'Open Browser Settings', action: openSettings, badge: 'Settings' },
     { title: 'Sleep Other Tabs (Reclaim RAM)', action: () => {
       currentTabs.forEach((t) => {
@@ -1185,9 +1979,9 @@
 
   function openCommandPalette() {
     if (!modalOverlay || !commandPalette) return;
+    hideAllModalPanels();
     isOverlayOpen = true;
     modalOverlay.classList.add('open');
-    if (settingsModal) settingsModal.style.display = 'none';
     commandPalette.style.display = 'flex';
     window.bridge.send('overlay', { open: true });
     paletteSelectedIndex = 0;
@@ -1199,11 +1993,7 @@
   }
 
   function closeCommandPalette() {
-    if (!modalOverlay || !commandPalette) return;
-    isOverlayOpen = false;
-    modalOverlay.classList.remove('open');
-    commandPalette.style.display = 'none';
-    window.bridge.send('overlay', { open: false });
+    closeAllModals();
   }
 
   function renderPaletteResults(query) {
@@ -1247,6 +2037,7 @@
         type: 'bookmark',
         title: b.title,
         sub: b.url,
+        url: b.url,
         badge: 'Bookmark',
         action: () => window.bridge.send('navigate', { url: b.url })
       }));
@@ -1259,6 +2050,7 @@
         type: 'history',
         title: h.title,
         sub: h.url,
+        url: h.url,
         badge: 'History',
         action: () => window.bridge.send('navigate', { url: h.url })
       }));
@@ -1285,10 +2077,31 @@
         ${item.sub ? `<span class="item-sub">${escapeHtml(item.sub)}</span>` : ''}
         <span class="item-badge">${escapeHtml(item.badge)}</span>
       `;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (e) => {
         closeCommandPalette();
-        item.action();
+        if (item.url && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+          window.bridge.send('new_tab', {
+            url: item.url,
+            background: e.shiftKey ? false : null,
+            title: item.title
+          });
+        } else {
+          item.action();
+        }
       });
+      if (item.url) {
+        el.addEventListener('auxclick', (e) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          e.stopPropagation();
+          closeCommandPalette();
+          window.bridge.send('new_tab', {
+            url: item.url,
+            background: e.shiftKey ? false : null,
+            title: item.title
+          });
+        });
+      }
       paletteResults.appendChild(el);
     });
   }
@@ -1311,7 +2124,7 @@
     });
 
     paletteInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeCommandPalette();
+      if (e.key === 'Escape') closeAllModals();
       else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (paletteItems.length > 0) {
@@ -1337,8 +2150,7 @@
   if (modalOverlay) {
     modalOverlay.addEventListener('click', (e) => {
       if (e.target === modalOverlay) {
-        closeCommandPalette();
-        closeSettings();
+        closeAllModals();
       }
     });
   }
@@ -1348,7 +2160,7 @@
     // Ctrl+K -> Command Palette
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      if (isOverlayOpen) { closeCommandPalette(); closeSettings(); }
+      if (isOverlayOpen) closeAllModals();
       else openCommandPalette();
     }
     // Ctrl+, -> Settings
@@ -1387,6 +2199,11 @@
       e.preventDefault();
       if (btnCollapseSidebar) btnCollapseSidebar.click();
     }
+    // Ctrl+\ -> Toggle Split View
+    else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+      e.preventDefault();
+      window.bridge.send('split_view');
+    }
     // Ctrl+T -> New Tab
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
       e.preventDefault();
@@ -1400,16 +2217,20 @@
     // Ctrl+L -> Focus Omnibox
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
-      if (omniboxInput) omniboxInput.focus();
+      if (omniboxInput) {
+        omniboxInput.focus();
+        omniboxInput.select();
+      }
     }
     // Escape -> Close Context Menu, Find Bar, or Modals
     else if (e.key === 'Escape') {
       closeContextMenu();
       if (isFindOpen) closeFindBar();
-      if (isOverlayOpen) { closeCommandPalette(); closeSettings(); }
+      if (isOverlayOpen) closeAllModals();
     }
   });
 
   // Initial layout report
   setTimeout(reportContentRect, 100);
 })();
+

@@ -165,7 +165,7 @@ pub fn render_downloads_page(downloads: &[DownloadRecord]) -> String {
 <body>
   <h1>📥 Downloads</h1>
   <table>
-    <thead><tr><th>File</th><th>Status</th><th>Date</th></tr></thead>
+    <thead><tr><th>File</th><th>Status</th><th>Date</th><th>Source</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </body>

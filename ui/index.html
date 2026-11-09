@@ -13,6 +13,7 @@
   <script src="js/icons.js"></script>
   <script src="js/bridge.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/engines.js"></script>
 </head>
 <body>
   <!-- Thin hover trigger for Zen / Focus Mode -->
@@ -68,7 +69,7 @@
         <button id="btn-sidepanel-downloads" class="btn-icon" title="Downloads Panel (Ctrl+J)">
           <script>document.write(window.Icons.get('download', '', 15));</script>
         </button>
-        <button id="btn-split-view" class="btn-icon" title="Split View (needs Rust support)">
+        <button id="btn-split-view" class="btn-icon" title="Toggle Split View (Ctrl+\\)">
           <script>document.write(window.Icons.get('split-view', '', 15));</script>
         </button>
         <button id="btn-zen" class="btn-icon" title="Zen Focus Mode (F11)">
@@ -137,8 +138,30 @@
         <div id="tabs-sidebar-list" class="sidebar-tabs-list"></div>
       </aside>
 
-      <!-- Content Viewport (Child WebView2 sits here, or mock iframe in standalone browser) -->
-      <main id="content-viewport"></main>
+      <!-- Content Viewport (Child WebView2 sits here, or mock iframe / split panes) -->
+      <main id="content-viewport">
+        <div id="split-controls-bar" class="split-controls-bar">
+          <div id="split-bar-left" class="split-pane-bar focused">
+            <span id="split-badge-left" class="split-pane-badge" title="Focus Left Pane">L</span>
+            <input id="split-left-url" class="split-pane-url" type="text" placeholder="Left pane URL or search..." autocomplete="off" spellcheck="false">
+          </div>
+          <div class="split-center-actions">
+            <button id="btn-split-swap" class="split-action-btn" type="button" title="Swap Left & Right Panes">&#x21C4; Swap</button>
+            <button id="btn-split-close" class="split-action-btn danger" type="button" title="Close Split View">&#x2715; Close Split</button>
+          </div>
+          <div id="split-bar-right" class="split-pane-bar">
+            <span id="split-badge-right" class="split-pane-badge" title="Focus Right Pane">R</span>
+            <input id="split-right-url" class="split-pane-url" type="text" placeholder="Right pane URL or search..." autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div id="split-panes-stage" class="split-panes-stage">
+          <div id="split-pane-left" class="split-pane-slot"></div>
+          <div id="split-divider" class="split-divider" title="Drag to resize split panes (double-click to reset 50/50)">
+            <div class="split-divider-grip"></div>
+          </div>
+          <div id="split-pane-right" class="split-pane-slot"></div>
+        </div>
+      </main>
 
       <!-- ── Side Panel (Takes physical layout space, zero overlay) ─────── -->
       <aside id="side-panel">
@@ -161,7 +184,7 @@
       </aside>
     </div>
 
-    <!-- ── Modal Overlay for Command Palette (Ctrl+K) & Settings ────────── -->
+    <!-- ── Modal Overlay for Command Palette (Ctrl+K), Settings, Memory & Confirm ── -->
     <div id="modal-overlay">
       <!-- Command Palette Modal -->
       <div id="command-palette" class="command-palette" style="display: none;">
@@ -170,6 +193,56 @@
           <input id="palette-input" class="palette-input" type="text" placeholder="Type a command or search tabs (e.g. skin, theme, tabs)..." autocomplete="off" spellcheck="false">
         </div>
         <div id="palette-results" class="palette-results"></div>
+      </div>
+
+      <!-- Memory Breakdown Modal -->
+      <div id="memory-modal" class="memory-modal" style="display: none;">
+        <div class="settings-header">
+          <div>
+            <div class="settings-title">Process Memory Breakdown</div>
+            <div class="settings-desc" id="memory-modal-subtitle">Private Working Set across Rusty Browser process tree</div>
+          </div>
+          <button id="memory-close-btn" class="btn-icon" title="Close Memory Breakdown">
+            <script>document.write(window.Icons.get('close', '', 16));</script>
+          </button>
+        </div>
+        <div class="memory-modal-body">
+          <div class="memory-summary-grid" id="memory-summary-grid"></div>
+          <div class="memory-note" id="memory-taskmgr-note"></div>
+          <div class="memory-table-wrap">
+            <table class="memory-table">
+              <thead>
+                <tr>
+                  <th>Role / Type</th>
+                  <th>Process</th>
+                  <th>PID</th>
+                  <th class="num">Private WS</th>
+                  <th class="num">Working Set</th>
+                  <th class="num">Commit</th>
+                </tr>
+              </thead>
+              <tbody id="memory-table-body"></tbody>
+              <tfoot id="memory-table-foot"></tfoot>
+            </table>
+          </div>
+        </div>
+        <div class="memory-modal-footer">
+          <span id="memory-copy-status" class="settings-desc"></span>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-copy-memory-report" class="btn-primary-sm" type="button">Copy Report</button>
+            <button id="btn-close-memory-footer" class="btn-secondary-sm" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Non-blocking Confirmation Modal (e.g. closing pinned tabs) -->
+      <div id="confirm-modal" class="confirm-modal" style="display: none;">
+        <div class="confirm-title" id="confirm-modal-title">Confirm Action</div>
+        <div class="confirm-message" id="confirm-modal-message">Are you sure?</div>
+        <div class="confirm-actions">
+          <button id="confirm-modal-cancel" class="btn-secondary-sm" type="button">Cancel</button>
+          <button id="confirm-modal-ok" class="btn-primary-sm" type="button">Close Tab</button>
+        </div>
       </div>
 
       <!-- Full Settings Modal -->
@@ -239,6 +312,13 @@
                 <option value="relaxed">Relaxed</option>
               </select>
             </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Open new tabs in background</div>
+                <div class="settings-desc">Middle-click and Ctrl+click open links, bookmarks, history, speed dial and rail items behind the active tab</div>
+              </div>
+              <input type="checkbox" id="setting-open-tabs-background" checked style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
           </div>
 
           <!-- Effects Intensity Slider & Individual Toggles (For Crazy Skin) -->
@@ -307,6 +387,87 @@
               <div class="settings-label">Live Weather Widget</div>
               <input type="checkbox" id="setting-ntp-weather" checked style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
             </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Weather &amp; Globe City</div>
+                <div class="settings-desc">Preferred city for weather &amp; globe pin (leave blank for timezone centroid)</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <input type="text" id="setting-weather-location" maxlength="64" placeholder="Auto (timezone)" style="width: 150px; padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <button id="btn-apply-weather-location" class="btn-secondary-sm" type="button">Apply</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">3D Globe Cloud Layer</div>
+                <div class="settings-desc">Overlay cloud wisp shading across the Time &amp; Weather Earth globe</div>
+              </div>
+              <input type="checkbox" id="setting-ntp-globe-clouds" style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
+          </div>
+
+          <!-- Companion Pet Section (Crazy Skin Only) -->
+          <div class="settings-section" id="settings-pet-section">
+            <div class="settings-section-title">Pet (Crazy Skin Only)</div>
+            <div id="settings-pet-minimal-note" class="settings-desc" style="display: none; padding: 10px 12px; border-radius: 6px; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle);">
+              Companion Pet is a Crazy-skin-only feature and is not loaded in Minimal skin (0 MB memory cost). Switch to the Crazy skin above to adopt or customize your pet.
+            </div>
+            <div id="settings-pet-crazy-controls">
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Companion Species</div>
+                  <div class="settings-desc">Original layered SVG companion shown at the bottom of the New Tab rail</div>
+                </div>
+                <select id="setting-pet-type" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                  <option value="">None (No pet)</option>
+                  <option value="dog">Dog</option>
+                  <option value="cat">Cat</option>
+                  <option value="robot">Robot</option>
+                  <option value="fox">Fox</option>
+                  <option value="slime">Slime</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Pet Name</div>
+                  <div class="settings-desc">Displayed under your companion in the left rail</div>
+                </div>
+                <input type="text" id="setting-pet-name" maxlength="24" placeholder="Pixel" style="width: 150px; padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Color &amp; Accessory</div>
+                  <div class="settings-desc">Customize fur/shell tint and wearables</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="color" id="setting-pet-color" value="#f97316" style="border: none; background: transparent; cursor: pointer; width: 32px; height: 28px;">
+                  <select id="setting-pet-accessory" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                    <option value="none">No Accessory</option>
+                    <option value="collar">Collar</option>
+                    <option value="bow">Bow</option>
+                    <option value="hat">Hat</option>
+                    <option value="glasses">Glasses</option>
+                  </select>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Let my pet roam</div>
+                  <div class="settings-desc">Walk along the top of the toolbar and sit on the active tab (never blocks clicks)</div>
+                </div>
+                <input type="checkbox" id="setting-pet-roam" style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label" id="setting-pet-mood-label">Mood: content</div>
+                  <div class="settings-desc">Give your companion a treat or remove it anytime</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button id="btn-settings-pet-treat" class="btn-secondary-sm" type="button">Feed Treat</button>
+                  <button id="btn-settings-pet-remove" class="btn-icon" type="button" style="width: auto; padding: 4px 10px; border: 1px solid #f87171; color: #f87171; font-size: 12px;">Remove Pet</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Search Engine Section -->
@@ -315,16 +476,37 @@
             <div class="settings-row">
               <div>
                 <div class="settings-label">Default Search Provider</div>
-                <div class="settings-desc">Used for non-URL queries typed into the address bar</div>
+                <div class="settings-desc">Used for non-URL queries typed into the address bar and New Tab search</div>
               </div>
               <select id="setting-search-engine" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
                 <option value="google">Google</option>
-                <option value="duckduckgo">DuckDuckGo</option>
+                <option value="yahoo">Yahoo</option>
                 <option value="bing">Bing</option>
+                <option value="duckduckgo">DuckDuckGo</option>
                 <option value="brave">Brave</option>
                 <option value="youtube">YouTube</option>
                 <option value="github">GitHub</option>
               </select>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Show engine-colored outline on toolbar address bar</div>
+                <div class="settings-desc">Highlights the toolbar omnibox with the active engine color while typing a search</div>
+              </div>
+              <input type="checkbox" id="setting-omnibox-outline" checked style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
+            <div class="settings-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+              <div>
+                <div class="settings-label">Custom Search Engines</div>
+                <div class="settings-desc">Add a search engine with a custom URL template (%s) and outline color</div>
+              </div>
+              <div id="custom-engines-list" class="custom-engines-list"></div>
+              <form id="settings-custom-engine-form" class="custom-engine-form-row">
+                <input type="text" id="custom-engine-name" class="panel-search-input" placeholder="Name (e.g. Kagi)" maxlength="32" style="width: 130px; flex-shrink: 0;">
+                <input type="text" id="custom-engine-template" class="panel-search-input" placeholder="https://example.com/search?q=%s" style="flex: 1; min-width: 160px;">
+                <input type="color" id="custom-engine-color" value="#f97316" title="Outline color" style="width: 34px; height: 28px; border: 1px solid var(--border-subtle); border-radius: 4px; background: transparent; cursor: pointer; padding: 1px;">
+                <button type="submit" id="btn-add-custom-engine" class="btn-primary-sm">Add Engine</button>
+              </form>
             </div>
           </div>
 

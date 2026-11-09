@@ -104,7 +104,8 @@
   // ── 5. 3D Card & Speed-Dial Tile Tilt ────────────────────────────────────
   document.addEventListener('mousemove', (e) => {
     if (!fxTilt || intensity <= 0.01) return;
-    const card = e.target.closest('.dial-card, .dial-pill, .action-card, .skin-card, .widget-card:not(:focus-within)');
+    if (e.target.closest('#globe-slot')) return;
+    const card = e.target.closest('.dial-card, .dial-pill, .action-card, .skin-card, .widget-card:not(:focus-within):not(.expanded)');
     if (!card) return;
     const rect = card.getBoundingClientRect();
     if (!rect.width || !rect.height) return;

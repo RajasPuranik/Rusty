@@ -1,53 +1,73 @@
 ================================================================================
-RUSTY BROWSER — UI ASSET PLACEHOLDERS
+RUSTY BROWSER — UI ASSET & PROVIDER PLACEHOLDERS
 ================================================================================
 
-This file lists all temporary/placeholder assets across the UI layer that can be
-swapped out by hand without altering application logic. Each placeholder is also
-tagged with a inline /* PLACEHOLDER: <name> */ or <!-- PLACEHOLDER: <name> -->
-comment in its respective source file.
+This file catalogs all temporary/placeholder assets and swappable data providers
+in Rusty Browser. Each item is also tagged inline with a `PLACEHOLDER:` comment
+in its source file so you can drop in final artwork or providers cleanly without
+altering browser architecture.
 
 1. LOGO
-   - File: ui/assets/logo.svg
+   - File: ui/assets/logo.svg (`<!-- PLACEHOLDER: logo ... -->`)
    - Purpose: Browser chrome branding and new-tab watermark.
-   - Status: Generic geometric gradient rounded square (no real brand marks).
-   - How to replace: Drop any 32x32 to 512x512 SVG or PNG into this location.
+   - Status: Generic geometric rounded logo with orange gradient slash (no brand marks).
+   - How to replace: Drop any 32x32 to 512x512 SVG or PNG into `ui/assets/logo.svg`.
 
 2. ICON SET
-   - File: ui/js/icons.js
+   - File: ui/js/icons.js (`// /* PLACEHOLDER: icon set ... */`)
    - Purpose: Unified inline SVG icon dictionary for navigation, tabs, panels,
-     actions, and media controls.
-   - Status: Lightweight 16x16 / 20x20 inline SVG vector paths.
-   - How to replace: Modify or replace the path definitions inside the `ICONS`
-     object. Keep viewBoxes consistent (default `0 0 24 24` or `0 0 16 16`).
+     time/weather, pet edit, and media controls.
+   - Status: Lightweight 16x16 / 20x20 / 24x24 inline SVG vector paths.
+   - How to replace: Modify or replace paths inside `ICONS` while keeping viewBoxes
+     consistent (`0 0 24 24` or `0 0 16 16`).
 
-3. SPEED-DIAL SITE ICONS
+3. 3D EARTH GLOBE TEXTURES & STATIC FALLBACK (A2)
+   - Files:
+     * ui/assets/earth-day.webp       (27,058 bytes, <= 1024px)
+     * ui/assets/earth-night.webp     (16,542 bytes, <= 1024px)
+     * ui/assets/earth-fallback.webp  (14,194 bytes, shown when effects=0% or no WebGL)
+     * Referenced in: ui/js/globe.js (lines 4-7, 40) & src/ui/app_protocol.rs (line 33)
+   - Status: Procedural self-generated equirectangular placeholder WebP textures
+     with stylized continents, bathymetry, and night city lights (<= 1024px max).
+   - License Notice & How to Replace:
+     Before shipping public releases, you may swap in public-domain NASA Blue Marble /
+     Black Marble or Natural Earth equirectangular maps (1024x512 WebP recommended)
+     and **verify each replaced texture's exact license terms & attribution rules**.
+
+4. COMPANION PET ARTWORK (A3 — CRAZY SKIN ONLY)
+   - File: ui/js/pet-crazy.js (`// PLACEHOLDER: Companion pet characters ...`, lines 2 & 71)
+   - Purpose: Bottom-of-left-rail (and optional chrome-roam) companion mascot for the
+     Crazy skin (never loaded in Minimal skin).
+   - Status: 5 ORIGINAL layered geometric SVG characters (`dog`, `cat`, `robot`,
+     `fox`, `slime`) with named SVG layer groups (`shadow`, `tail`, `legs`, `torso`,
+     `head`, `ears`, `eyes`, `pupils`, `mouth`, `accessory`) and CSS `data-state`
+     animation hooks (`idle`, `look`, `follow`, `curious`, `happy`, `play`, `sleep`,
+     `feed`, `celebrate`, `loading`, `wave`, `worried`, `yawn`). No copyrighted characters.
+   - How to replace: Swap `buildPetSvg(...)` in `ui/js/pet-crazy.js` (keeping the
+     `data-layer` groups or pointing CSS states to sprite sheet keyframes).
+
+5. SPEED-DIAL SITE ICONS
    - Files: ui/js/newtab.js, ui/css/newtab.css
-   - Purpose: Favicons/tiles for top visited and custom bookmarked sites.
-   - Status: Letter avatars with high-contrast pastel gradients until Rust or an
-     external favicon cache service provides cached `favicon.ico` data URLs.
-   - How to replace: Supply a `faviconUrl` string in the speed-dial entry object.
+   - Purpose: Tiles for bookmarked / quick-access sites.
+   - Status: High-contrast letter avatars until an external favicon service is added.
+   - How to replace: Supply a `faviconUrl` string in each speed-dial item.
 
-4. WALLPAPERS (OPTIONAL)
-   - Files: ui/css/newtab.css
-   - Purpose: Ambient background for the Crazy skin new tab page.
-   - Status: Pure CSS layered radial nebula gradient driven by theme accent variables
-     (no bitmap wallpaper shipped by default so widgets stay sharp and overlap-free).
-   - How to replace: Add a background rule under `[data-skin="crazy"] body.ntp-body` in
-     `ui/css/newtab.css` if you wish to attach a custom photo wallpaper.
-
-5. DISPLAY FONT FOR CLOCK (OPTIONAL)
+6. WALLPAPERS & CLOCK FONT (OPTIONAL)
    - Files: ui/css/newtab.css, ui/newtab.html
-   - Purpose: Digital clock typography on the new tab page.
-   - Status: System sans-serif variable font with `font-variant-numeric: tabular-nums`.
-   - How to replace: Change `--clock-font-family` in `newtab.css` to an imported
-     or local monospace/display font.
+   - Purpose: New Tab Page backdrop and clock typography.
+   - Status: Pure CSS layered gradients + system display font (`tabular-nums`).
 
-6. WEATHER WIDGET DATA SOURCE
-   - Files: src/weather.rs, ui/newtab.html, ui/js/newtab.js
-   - Purpose: Live weather forecast on the new tab page.
-   - Status: Rust-fetched live Open-Meteo + geojs.io provider via WinHTTP (falls back
-     gracefully to cached weather or "Offline" when disconnected).
-   - How to replace: Modify `src/weather.rs` to point to a different weather provider.
+7. WEATHER DATA PROVIDER (A1) & PRIVACY-PRESERVING LOCATION
+   - Files: src/weather.rs (`fetch_from_provider`), ui/js/locations.js
+   - Purpose: Current weather + 5-day forecast on the merged Time & Weather card.
+   - Status:
+     * Swappable Open-Meteo HTTPS client isolated behind `weather::fetch_from_provider`
+       in `src/weather.rs` (WinHTTP, 30-minute in-memory & disk cache, offline fallback).
+     * Location priority: (1) Settings user-typed city (`weather_location`),
+       (2) embedded client timezone/locale centroid (`ui/js/locations.js`, zero network call),
+       (3) browser `navigator.geolocation` ONLY on explicit "Use my location" button click.
+     * ZERO automatic IP geolocation lookups are ever made.
+   - How to replace: Swap the HTTP endpoint & parser strictly inside `fetch_from_provider`
+     while keeping `WeatherRequest` and `WeatherData` intact.
 
 ================================================================================

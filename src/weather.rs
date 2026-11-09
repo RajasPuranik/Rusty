@@ -1,15 +1,39 @@
 //! Live Weather Service (Rust-side WinHTTP client + Open-Meteo).
 //!
-//! Performs HTTPS weather lookups inside Rust so the HTML/JS New Tab Page
-//! maintains a strict `connect-src 'self'` Content-Security-Policy with
-//! zero third-party network access required from scripts.
+//! Design goals:
+//! - Single swappable provider function [`fetch_from_provider`] so the data source can be
+//!   changed in one place.
+//! - 30-minute in-memory + disk cache (`CACHE_TTL_SECS = 1800`) with graceful offline fallback
+//!   (`offline: true` when serving cached data while network is unreachable).
+//! - **Zero IP geolocation lookups**: locations come ONLY from (1) user-typed city in Settings,
+//!   (2) client timezone/locale centroid coordinates sent by NTP, or (3) explicit browser
+//!   geolocation when the user clicks "Use my location".
+//! - Runs in Rust so `rusty://app/` retains a strict `connect-src 'self'` CSP.
 
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// 30-minute cache TTL as required by A1.
+pub const CACHE_TTL_SECS: u64 = 30 * 60;
+
+/// Single-day entry in the 5-day forecast row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DailyForecast {
+    pub date: String,
+    pub temp_max_c: f64,
+    pub temp_min_c: f64,
+    pub weather_code: u32,
+    pub condition: String,
+    pub icon: String,
+}
+
 /// Weather payload sent to New Tab / Chrome WebViews.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WeatherData {
     pub temperature_c: f64,
     pub apparent_c: f64,
@@ -18,10 +42,64 @@ pub struct WeatherData {
     pub condition: String,
     pub icon: String,
     pub location: String,
+    #[serde(default)]
+    pub country: String,
+    #[serde(default)]
+    pub latitude: f64,
+    #[serde(default)]
+    pub longitude: f64,
     pub is_day: bool,
     pub weather_code: u32,
     pub updated_secs: u64,
     pub query: String,
+    #[serde(default)]
+    pub offline: bool,
+    #[serde(default)]
+    pub forecast: Vec<DailyForecast>,
+}
+
+/// Weather query input without any IP lookup fallback.
+#[derive(Debug, Clone)]
+pub enum WeatherRequest {
+    City(String),
+    Coords {
+        lat: f64,
+        lon: f64,
+        label: Option<String>,
+        country: Option<String>,
+        query: String,
+    },
+}
+
+impl WeatherRequest {
+    fn cache_key(&self) -> String {
+        match self {
+            WeatherRequest::City(city) => format!("city:{}", city.trim().to_lowercase()),
+            WeatherRequest::Coords { lat, lon, .. } => {
+                format!("coords:{:.2},{:.2}", lat, lon)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedWeatherEntry {
+    key: String,
+    fetched_secs: u64,
+    data: WeatherData,
+}
+
+static MEMORY_CACHE: OnceLock<Mutex<HashMap<String, CachedWeatherEntry>>> = OnceLock::new();
+
+fn memory_cache() -> &'static Mutex<HashMap<String, CachedWeatherEntry>> {
+    MEMORY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 /// Map WMO weather interpretation code + day/night flag to human description and icon key.
@@ -56,23 +134,17 @@ fn json_as_f64(val: &serde_json::Value) -> Option<f64> {
         .or_else(|| val.as_str().and_then(|s| s.trim().parse::<f64>().ok()))
 }
 
-/// Fetch live weather for either an explicit city (`"Indore"`) or automatic IP location (`""` / `"auto"`).
-pub fn fetch_weather(location_query: &str) -> Result<WeatherData, String> {
-    let trimmed = location_query.trim();
-    let is_auto = trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto");
-
-    let (lat, lon, display_location) = if is_auto {
-        resolve_auto_location()?
-    } else {
-        resolve_city_location(trimmed)?
-    };
-
-    let forecast_path = format!(
-        "/v1/forecast?latitude={lat:.4}&longitude={lon:.4}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day&timezone=auto"
-    );
-    let body = https_get("api.open-meteo.com", &forecast_path)?;
-    let parsed: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| format!("Invalid Open-Meteo JSON response: {e}"))?;
+fn parse_open_meteo_payload(
+    body: &str,
+    lat: f64,
+    lon: f64,
+    display_location: String,
+    country: String,
+    query: String,
+    now: u64,
+) -> Result<WeatherData, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("Invalid Open-Meteo JSON response: {e}"))?;
 
     let current = parsed
         .get("current")
@@ -105,10 +177,32 @@ pub fn fetch_weather(location_query: &str) -> Result<WeatherData, String> {
         != 0;
 
     let (condition, icon) = wmo_to_condition(weather_code, is_day);
-    let updated_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+
+    let mut forecast = Vec::with_capacity(5);
+    if let Some(daily) = parsed.get("daily") {
+        let dates = daily.get("time").and_then(|v| v.as_array());
+        let codes = daily.get("weather_code").and_then(|v| v.as_array());
+        let tmaxs = daily.get("temperature_2m_max").and_then(|v| v.as_array());
+        let tmins = daily.get("temperature_2m_min").and_then(|v| v.as_array());
+        if let (Some(ds), Some(cs), Some(xs), Some(ns)) = (dates, codes, tmaxs, tmins) {
+            let count = ds.len().min(cs.len()).min(xs.len()).min(ns.len()).min(5);
+            for i in 0..count {
+                let d_str = ds[i].as_str().unwrap_or("").to_owned();
+                let d_code = cs[i].as_u64().unwrap_or(0) as u32;
+                let (d_cond, d_icon) = wmo_to_condition(d_code, true);
+                let tmax = json_as_f64(&xs[i]).unwrap_or(temperature_c);
+                let tmin = json_as_f64(&ns[i]).unwrap_or(temperature_c);
+                forecast.push(DailyForecast {
+                    date: d_str,
+                    temp_max_c: (tmax * 10.0).round() / 10.0,
+                    temp_min_c: (tmin * 10.0).round() / 10.0,
+                    weather_code: d_code,
+                    condition: d_cond.to_owned(),
+                    icon: d_icon.to_owned(),
+                });
+            }
+        }
+    }
 
     Ok(WeatherData {
         temperature_c: (temperature_c * 10.0).round() / 10.0,
@@ -118,75 +212,159 @@ pub fn fetch_weather(location_query: &str) -> Result<WeatherData, String> {
         condition: condition.to_owned(),
         icon: icon.to_owned(),
         location: display_location,
+        country,
+        latitude: lat,
+        longitude: lon,
         is_day,
         weather_code,
-        updated_secs,
-        query: if is_auto {
-            String::new()
-        } else {
-            trimmed.to_owned()
-        },
+        updated_secs: now,
+        query,
+        offline: false,
+        forecast,
     })
 }
 
-fn resolve_auto_location() -> Result<(f64, f64, String), String> {
-    // Primary: GeoJS IP geolocation
-    if let Ok(body) = https_get("get.geojs.io", "/v1/ip/geo.json") {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
-            if let (Some(lat), Some(lon)) = (
-                val.get("latitude").and_then(json_as_f64),
-                val.get("longitude").and_then(json_as_f64),
-            ) {
-                let city = val
-                    .get("city")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("Local Area");
-                let cc = val
-                    .get("country_code")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty());
-                let label = match cc {
-                    Some(code) => format!("{city}, {code}"),
-                    None => city.to_owned(),
-                };
-                return Ok((lat, lon, label));
+/// **Single swappable weather data source function** (currently Open-Meteo, free & keyless).
+///
+/// Swap providers (OpenWeatherMap, WeatherAPI, PirateWeather, etc.) strictly inside this function
+/// while keeping [`WeatherRequest`] and [`WeatherData`] intact.
+pub fn fetch_from_provider(req: &WeatherRequest) -> Result<WeatherData, String> {
+    let (lat, lon, display_location, country, query) = match req {
+        WeatherRequest::City(raw_city) => {
+            let trimmed = raw_city.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
+                return Err("No city specified (waiting for timezone/location)".to_owned());
             }
+            let (glat, glon, label, ctry) = resolve_city_location(trimmed)?;
+            (glat, glon, label, ctry, trimmed.to_owned())
+        }
+        WeatherRequest::Coords {
+            lat,
+            lon,
+            label,
+            country,
+            query,
+        } => {
+            let lbl = label
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| format!("{lat:.2}, {lon:.2}"));
+            (
+                *lat,
+                *lon,
+                lbl,
+                country.clone().unwrap_or_default(),
+                query.clone(),
+            )
+        }
+    };
+
+    let forecast_path = format!(
+        "/v1/forecast?latitude={lat:.4}&longitude={lon:.4}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto"
+    );
+    let body = https_get("api.open-meteo.com", &forecast_path)?;
+    parse_open_meteo_payload(
+        &body,
+        lat,
+        lon,
+        display_location,
+        country,
+        query,
+        now_secs(),
+    )
+}
+
+fn load_disk_cache(cache_dir: Option<&Path>) -> HashMap<String, CachedWeatherEntry> {
+    let Some(dir) = cache_dir else {
+        return HashMap::new();
+    };
+    let path = dir.join("weather_cache.json");
+    if let Ok(raw) = fs::read_to_string(path) {
+        if let Ok(entries) = serde_json::from_str::<Vec<CachedWeatherEntry>>(&raw) {
+            return entries.into_iter().map(|e| (e.key.clone(), e)).collect();
         }
     }
+    HashMap::new()
+}
 
-    // Secondary fallback: ipwho.is
-    if let Ok(body) = https_get("ipwho.is", "/") {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
-            let ok = val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            if ok {
-                if let (Some(lat), Some(lon)) = (
-                    val.get("latitude").and_then(json_as_f64),
-                    val.get("longitude").and_then(json_as_f64),
-                ) {
-                    let city = val
-                        .get("city")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or("Local Area");
-                    let cc = val
-                        .get("country_code")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty());
-                    let label = match cc {
-                        Some(code) => format!("{city}, {code}"),
-                        None => city.to_owned(),
-                    };
-                    return Ok((lat, lon, label));
+fn save_disk_cache(cache_dir: Option<&Path>, map: &HashMap<String, CachedWeatherEntry>) {
+    let Some(dir) = cache_dir else {
+        return;
+    };
+    let _ = fs::create_dir_all(dir);
+    let path = dir.join("weather_cache.json");
+    let values: Vec<&CachedWeatherEntry> = map.values().take(16).collect();
+    if let Ok(json) = serde_json::to_string(&values) {
+        let _ = fs::write(path, json);
+    }
+}
+
+/// Fetch weather with 30-minute cache (`CACHE_TTL_SECS`) and graceful offline fallback.
+pub fn fetch_weather_cached(
+    req: WeatherRequest,
+    force: bool,
+    cache_dir: Option<&Path>,
+) -> Result<WeatherData, String> {
+    let key = req.cache_key();
+    let now = now_secs();
+
+    // Hydrate memory cache from disk once if empty
+    {
+        if let Ok(mut guard) = memory_cache().lock() {
+            if guard.is_empty() {
+                let disk = load_disk_cache(cache_dir);
+                if !disk.is_empty() {
+                    *guard = disk;
+                }
+            }
+            if !force {
+                if let Some(entry) = guard.get(&key) {
+                    if now.saturating_sub(entry.fetched_secs) < CACHE_TTL_SECS {
+                        let mut data = entry.data.clone();
+                        data.offline = false;
+                        return Ok(data);
+                    }
                 }
             }
         }
     }
 
-    Err("Could not detect IP geolocation (offline or service unreachable)".to_owned())
+    match fetch_from_provider(&req) {
+        Ok(fresh) => {
+            if let Ok(mut guard) = memory_cache().lock() {
+                guard.insert(
+                    key,
+                    CachedWeatherEntry {
+                        key: req.cache_key(),
+                        fetched_secs: now,
+                        data: fresh.clone(),
+                    },
+                );
+                save_disk_cache(cache_dir, &guard);
+            }
+            Ok(fresh)
+        }
+        Err(err) => {
+            // Graceful offline fallback: serve any matching or most recent cached weather marked offline=true
+            if let Ok(guard) = memory_cache().lock() {
+                if let Some(stale) = guard.get(&key).or_else(|| guard.values().max_by_key(|e| e.fetched_secs)) {
+                    let mut offline_data = stale.data.clone();
+                    offline_data.offline = true;
+                    return Ok(offline_data);
+                }
+            }
+            Err(err)
+        }
+    }
 }
 
-fn resolve_city_location(city: &str) -> Result<(f64, f64, String), String> {
+/// Backward-compatible wrapper: fetches by explicit city string (no IP lookup).
+#[allow(dead_code)]
+pub fn fetch_weather(location_query: &str) -> Result<WeatherData, String> {
+    fetch_weather_cached(WeatherRequest::City(location_query.to_owned()), false, None)
+}
+
+fn resolve_city_location(city: &str) -> Result<(f64, f64, String, String), String> {
     let encoded = utf8_percent_encode(city, NON_ALPHANUMERIC).to_string();
     let path = format!("/v1/search?name={encoded}&count=1&language=en&format=json");
     let body = https_get("geocoding-api.open-meteo.com", &path)?;
@@ -216,12 +394,17 @@ fn resolve_city_location(city: &str) -> Result<(f64, f64, String), String> {
         .get("country_code")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
+    let country = first
+        .get("country")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
     let label = match cc {
         Some(code) => format!("{name}, {code}"),
         None => name.to_owned(),
     };
 
-    Ok((lat, lon, label))
+    Ok((lat, lon, label, country))
 }
 
 #[cfg(target_os = "windows")]
@@ -440,5 +623,99 @@ mod tests {
         assert_eq!(json_as_f64(&serde_json::json!(22.75)), Some(22.75));
         assert_eq!(json_as_f64(&serde_json::json!("22.7196")), Some(22.7196));
         assert_eq!(json_as_f64(&serde_json::json!("not_a_num")), None);
+    }
+
+    #[test]
+    fn test_parse_open_meteo_payload_with_five_day_forecast() {
+        let sample = r#"{
+            "current": {
+                "temperature_2m": 28.44,
+                "apparent_temperature": 30.12,
+                "relative_humidity_2m": 62,
+                "wind_speed_10m": 11.44,
+                "weather_code": 2,
+                "is_day": 1
+            },
+            "daily": {
+                "time": ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14"],
+                "weather_code": [0, 2, 61, 3, 95, 1],
+                "temperature_2m_max": [31.2, 29.8, 26.5, 28.1, 27.0, 30.0],
+                "temperature_2m_min": [21.0, 20.4, 19.8, 20.1, 18.9, 21.5]
+            }
+        }"#;
+
+        let parsed = parse_open_meteo_payload(
+            sample,
+            19.076,
+            72.8777,
+            "Mumbai, IN".to_owned(),
+            "India".to_owned(),
+            "Mumbai".to_owned(),
+            1700000000,
+        )
+        .expect("parse payload");
+
+        assert_eq!(parsed.temperature_c, 28.4);
+        assert_eq!(parsed.apparent_c, 30.1);
+        assert_eq!(parsed.humidity, 62);
+        assert_eq!(parsed.wind_kmh, 11.4);
+        assert_eq!(parsed.condition, "Partly Cloudy");
+        assert_eq!(parsed.location, "Mumbai, IN");
+        assert_eq!(parsed.country, "India");
+        assert!(!parsed.offline);
+        assert_eq!(parsed.forecast.len(), 5);
+        assert_eq!(parsed.forecast[0].date, "2026-11-09");
+        assert_eq!(parsed.forecast[0].temp_max_c, 31.2);
+        assert_eq!(parsed.forecast[2].condition, "Rain");
+        assert_eq!(parsed.forecast[4].condition, "Thunderstorm");
+    }
+
+    #[test]
+    fn test_city_empty_or_auto_does_not_ip_lookup() {
+        let err_empty = fetch_from_provider(&WeatherRequest::City("".to_owned())).unwrap_err();
+        assert!(err_empty.contains("No city"));
+        let err_auto = fetch_from_provider(&WeatherRequest::City("auto".to_owned())).unwrap_err();
+        assert!(err_auto.contains("No city"));
+    }
+
+    #[test]
+    fn test_disk_cache_roundtrip_and_ttl() {
+        let dir = std::env::temp_dir().join("rusty_browser_test_weather_cache");
+        let _ = fs::remove_dir_all(&dir);
+        let req = WeatherRequest::City("TestvilleCacheCheck".to_owned());
+        let key = req.cache_key();
+        let entry = CachedWeatherEntry {
+            key: key.clone(),
+            fetched_secs: now_secs(),
+            data: WeatherData {
+                temperature_c: 21.5,
+                apparent_c: 21.0,
+                humidity: 50,
+                wind_kmh: 8.0,
+                condition: "Clear Sky".to_owned(),
+                icon: "sun".to_owned(),
+                location: "Testville".to_owned(),
+                country: "Testland".to_owned(),
+                latitude: 10.0,
+                longitude: 20.0,
+                is_day: true,
+                weather_code: 0,
+                updated_secs: now_secs(),
+                query: "TestvilleCacheCheck".to_owned(),
+                offline: false,
+                forecast: vec![],
+            },
+        };
+        let mut map = HashMap::new();
+        map.insert(key, entry);
+        save_disk_cache(Some(&dir), &map);
+
+        let loaded = load_disk_cache(Some(&dir));
+        assert_eq!(loaded.len(), 1);
+        let hit = loaded.values().next().unwrap();
+        assert_eq!(hit.data.location, "Testville");
+        assert_eq!(CACHE_TTL_SECS, 1800);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

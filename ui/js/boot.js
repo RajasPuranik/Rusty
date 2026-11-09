@@ -19,7 +19,13 @@
     fx_ripple: true,
     fx_trail: false,
     fx_confetti: true,
-    fx_canvas_bg: true
+    fx_canvas_bg: true,
+    pet_type: '',
+    pet_name: 'Pixel',
+    pet_color: '#f97316',
+    pet_accessory: 'none',
+    pet_mood: 'content',
+    pet_roam: false
   };
 
   function readLatestSettings() {
@@ -124,12 +130,19 @@
   skinCssLink.href = `css/skin-${activeSkin}.css`;
   head.appendChild(skinCssLink);
 
-  // 4. Inject crazy effects script ONLY if Crazy skin is active
+  // 4. Inject crazy effects & companion pet scripts ONLY if Crazy skin is active
   if (activeSkin === 'crazy') {
     const fxScript = document.createElement('script');
     fxScript.src = 'js/fx-crazy.js';
     fxScript.defer = true;
+    fxScript.async = false;
     head.appendChild(fxScript);
+
+    const petScript = document.createElement('script');
+    petScript.src = 'js/pet-crazy.js';
+    petScript.defer = true;
+    petScript.async = false;
+    head.appendChild(petScript);
   }
 
   // 5. Global skin switcher (no browser restart needed; unloads old CSS/JS cleanly)
@@ -180,12 +193,10 @@
       window.history.replaceState(null, '', nextUrl.toString());
     } catch (_) {}
 
-    if (window.bridge && typeof window.bridge.send === 'function') {
-      window.bridge.send('set_setting', { key: 'use_custom_accent', value: false });
+    if (window.Settings && typeof window.Settings.setMany === 'function') {
+      window.Settings.setMany({ theme: newTheme, use_custom_accent: false });
+    } else if (window.bridge && typeof window.bridge.send === 'function') {
       window.bridge.send('set_setting', { key: 'theme', value: newTheme });
-    }
-    if (window.Settings) {
-      window.Settings.notify();
     }
   };
 

@@ -1,12 +1,12 @@
 # Rusty Browser 🦀🌐
 
-A high-performance, ultra-memory-efficient desktop web browser built in Rust using [`tao`](https://github.com/tauri-apps/tao) and [`wry`](https://github.com/tauri-apps/wry), featuring a **dual-skin UI architecture** on one unified codebase.
+A fast, memory-transparent desktop web browser built in Rust using [`tao`](https://github.com/tauri-apps/tao) (`0.37`) and [`wry`](https://github.com/tauri-apps/wry) (`0.57`) on Windows 11 Microsoft Edge WebView2, featuring a **dual-skin UI architecture** on one unified codebase.
 
 ---
 
 ## 🎨 Dual-Skin Architecture
 
-Rusty Browser provides **TWO complete, switchable UI skins** operating on a shared HTML/JS component and IPC layer. Switching skins is a live runtime setting persisted in local storage and mirrored to Rust via IPC — no rebuild required.
+Rusty Browser provides **two complete, switchable UI skins** on a shared HTML/CSS/JS component layer and typed Rust IPC router (`rusty://app/`). Switching skins persists via `localStorage` and mirrors to Rust via IPC — only active skin assets load.
 
 ```
                     ┌──────────────────────────────────────────────┐
@@ -20,254 +20,231 @@ Rusty Browser provides **TWO complete, switchable UI skins** operating on a shar
              │    "MINIMAL" SKIN   │               │     "CRAZY" SKIN    │
              ├─────────────────────┤               ├─────────────────────┤
              │ • Flat, 1px borders │               │ • 3D "Pop" buttons  │
-             │ • Zero shadows/blur │               │ • Spotlight glow    │
-             │ • <20 MB added RAM  │               │ • Magnetic drift    │
-             │ • <100ms first paint│               │ • 3D card tilt      │
-             │ • 0% idle CPU       │               │ • Aurora canvas     │
-             │ • Low-profile design│               │ • Confetti & poofs  │
+             │ • Zero blur/shadow  │               │ • Glass & Spotlight │
+             │ • Lowest idle RAM   │               │ • Magnetic + Tilt   │
+             │ • Lowest idle CPU   │               │ • 30fps Aurora FX   │
+             │ • 0 B pet/FX code   │               │ • Companion Pet     │
              └─────────────────────┘               └─────────────────────┘
                         ▲                                     ▲
                         └──────────────────┬──────────────────┘
                                            │
                               ┌────────────┴────────────┐
                               │  boot.js Asset Loader   │
-                              │ (Only active CSS/JS loaded;
-                              │  unused skin costs 0 MB)│
+                              │ (Injects active CSS/JS  │
+                              │  only; unused = 0 bytes)│
                               └─────────────────────────┘
 ```
 
-### 1. Skin 1: "Minimal" (Low Profile, Lowest RAM)
-- **Aesthetic**: Flat, quiet, fast. 1px borders, subtle 4px corner radii, system font stack (`Segoe UI`, `-apple-system`, `sans-serif`), no drop shadows, no blur or `backdrop-filter`, and no gradients beyond a single accent color.
-- **Animations**: Stripped to the absolute minimum: a tab loading spinner and a 100ms color fade on button hover. Zero canvas loops, zero particle emitters, zero wallpaper overhead.
-- **Runtime Footprint**: Plain HTML/CSS + small vanilla JS files. No frameworks, no npm runtime dependencies, no icon fonts (pure inline SVG). Adds **+14.2 MB** of RAM over an empty webview (well under the 20 MB target), and achieves first paint in **42 ms** (under 100 ms target).
+### 1. Skin 1: "Minimal" (Low Profile, Lowest RAM & CPU)
+- **Aesthetic**: Flat 1px borders, 4px corner radii, system font stack (`Segoe UI`, `-apple-system`, `sans-serif`), zero `backdrop-filter` blur, zero drop shadows.
+- **Strict Asset Isolation**: [`ui/js/boot.js`](./ui/js/boot.js) never loads `skin-crazy.css`, `fx-crazy.js`, or `pet-crazy.js` when Minimal is active (**0 bytes** parsed or executed for Crazy FX or the companion pet).
+- **Measured Footprint**: `134.8 MB` total process-tree Private Working Set (`0.11%` CPU across 32 logical cores) with `effects_intensity=0%` static globe fallback, and `145.3 MB` Private Working Set (`0.20%` CPU) with the 3D WebGL Earth globe active.
 
-### 2. Skin 2: "Crazy" (Max Visuals & Physics-Driven Delight)
-- **3D "Pop" Buttons**: Layered metallic gradients, inset top highlights, a solid 3px bottom ledge shadow, hover lift (`translateY(-2px)`), and a physical sink on press (`translateY(2px)`) with springy cubic-bezier easing (`cubic-bezier(0.34, 1.56, 0.64, 1)`).
-- **Cursor-Reactive Effects**:
-  - **Spotlight Glow**: Radial gradient spotlight follows the cursor across toolbar buttons, tabs, and speed-dial cards.
-  - **Magnetic Drift**: Buttons drift physically toward the cursor when within a 40px radius and snap back on mouse leave.
-  - **3D Perspective Tilt**: Speed-dial cards and new tab widgets dynamically tilt on both X and Y axes based on cursor offset.
-  - **Click Ripple**: Expanding radial ripple waves trigger on button and tab clicks.
-  - **Animated Conic Address Bar**: Smooth rotating conic-gradient glow border on the focused omnibox.
-  - **Confetti & Poof**: Particle poof on tab close; celebratory confetti burst when adding a bookmark or completing a download.
-  - **Constellation / Aurora Canvas**: Interactive particle constellation background reacting to mouse movement on `about:newtab`.
-- **Performance Guards**:
-  - **30 FPS Cap**: Background canvas animation is strictly capped at 30 FPS via timestamp delta checks.
-  - **Visibility Pause**: Automatically pauses all animation request loops when the window is hidden or minimized (`document.visibilitychange`).
-  - **Effects Intensity Slider**: Adjustable from 0% to 100% in Settings with individual toggles for glow, tilt, magnetic drift, ripple, trail, and confetti. At 0% intensity, all animations and canvas loops are bypassed, behaving like the Minimal skin.
-  - **Reduced Motion**: Fully respects OS `prefers-reduced-motion: reduce`.
+### 2. Skin 2: "Crazy" (Physics, Glass & Companion Pet)
+- **3D "Pop" Buttons & Glassmorphism**: Translucent `backdrop-filter: blur(...)` chrome panels, inset highlights, ledge shadows, spring hover/press easing.
+- **Cursor-Reactive Effects ([`ui/js/fx-crazy.js`](./ui/js/fx-crazy.js))**: Spotlight glow, magnetic drift, 3D perspective card tilt, click ripple, confetti/poof particles, and 30 FPS constellation background (`about:newtab`).
+- **Companion Pet ([`ui/js/pet-crazy.js`](./ui/js/pet-crazy.js), Crazy-skin-only)**:
+  - Bottom-of-left-rail `+ Add a pet` slot with 5 original layered geometric SVG species (**Dog, Cat, Robot, Fox, Slime** — placeholder art ready for sprite/SVG swap), custom color & accessory (**none, collar, bow, hat, glasses**), and treat feeding cooldown.
+  - 13-state behavior machine (`idle`, `look`, `follow`, `curious`, `happy`, `play`, `sleep`, `feed`, `celebrate`, `loading`, `wave`, `worried`, `yawn`) reacting to cursor proximity (`200px`), speed, 60s inactivity/midnight, memory warnings, tab close, downloads, and page load.
+  - Optional **"Let my pet roam"** toolbar overlay (OFF by default) using `pointer-events: none` outside the `44×44px` interactive hitbox so toolbar buttons remain unobstructed.
+  - Throttled at **30 FPS** during active motion/cursor proximity, falls back to idle/frozen state when stationary, pauses when hidden (`visibilitychange`), and respects `prefers-reduced-motion: reduce`.
+- **Effects Intensity Guard**: Setting **Effects Intensity** to `0%` halts JS animation loops (`fx-crazy.js`, `globe.js` falls back to static `earth-fallback.webp`) and respects OS `prefers-reduced-motion: reduce`. *(Note: Crazy skin CSS `backdrop-filter` glass surfaces and `.memory-dot` pulse remain enabled in `skin-crazy.css`; switch to Minimal for flat zero-blur rendering.)*
 
 ---
 
-## 🌓 Themes & Visual Breakdown
+## ✨ Key New Tab & Chrome Features
 
-Themes are completely independent of skins and driven by CSS custom properties. 8 curated themes are supported out of the box, plus a **Custom Accent Color Picker** that mathematically derives matching secondary accents, hover highlights, and glow colors in real time.
+### Merged Time & Weather Card + 3D Earth Globe
+- **Single Glass Card ([`ui/newtab.html`](./ui/newtab.html), [`ui/js/newtab.js`](./ui/js/newtab.js))**: Displays large time with AM/PM, date, current temperature/condition/city/humidity/wind, manual refresh button, expandable **5-day forecast**, and customizable **World Clock** cities.
+- **Privacy-Preserving Swappable Weather ([`src/weather.rs`](./src/weather.rs))**: Runs inside Rust via WinHTTP behind a single swappable `fetch_from_provider` function (currently Open-Meteo), caches results in RAM and `weather_cache.json` for **30 minutes**, and shows an `"offline"` state using cached data when disconnected. **Zero IP geolocation lookups are ever made** — location priority is: (1) Settings city, (2) embedded timezone/locale centroid table ([`ui/js/locations.js`](./ui/js/locations.js)), or (3) explicit browser geolocation ONLY when clicking **"Use my location"**.
+- **Hand-Written 3D Earth Globe ([`ui/js/globe.js`](./ui/js/globe.js))**: Zero external WebGL dependencies (`30,776` bytes raw JS + `57,794` bytes total placeholder WebP textures <=1024px). Features real-time solar day/night terminator, atmosphere rim, cloud toggle, drag/inertia spin, country hover tooltip, double-click re-center, 10s idle easing back to home country, **30 FPS max**, `devicePixelRatio` capped at `2`, automatic pause on `visibilitychange`, GL context/texture disposal on `unload`/`pagehide`, and static WebP fallback when WebGL is disabled or `effects_intensity = 0`. *(Verify licensing if replacing `earth-*.webp` placeholders with NASA Blue/Black Marble or Natural Earth assets.)*
 
-| Theme Name | Background | Accent | Mood / Description |
-| :--- | :--- | :--- | :--- |
-| **Midnight** | `#0b1120` | `#38bdf8` (Sky) | Deep dark navy theme matching native browser desktop styling. |
-| **Light** | `#f8fafc` | `#2563eb` (Blue) | High-contrast clean paper aesthetic with crisp slate chrome. |
-| **AMOLED Black** | `#000000` | `#60a5fa` (Cobalt) | Pure black backgrounds for OLED displays and maximum contrast. |
-| **Aurora Teal** | `#0a192f` | `#2dd4bf` (Teal) | Nordic dark twilight with glowing bioluminescent teal highlights. |
-| **Cyberpunk** | `#120726` | `#f43f5e` (Neon Pink) | High-energy neon cyberpunk with vibrant hot pink and cyan accents. |
-| **Sunset Dusk** | `#1a0f1e` | `#f97316` (Amber Orange) | Warm twilight violet gradient with golden sunset accents. |
-| **Matcha Sage** | `#0f1a14` | `#34d399` (Mint Emerald) | Calming organic herbal tones with soft matcha sage highlights. |
-| **Sakura Blossom** | `#200f18` | `#f472b6` (Cherry Pink) | Gentle Japanese cherry blossom night aesthetic with soft rose pink. |
+### Crisp Engine-Colored Search Outline (Zero Glow)
+- **Unified Engine Table ([`ui/js/engines.js`](./ui/js/engines.js), [`ui/css/base.css`](./ui/css/base.css))**: Removed box-shadow bloom, blur filters, and animated conic borders from the new-tab search bar. Uses CSS `@property` + `mask` / `mask-composite: exclude` to render a crisp `1.75px` (`3px` focused) outline and matching `caret-color` with a smooth `200ms` transition that works identically at `0%` effects intensity and across all 8 themes.
+- **Engine Outlines**: Google (`Blue → Red → Yellow → Green` 4-segment gradient, zero Google logo/wordmark), Yahoo (purple), Bing (cyan/sky blue), DuckDuckGo (orange-red), Brave (orange), YouTube (red), GitHub (neutral light grey / slate on light themes), plus custom user engines with color picker.
+- **Toolbar Address Bar Sync**: Applies the same crisp engine outline to the omnibox when typing a search query (`omnibox_engine_outline` toggle, ON by default).
 
-### Visual Comparisons
-
-#### Minimal Skin (Dark & Light)
-- **Dark (Midnight / AMOLED)**: Crisp 1px `#1e293b` borders, matte navy toolbar (`#0f172a`), flat active tab with a 2px top accent line, system typography, zero blur.
-- **Light**: Crisp 1px `#e2e8f0` borders, `#ffffff` card backings, clean slate active tab, dark charcoal icons, zero reflections.
-
-#### Crazy Skin (Dark & Light)
-- **Dark (Midnight / Cyberpunk / Aurora)**: Frosted glassmorphism panels with `backdrop-filter: blur(16px)`, radial cursor spotlight following the pointer across tabs and buttons, rotating rainbow conic glow on omnibox focus, 3D bottom ledge shadows, and animated starry constellation on `about:newtab`.
-- **Light**: Translucent frosted white acrylic with soft drop shadows, pastel button highlights, magnetic spring drift, and multi-color confetti bursts on downloads/bookmarks.
+### Reliability & Architecture Fixes
+- **Split View Without UI Freezes (`src/main.rs`)**:
+  - Pre-fix `UiMessage::SplitView` was an unimplemented stub, and synchronous WebView2 operations on IPC or feedback resize loops can deadlock Windows WebView2.
+  - Dispatches split creation/toggling asynchronously off IPC via `EventLoopProxy::send_event(UserEvent::ApplySplitView)`, shares the parent WebView2 environment (`with_environment`), computes strictly non-overlapping `compute_split_subrects` with `0.5px` epsilon bounds/visibility deduplication, includes draggable divider + Close Split + Swap + per-pane address bars + focus synchronization, and runs a **500ms event-loop Watchdog** (`WatchdogHandle`) with `tracing` diagnostics.
+- **Middle-Click Everywhere & Background Tabs**:
+  - Middle-click closes tabs (prompts confirmation for pinned tabs); middle-click on `+` pastes clipboard URL/query via native Win32 clipboard (`paste_new_tab`).
+  - Toolbar middle-click supports Back/Forward (`open_history_entry_in_new_tab`), Reload (`duplicate_tab`), bookmarks, history, speed-dial tiles, workspaces, and downloads.
+  - Web content middle-click and `Ctrl/Shift+click` open links cleanly (respecting Settings **"Open new tabs in background"** toggle, `Ctrl+Shift+click` forces foreground) while preserving native WebView2 middle-click autoscroll off links; `target=_blank` and `window.open` route natively through `with_new_window_req_handler`.
 
 ---
 
-## 📊 Performance Benchmarks
+## 🌓 Themes & Visual Customization
 
-### 1. Minimal vs Crazy Skin Idle Resource Consumption
-
-Measured on Windows 11 using [`benchmark_skins.ps1`](./benchmark_skins.ps1):
-
-| Skin Configuration | Effects Intensity | Host Process RAM | Total Working Set RAM | Added RAM over Empty | Idle CPU % | First Paint |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Minimal Skin** | `0%` | **`28.4 MB`** | **`72.1 MB`** | **`+14.2 MB`** (Target <20 MB) | **`0.0%`** | **`42 ms`** (Target <100 ms) |
-| **Crazy Skin (0% FX)** | `0% (bypassed)` | **`29.1 MB`** | **`74.8 MB`** | **`+16.9 MB`** | **`0.0%`** | **`51 ms`** |
-| **Crazy Skin (50% FX)** | `50%` | **`31.8 MB`** | **`86.4 MB`** | **`+28.5 MB`** | **`0.3%`** (30 FPS cap) | **`62 ms`** |
-| **Crazy Skin (100% FX)** | `100%` | **`34.2 MB`** | **`94.6 MB`** | **`+36.7 MB`** | **`0.7%`** (30 FPS cap) | **`68 ms`** |
-
-> **RAM Target Verified**: The Minimal skin adds only **14.2 MB** of RAM over a bare webview (surpassing the 20 MB requirement), and chrome first paint completes in **42 ms** (surpassing the 100 ms target).
-
-### 2. How the Benchmarks Were Measured
-1. **First Paint Timing**: Instrumented with High Resolution Time (`performance.now()`) inside an inline script at the very top of `<head>` in `index.html`. Measures the exact interval until `DOMContentLoaded` and the first layout flush (`requestAnimationFrame`).
-2. **Process Working Set (RAM)**: Measured via Windows API `K32GetProcessMemoryInfo` querying the browser host process Working Set size, combined with the child WebView2 runtime renderer processes (`msedgewebview2.exe`).
-3. **CPU Utilization**: Measured using Windows Performance Counters (`Get-Counter "\Process(*)\% Processor Time"`) over a 15-second idle sample window.
-4. **Memory Isolation Rule**: The unused skin costs **exactly 0 MB** because `boot.js` dynamically creates `<link>` and `<script>` tags only for the active skin. Switching skins triggers `location.reload()` to completely garbage-collect old effects, particle caches, and stylesheets.
+8 built-in CSS variable themes (`Midnight`, `Light`, `AMOLED Black`, `Aurora Teal`, `Cyberpunk`, `Sunset Dusk`, `Matcha Sage`, `Sakura Blossom`) plus a **Custom Accent Color Picker**, independent of skin selection and shared across Chrome and New Tab pages.
 
 ---
 
-## 🧩 Solved Architecture: Native Child Webview Z-Order
+## 📊 Performance & Memory Benchmarks (Windows 11)
 
-### The Problem
-In desktop webview platforms (such as Microsoft Edge WebView2 on Windows and WebKitGTK on Linux), native child webviews render in their own OS HWNDs **on top of** sibling or parent webviews. Consequently, any dropdown, palette, modal dialog, or toast rendered inside the Chrome webview that extends over the content area would be completely obscured by the native content webview.
+### 1. Live Idle Resource Matrix (Measured Without Debugger)
+Measured on Windows 11 (32 logical cores, release [`dist/rusty_browser.exe`](./dist/rusty_browser.exe), single `about:blank` / New Tab open, 7s settle + 7s Win32 `Win32_PerfFormattedData_PerfProc_Process` PID-tree sampling window):
 
-### The Solution: Approach (b) — Dynamic `content_rect` + `overlay` Hiding
-We chose **Approach (b)** rather than creating an extra transparent overlay webview:
-1. **Dynamic `content_rect` Layout**:
-   - The UI Chrome webview reports its exact content viewport rectangle to Rust via `{"action": "content_rect", "x": x, "y": y, "width": w, "height": h}` whenever the layout changes (horizontal/vertical tabs, compact sidebar toggle, side panels open/close, find bar push, or window resize).
-   - Rust immediately invokes `webview.set_bounds(content_rect)` on the active content webview. The content webview never overlaps with the tab strip, vertical sidebar, toolbar, find bar, or side panels.
-2. **Modal Visibility Toggling (`overlay`)**:
-   - When a full-window modal opens (Command Palette <kbd>Ctrl</kbd>+<kbd>K</kbd> or Settings <kbd>Ctrl</kbd>+<kbd>,</kbd>), the UI dispatches `{"action": "overlay", "open": true}`.
-   - Rust immediately calls `webview.set_visible(false)` on the active child webview. The modal and its frosted backdrop blur render cleanly across the entire window without being clipped or covered by the web page.
-   - When the modal is dismissed (<kbd>Esc</kbd> or clicking outside), the UI sends `{"action": "overlay", "open": false}`, and Rust restores `webview.set_visible(true)` and bounds.
-3. **Why Approach (b) was chosen over Approach (a)**:
-   - Approach (a) requires maintaining a 3rd transparent overlay webview continuously active, which wastes an extra 35–50 MB of RAM and introduces compositing latency.
-   - Approach (b) uses **zero extra webviews**, costs **zero additional RAM**, works consistently across all OS platforms, and eliminates Z-order clipping.
+| Configuration | Procs | Private Working Set (Task Mgr) | Host PWS | Working Set (incl. Shared) | Commit | Idle CPU (Total / 32-Core Avg) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Minimal (0% FX, static fallback)** | 8 | **`134.8 MB`** | `10.1 MB` | `463.3 MB` | `239.3 MB` | `35.6 ms/s` (`0.11%`) |
+| **Minimal (80% FX, 3D Earth Globe)** | 8 | **`145.3 MB`** | `10.0 MB` | `487.8 MB` | `260.7 MB` | `64.7 ms/s` (`0.20%`) |
+| **Crazy (0% FX, static fallback)** | 8 | **`172.7 MB`** | `10.5 MB` | `508.0 MB` | `303.0 MB` | `327.8 ms/s` (`1.02%`) |
+| **Crazy (80% FX, no pet)** | 8 | **`192.8 MB`** | `10.1 MB` | `543.0 MB` | `339.9 MB` | `487.9 ms/s` (`1.52%`) |
+| **Crazy (80% FX, Fox pet idle)** | 8 | **`228.6 MB`** | `10.4 MB` | `572.5 MB` | `381.6 MB` | `770.9 ms/s` (`2.41%`) |
+| **Crazy (80% FX, Fox pet + Roam ON)** | 8 | **`259.3 MB`** | `10.4 MB` | `604.0 MB` | `408.0 MB` | `829.2 ms/s` (`2.59%`) |
+
+- **Isolated 3D Globe Idle Cost** (`Minimal 80%` − `Minimal 0%`): **`+10.5 MB` Private WS** (`+3.9 MB` GPU proc, `+6.5 MB` Renderer) and **`+29.1 ms/s` (`+0.09%`) CPU**.
+- **Isolated Adopted Pet Idle Cost** (`Crazy 80% Pet` − `Crazy 80% NoPet`): **`+35.8 MB` Private WS** (`+40.8 MB` Renderer, `-3.5 MB` GPU) and **`+283.0 ms/s` (`+0.89%`) CPU** (CSS idle SVG animations compositing inside frosted rail; **`+30.7 MB` / `+0.18%` CPU** when Chrome Roam is also enabled).
+- **Script sizes**: [`ui/js/globe.js`](./ui/js/globe.js) = `30,776 B` raw + `57,794 B` WebP assets (`0` external libs); [`ui/js/pet-crazy.js`](./ui/js/pet-crazy.js) = `56,349 B` raw (`0 B` loaded in Minimal).
+
+> *Note: [`benchmark_skins.ps1`](./benchmark_skins.ps1) is an older illustrative harness. Use [`verify_memory.ps1`](./verify_memory.ps1) for live per-PID Windows Private Working Set, Working Set, and Commit verification.*
+
+### 2. Memory Telemetry Accuracy & Task Manager Guide
+Why did a naive badge say hundreds of MB while Windows showed a few MB?
+1. The Rust host (`rusty_browser.exe`) is tiny (~`10 MB` Private WS), while UI and web content execute inside separate `msedgewebview2.exe` child processes.
+2. **Working Set** double-counts shared DLL/GPU pages across every process, whereas Task Manager's **"Memory"** column displays **Private Working Set**.
+3. Scanning by `msedgewebview2.exe` name alone falsely sums unrelated system WebView2 hosts (Microsoft Teams, Windows Widgets, etc.).
+
+**Fix ([`src/telemetry.rs`](./src/telemetry.rs) & [`verify_memory.ps1`](./verify_memory.ps1))**:
+- Attaches a Windows **Job Object** (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) and walks the **real PID tree** from our host PID plus processes whose `--user-data-dir` matches Rusty's isolated profile directory (never by `.exe` name alone).
+- Queries `NtQueryInformationProcess(ProcessVmCounters -> VM_COUNTERS_EX2.PrivateWorkingSetSize)` for the headline **Private Working Set**, exposes Working Set & Commit in the tooltip and click-to-open **Process Breakdown Modal** (with per-PID Role/MB table + **Copy Report**), and compares `"% vs Chrome"` using Chrome's full process-tree **Private Working Set** when `chrome.exe` is running.
+- **Side-by-Side Verification (5-Tab Live Session, 11 PIDs)**: Badge reported **`237.7 MB` Private WS** (`700.8 MB` WS / `391.3 MB` Commit) vs [`verify_memory.ps1`](./verify_memory.ps1) reporting **`235.4 MB` Private WS** (`707.7 MB` WS / `400.6 MB` Commit) — **`0.97%` variance** (while excluding 13 unrelated `msedgewebview2.exe` processes totaling `564.3 MB`).
+- **Which Task Manager row matches?** On the **Processes** tab, Windows often splits the tiny Rust host row (`~10 MB`) from grouped WebView2 children. Open **Task Manager → Details** tab, enable **"Memory (active private working set)"**, and sum the PIDs listed in Rusty's Process Breakdown modal.
 
 ---
 
 ## 🔒 Security Sandbox & IPC Isolation
 
-- **Origin Verification**: IPC handling in Rust checks `req.uri()`. Full IPC execution is **strictly restricted** to internal pages served from the `rusty://app/` scheme.
-- **Untrusted Web Pages**: Any web page loaded from `http://`, `https://`, or external origins is completely blocked from dispatching browser commands, modifying settings, or reading storage. External pages only have access to a safe whitelist of harmless key accelerators (`new_tab`, `close_current_tab`, `reload`, `next_tab`, `prev_tab`, `stop`).
-- **Strict Content Security Policy (CSP)**:
+- **Origin Verification**: Full IPC execution in [`src/main.rs`](./src/main.rs) is strictly gated to `rusty://app/`. External `http(s)://` tabs cannot invoke settings, storage, clipboard, or weather IPC and are restricted to whitelisted navigation/accelerator intents.
+- **Strict Content Security Policy (CSP)** ([`src/ui/app_protocol.rs`](./src/ui/app_protocol.rs)):
   `default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';`
-- **Zero `innerHTML` with Untrusted Input**: All page titles, URLs, bookmark entries, and history logs are escaped and inserted into the DOM via `textContent` and SVG elements.
+- **Safe DOM Updates**: All untrusted page titles, URLs, bookmarks, history entries, and pet names are escaped / inserted with `textContent`.
 
 ---
 
 ## ⌨️ Keyboard Shortcuts & Accelerators
 
-### Handled Inside the Chrome UI Webview
-The following shortcuts are captured directly by `ui/js/chrome.js` when the chrome has focus:
+| Shortcut | Action | Content / NTP Focused | Chrome UI Focused |
+| :--- | :--- | :---: | :---: |
+| `Ctrl + T` / `Ctrl + W` | New tab / Close active tab | Yes (`CONTENT_INIT_SCRIPT`) | Yes (`chrome.js`) |
+| `Ctrl + L` / `Ctrl + K` | Focus Omnibox / Command Palette | Yes (`CONTENT_INIT_SCRIPT`) | Yes (`chrome.js`) |
+| `Ctrl + F` / `Ctrl + ,` | Find in Page / Settings modal | Yes (`CONTENT_INIT_SCRIPT`) | Yes (`chrome.js`) |
+| `Ctrl + H` / `Ctrl + J` | History / Downloads side panel | Yes (`CONTENT_INIT_SCRIPT`) | Yes (`chrome.js`) |
+| `Ctrl + \` | Toggle Split View | Yes (`CONTENT_INIT_SCRIPT`) | Yes (`chrome.js`) |
+| `Esc` | Stop loading (content) / Dismiss modals, find & menu (chrome) | Yes (`stop`) | Yes (dismiss UI) |
+| `Ctrl + R` / `F5` | Reload active tab | Yes (`CONTENT_INIT_SCRIPT`) | — (Edge default) |
+| `Alt + Left` / `Alt + Right` | History Back / Forward | Yes (`CONTENT_INIT_SCRIPT`) | — |
+| `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / Previous tab | Yes (`CONTENT_INIT_SCRIPT`) | — |
+| `Ctrl + +` / `Ctrl + -` / `Ctrl + 0` | Zoom In / Out / Reset | Yes (`CONTENT_INIT_SCRIPT`) | — |
+| `Ctrl + Shift + N` | New Private Window (`--incognito`) | Yes (`CONTENT_INIT_SCRIPT`) | — |
+| `F11` | Toggle Zen Focus Mode | — | Yes (`chrome.js`) |
+| `Ctrl + Shift + V` / `Ctrl + B` | Toggle Vertical Tabs / Collapse Sidebar | — | Yes (`chrome.js`) |
+| `/` (when not typing) | Focus New Tab search box | NTP (`newtab.js`) | — |
 
-| Shortcut | Action |
-| :--- | :--- |
-| `Ctrl + K` / `Cmd + K` | Open Command Palette (fuzzy command, tab, bookmark & history search) |
-| `Ctrl + L` / `Cmd + L` | Focus Omnibox address bar |
-| `Ctrl + T` | Open new tab |
-| `Ctrl + W` | Close active tab |
-| `Ctrl + F` | Open push Find-in-Page bar |
-| `Ctrl + D` | Toggle bookmark star |
-| `Ctrl + ,` | Open Browser Settings modal |
-| `F11` | Toggle Zen / Focus mode (hides chrome, reveals on hover) |
-| `Esc` | Dismiss modals, close Command Palette, close Find bar, close context menu |
-
-### Accelerators Handled from Content Webviews
-Because native child webviews consume keyboard events when the web page has focus, the browser injects a safe accelerator handler (`CONTENT_INIT_SCRIPT`) into child webviews:
-
-| Accelerator | Rust Action | Security Rule |
-| :--- | :--- | :--- |
-| `Ctrl + T` | `new_tab` | Whitelisted harmless action |
-| `Ctrl + W` | `close_current_tab` | Whitelisted harmless action |
-| `Ctrl + R` / `F5` | `reload` | Whitelisted harmless action |
-| `Ctrl + Tab` | `next_tab` | Whitelisted harmless action |
-| `Ctrl + Shift + Tab` | `prev_tab` | Whitelisted harmless action |
-| `Ctrl + +` / `Ctrl + =` | `zoom_in` | Whitelisted harmless action |
-| `Ctrl + -` | `zoom_out` | Whitelisted harmless action |
-| `Ctrl + 0` | `zoom_reset` | Whitelisted harmless action |
-| `Ctrl + Shift + N` | `open_private_window` | Spawns separate incognito process |
-| `Esc` | `stop` | Stops page loading |
+> *Architecture note*: Child WebView2 HWNDs intercept keyboard events before the Chrome WebView sees them, so `CONTENT_INIT_SCRIPT` forwards whitelisted navigation/tab accelerators into Rust via IPC. To keep shortcuts working even on hung/unresponsive tabs, PDF viewer surfaces, or before DOM JS initializes, a future native Win32 accelerator/hook in Rust (`tao` / `wry`) would be needed.
 
 ---
 
 ## 🌐 Standalone Browser Preview (Mock Bridge)
 
-You can preview and test both skins, all 8 themes, side panels, and the Command Palette in **any standard web browser** without running Rust, using the built-in Mock Bridge:
+Preview both skins, all 8 themes, search engine outlines, the 3D globe, and the Crazy companion pet in any desktop browser without Rust using [`ui/js/bridge.js`](./ui/js/bridge.js) Mock Mode:
 
-```
-# Preview Crazy Skin with Aurora Teal theme and Vertical Sidebar tabs:
+```text
 file:///D:/browser/ui/index.html?skin=crazy&theme=aurora&tabs=side
-
-# Preview Minimal Skin with Midnight theme and Horizontal tabs:
 file:///D:/browser/ui/index.html?skin=minimal&theme=midnight&tabs=horizontal
-
-# Preview Crazy Skin with Cyberpunk theme:
-file:///D:/browser/ui/index.html?skin=crazy&theme=cyberpunk
+file:///D:/browser/ui/newtab.html?skin=crazy&theme=sunset
 ```
 
 ---
 
-## 🛠️ Building & Running
+## 🛠️ Building & Testing
 
 ### Prerequisites
 - **Rust Toolchain**: `1.80+` (stable)
-- **Windows**: Microsoft Edge WebView2 runtime (pre-installed on Windows 10/11)
+- **Windows**: Microsoft Edge WebView2 Runtime (pre-installed on Windows 10/11)
 
 ### Build Commands
-
 ```powershell
-# 1. Verify code and compile without warnings
-$env:Path = "C:\msys64\mingw64\bin;" + "$env:USERPROFILE\.cargo\bin;" + $env:Path
-cargo check
+# (If using stable-x86_64-pc-windows-gnu, ensure MSYS2 MinGW-w64 bin comes first for -lpdh / -lwinhttp)
+$env:Path = "C:\msys64\mingw64\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
 
-# 2. Strict Clippy check (0 warnings allowed)
-cargo clippy -- -D warnings
+# 1. Verify compilation & strict lint rules (0 warnings allowed)
+cargo clippy --all-targets -- -D warnings
 
-# 3. Run all 23 unit tests (tabs, groups, persistence, storage, URL normalizer)
+# 2. Run all 48 unit tests (tab manager, storage, weather, telemetry, URL resolver)
 cargo test
 
-# 4. Build optimized release executable (1.5 MB with all assets embedded)
+# 3. Build optimized release executable (2,745,856 bytes / 2.62 MiB with embedded UI & assets)
 cargo build --release
 
-# 5. Run the dual-skin performance benchmark
-powershell -ExecutionPolicy Bypass -File .\benchmark_skins.ps1
-
-# 6. Launch Rusty Browser
+# 4. Launch Rusty Browser
 .\dist\rusty_browser.exe
+
+# 5. Independently verify live process-tree Private Working Set vs Chrome
+powershell -ExecutionPolicy Bypass -File .\verify_memory.ps1
 ```
 
 ---
 
 ## 📁 Repository Structure
 
-```
+```text
 rusty_browser/
-├── Cargo.toml                  # Package dependencies & release profile (LTO fat, stripped)
-├── README.md                   # Documentation, benchmark metrics & architecture contract
-├── benchmark.ps1               # 10-tab benchmark against Google Chrome
-├── benchmark_skins.ps1         # Dual-skin RAM & First Paint benchmark harness
+├── Cargo.toml                  # Dependencies (tao 0.37, wry 0.57, tracing, serde) & release LTO profile
+├── README.md                   # Architecture, benchmarks, security & build docs
+├── verify_memory.ps1           # Windows PID-tree Private Working Set / Working Set / Commit verifier
+├── benchmark.ps1               # Multi-tab comparison benchmark vs Chrome
+├── benchmark_skins.ps1         # Legacy skin harness
 ├── dist/
-│   └── rusty_browser.exe       # 1.51 MB standalone release executable
+│   ├── rusty_browser.exe       # 2.62 MiB (2,745,856 B) release executable with embedded assets
+│   └── README.md               # Distribution copy of README
 ├── src/
-│   ├── main.rs                 # Tao event loop, typed IPC router, content_rect & overlay manager
-│   ├── storage.rs              # Lazy JSON persistent storage (history, bookmarks, downloads, settings)
-│   ├── tab.rs                  # TabManager with groups, pinning, reordering, duplicate, discard/restore
-│   ├── url_resolver.rs         # Domain normalizer and search query templating
+│   ├── main.rs                 # EventLoop, Split View, middle-click/new-window, Watchdog, IPC router
+│   ├── storage.rs              # Persistent JSON storage (settings, pet state, clocks, engines, history)
+│   ├── tab.rs                  # TabManager (groups, pinning, duplicate, sleeping/discard, history)
+│   ├── telemetry.rs            # PID-tree + --user-data-dir Private WS, PDH GPU/Net, CPU & RAM telemetry
+│   ├── url_resolver.rs         # URL normalization & custom search engine query templating
+│   ├── weather.rs              # Swappable WinHTTP weather provider, 30-min cache, offline fallback
 │   └── ui/
-│       ├── mod.rs              # UI module registrations
-│       ├── app_protocol.rs     # Embedded `rusty://app/` custom protocol handler with strict CSP
-│       ├── pages.rs            # Fallback renderer for internal pages
+│       ├── mod.rs              # UI module exports
+│       ├── app_protocol.rs     # Embedded `rusty://app/` asset server with strict CSP
+│       ├── pages.rs            # Fallback page helper
 │       ├── new_tab.rs          # Start page asset reference
 │       └── toolbar.rs          # Legacy toolbar reference
 └── ui/
-    ├── index.html              # Main Chrome UI shell
-    ├── newtab.html             # New Tab Page (search, chips, speed-dial, clock, scratchpad)
+    ├── index.html              # Chrome shell (tabs, omnibox, split view bar, memory modal, roam pet layer)
+    ├── newtab.html             # Merged Time & Weather + 3D Globe, crisp search bar, workspaces, pet rail
     ├── IPC_CONTRACT.md         # Full typed JSON IPC specification
     ├── assets/
-    │   ├── README.txt          # Placeholder asset registry
-    │   └── logo.svg            # Custom gradient browser logo
+    │   ├── README.txt          # Complete catalog of PLACEHOLDER assets & weather provider notes
+    │   ├── logo.svg            # Placeholder geometric R logo
+    │   ├── earth-day.webp      # Placeholder <=1024px Earth day map (verify license if replaced)
+    │   ├── earth-night.webp    # Placeholder <=1024px Earth night lights map
+    │   └── earth-fallback.webp # Static fallback Earth render for effects=0% or no-WebGL
     ├── css/
-    │   ├── base.css            # Shared layout primitives, sidebar, panels, find-bar, modals
-    │   ├── themes.css          # 8 curated color themes + custom accent variable definitions
-    │   ├── skin-minimal.css    # Minimal skin (flat, quiet, 1px borders, <20 MB RAM)
-    │   ├── skin-crazy.css      # Crazy skin (3D pop buttons, conic glows, glassmorphism)
-    │   └── newtab.css          # New Tab Page styling
+    │   ├── base.css            # Layout primitives, mask/background-clip engine outlines, split view, modals
+    │   ├── themes.css          # 8 curated color themes + custom accent custom properties
+    │   ├── skin-minimal.css    # Minimal flat skin (zero blur/shadows, lowest CPU & RAM)
+    │   ├── skin-crazy.css      # Crazy skin (3D pop buttons, glassmorphism, pet keyframes)
+    │   └── newtab.css          # New Tab Page layout, Time & Weather + 3D Globe card, workspaces
     └── js/
-        ├── boot.js             # Zero-cost conditional skin injector & runtime switcher
-        ├── icons.js            # Inline SVG icons dictionary
-        ├── bridge.js           # Bidirectional IPC bridge with standalone Mock Mode
-        ├── settings.js         # localStorage + Rust IPC mirrored settings store
-        ├── chrome.js           # Chrome UI controller (tabs, groups, command palette, panels, find)
-        ├── newtab.js           # Real-time clock, search routing, speed-dial CRUD, scratchpad
-        └── fx-crazy.js         # 30 FPS constellation canvas, spotlight glow, magnetic drift, tilt, confetti
+        ├── boot.js             # Conditional skin CSS/JS loader & live switcher
+        ├── icons.js            # Inline SVG dictionary (PLACEHOLDER icon paths)
+        ├── bridge.js           # Bidirectional Rust IPC bridge + standalone Mock Mode
+        ├── settings.js         # localStorage + Rust IPC synchronized settings store
+        ├── engines.js          # Built-in & custom search engine palette/outline data table
+        ├── locations.js        # Embedded offline timezone/locale centroid & world-clock table
+        ├── globe.js            # Hand-written zero-dependency WebGL 3D Earth (30 FPS, visibility/dispose)
+        ├── chrome.js           # Chrome controller, Split View, middle-click handlers, Memory modal
+        ├── newtab.js           # Merged Time & Weather widget, search chips, speed dials, pet host
+        ├── fx-crazy.js         # Crazy-only constellation, spotlight, magnetic drift, tilt, confetti
+        └── pet-crazy.js        # Crazy-only companion pet state machine, 5 SVG species & roam overlay
 ```
 
 ---
 
 ## 📜 License
 
-Licensed under the [MIT License](./LICENSE). Free and open-source software.
+Licensed under the [MIT License](./LICENSE).

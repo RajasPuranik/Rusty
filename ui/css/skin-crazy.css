@@ -108,6 +108,14 @@
   animation: crazy-conic-glow 3s linear infinite;
 }
 
+[data-skin="crazy"] .omnibox.omnibox-search-active,
+[data-skin="crazy"] .omnibox.omnibox-search-active:focus-within {
+  transform: none;
+  animation: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
 @keyframes crazy-conic-glow {
   0% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
@@ -219,3 +227,548 @@
   border-radius: 50%;
   z-index: 99999;
 }
+
+/* ── Companion Pet (Crazy Skin Only; Transform + Opacity Animations Only) ─── */
+[data-skin="crazy"] .pet-add-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px dashed var(--accent-primary, #f97316);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+}
+
+[data-skin="crazy"] .pet-add-btn:hover {
+  background: var(--accent-highlight);
+  transform: translateY(-1px);
+}
+
+[data-skin="crazy"] .pet-stage-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  pointer-events: none;
+  position: relative;
+}
+
+[data-skin="crazy"] .pet-stage-arena {
+  position: relative;
+  width: 100%;
+  height: 76px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+[data-skin="crazy"] .pet-mover {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  pointer-events: none;
+  will-change: transform;
+}
+
+[data-skin="crazy"] .pet-hitbox {
+  min-width: 44px;
+  min-height: 44px;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  outline: none;
+}
+
+[data-skin="crazy"] .pet-hitbox:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  border-radius: 50%;
+}
+
+[data-skin="crazy"] .pet-visual {
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center 82%;
+  will-change: transform;
+}
+
+[data-skin="crazy"] .pet-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+[data-skin="crazy"] .pet-layer-tail {
+  transform-origin: 30px 64px;
+}
+
+[data-skin="crazy"] .pet-layer-head {
+  transform-origin: 48px 46px;
+}
+
+[data-skin="crazy"] .pet-eyes-open {
+  transform-origin: 48px 43px;
+  animation: pet-blink 4.8s ease-in-out infinite;
+}
+
+[data-skin="crazy"] .pet-bubble {
+  position: absolute;
+  left: 50%;
+  top: -16px;
+  transform: translate3d(-50%, 0, 0);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-active);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+}
+
+[data-skin="crazy"] .pet-bubble[hidden] {
+  display: none;
+}
+
+[data-skin="crazy"] .pet-floater {
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+  animation: pet-floater-rise 0.95s ease-out forwards;
+  z-index: 4;
+}
+
+[data-skin="crazy"] .pet-stage-footer {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+[data-skin="crazy"] .pet-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+[data-skin="crazy"] .pet-name-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-skin="crazy"] .pet-mood-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-highlight);
+  color: var(--accent-primary);
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+[data-skin="crazy"] .pet-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+[data-skin="crazy"] .pet-treat-btn {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-surface-alt);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.14s ease, background-color 0.14s ease;
+}
+
+[data-skin="crazy"] .pet-treat-btn:hover:not(:disabled) {
+  background: var(--accent-highlight);
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+[data-skin="crazy"] .pet-treat-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Top Chrome Roam Layer: 100% click-through except the 44x44 pet hitbox itself */
+[data-skin="crazy"] #pet-roam-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 450;
+  overflow: hidden;
+}
+
+[data-skin="crazy"] #pet-roam-mover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+[data-skin="crazy"] #pet-roam-hitbox {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+}
+
+[data-skin="crazy"] #pet-roam-hitbox .pet-visual {
+  width: 40px;
+  height: 40px;
+}
+
+/* Eye / Mouth visibility toggled strictly by data-state attribute */
+[data-skin="crazy"] .pet-eyes-sleep,
+[data-skin="crazy"] .pet-eyes-happy,
+[data-skin="crazy"] .pet-eyes-worried,
+[data-skin="crazy"] .pet-mouth-open,
+[data-skin="crazy"] .pet-mouth-worried {
+  display: none;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="sleep"] .pet-eyes-open,
+[data-skin="crazy"] .pet-mover[data-state="happy"] .pet-eyes-open,
+[data-skin="crazy"] .pet-mover[data-state="celebrate"] .pet-eyes-open,
+[data-skin="crazy"] .pet-mover[data-state="feed"] .pet-eyes-open,
+[data-skin="crazy"] .pet-mover[data-state="worried"] .pet-eyes-open {
+  display: none;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="sleep"] .pet-eyes-sleep {
+  display: inline;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="happy"] .pet-eyes-happy,
+[data-skin="crazy"] .pet-mover[data-state="celebrate"] .pet-eyes-happy,
+[data-skin="crazy"] .pet-mover[data-state="feed"] .pet-eyes-happy {
+  display: inline;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="worried"] .pet-eyes-worried {
+  display: inline;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="yawn"] .pet-mouth-open,
+[data-skin="crazy"] .pet-mover[data-state="feed"] .pet-mouth-open,
+[data-skin="crazy"] .pet-mover[data-state="celebrate"] .pet-mouth-open {
+  display: inline;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="yawn"] .pet-mouth-idle,
+[data-skin="crazy"] .pet-mover[data-state="feed"] .pet-mouth-idle,
+[data-skin="crazy"] .pet-mover[data-state="celebrate"] .pet-mouth-idle,
+[data-skin="crazy"] .pet-mover[data-state="worried"] .pet-mouth-idle {
+  display: none;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="worried"] .pet-mouth-worried {
+  display: inline;
+}
+
+/* Pure transform + opacity state animations */
+[data-skin="crazy"] .pet-mover[data-state="idle"] .pet-visual {
+  animation: pet-idle-breathe 3.6s ease-in-out infinite;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="idle"] .pet-layer-tail,
+[data-skin="crazy"] .pet-mover[data-state="look"] .pet-layer-tail,
+[data-skin="crazy"] .pet-mover[data-state="follow"] .pet-layer-tail,
+[data-skin="crazy"] .pet-mover[data-state="play"] .pet-layer-tail {
+  animation: pet-tail-wiggle 2.2s ease-in-out infinite;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="happy"] .pet-visual,
+[data-skin="crazy"] .pet-mover[data-state="celebrate"] .pet-visual,
+[data-skin="crazy"] .pet-mover[data-state="feed"] .pet-visual {
+  animation: pet-happy-bounce 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="follow"] .pet-foot-left,
+[data-skin="crazy"] .pet-mover[data-state="play"] .pet-foot-left {
+  animation: pet-walk-step 0.28s ease-in-out infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="follow"] .pet-foot-right,
+[data-skin="crazy"] .pet-mover[data-state="play"] .pet-foot-right {
+  animation: pet-walk-step 0.28s ease-in-out 0.14s infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="sleep"] .pet-visual {
+  animation: pet-sleep-breath 3.4s ease-in-out infinite;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="loading"] .pet-visual {
+  animation: pet-loading-spin 0.9s linear infinite;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="loading"] .pet-foot-right {
+  animation: pet-walk-step 0.22s ease-in-out infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="wave"] .pet-visual {
+  animation: pet-wave-tilt 0.48s ease-in-out infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="worried"] .pet-visual {
+  animation: pet-worried-shiver 0.35s ease-in-out infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover[data-state="yawn"] .pet-visual {
+  animation: pet-yawn-stretch 1.2s ease-in-out infinite alternate;
+}
+
+[data-skin="crazy"] .pet-mover.pet-paused *,
+[data-skin="crazy"] .pet-mover.pet-paused {
+  animation-play-state: paused !important;
+}
+
+[data-skin="crazy"] .pet-mover.pet-intensity-zero *,
+[data-skin="crazy"] .pet-mover.pet-intensity-zero {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="crazy"] .pet-mover *,
+  [data-skin="crazy"] .pet-mover {
+    animation: none !important;
+  }
+  [data-skin="crazy"] .pet-mover .pet-eyes-open {
+    animation: pet-blink 4.8s ease-in-out infinite !important;
+  }
+}
+
+[data-skin="crazy"] .pet-mover[data-reduced-motion="true"] *,
+[data-skin="crazy"] .pet-mover[data-reduced-motion="true"] {
+  animation: none !important;
+}
+[data-skin="crazy"] .pet-mover[data-reduced-motion="true"] .pet-eyes-open {
+  animation: pet-blink 4.8s ease-in-out infinite !important;
+}
+
+@keyframes pet-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.08); }
+}
+
+@keyframes pet-tail-wiggle {
+  0%, 100% { transform: rotate(-7deg); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes pet-idle-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -1.5px, 0) scale(1.02, 0.985); }
+}
+
+@keyframes pet-happy-bounce {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -7px, 0) scale(1.05, 0.96); }
+}
+
+@keyframes pet-walk-step {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(0, -3.5px, 0); }
+}
+
+@keyframes pet-sleep-breath {
+  0%, 100% { transform: translate3d(0, 2px, 0) scale(1.02, 0.94); }
+  50% { transform: translate3d(0, 3px, 0) scale(1.05, 0.91); }
+}
+
+@keyframes pet-loading-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pet-wave-tilt {
+  0% { transform: rotate(-8deg) translate3d(0, -2px, 0); }
+  100% { transform: rotate(8deg) translate3d(0, -4px, 0); }
+}
+
+@keyframes pet-worried-shiver {
+  0% { transform: translate3d(-1.5px, 0, 0) rotate(-2deg); }
+  100% { transform: translate3d(1.5px, 0, 0) rotate(2deg); }
+}
+
+@keyframes pet-yawn-stretch {
+  0% { transform: scale(1, 1); }
+  100% { transform: scale(0.95, 1.07) translate3d(0, -2px, 0); }
+}
+
+@keyframes pet-floater-rise {
+  0% { transform: translate3d(-50%, 0, 0) scale(0.7); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate3d(-50%, -24px, 0) scale(1.1); opacity: 0; }
+}
+
+/* Pet Adoption / Customization Modal on NTP */
+[data-skin="crazy"] .pet-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+[data-skin="crazy"] .pet-picker-backdrop[hidden] {
+  display: none;
+}
+
+[data-skin="crazy"] .pet-picker-modal {
+  width: 440px;
+  max-width: 94vw;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--text-primary);
+}
+
+[data-skin="crazy"] .pet-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-skin="crazy"] .pet-picker-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+[data-skin="crazy"] .pet-species-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+[data-skin="crazy"] .pet-species-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-subtle);
+  background: var(--bg-surface-alt);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
+}
+
+[data-skin="crazy"] .pet-species-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--text-muted);
+}
+
+[data-skin="crazy"] .pet-species-card.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-highlight);
+}
+
+[data-skin="crazy"] .pet-picker-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-skin="crazy"] .pet-picker-preview-box {
+  width: 68px;
+  height: 68px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-skin="crazy"] .pet-picker-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+[data-skin="crazy"] .pet-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+[data-skin="crazy"] .pet-picker-input,
+[data-skin="crazy"] .pet-picker-select {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+[data-skin="crazy"] .pet-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+

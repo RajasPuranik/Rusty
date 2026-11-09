@@ -21,11 +21,19 @@ static JS_BOOT: &[u8] = include_bytes!("../../ui/js/boot.js");
 static JS_ICONS: &[u8] = include_bytes!("../../ui/js/icons.js");
 static JS_BRIDGE: &[u8] = include_bytes!("../../ui/js/bridge.js");
 static JS_SETTINGS: &[u8] = include_bytes!("../../ui/js/settings.js");
+static JS_ENGINES: &[u8] = include_bytes!("../../ui/js/engines.js");
+static JS_LOCATIONS: &[u8] = include_bytes!("../../ui/js/locations.js");
 static JS_CHROME: &[u8] = include_bytes!("../../ui/js/chrome.js");
 static JS_NEWTAB: &[u8] = include_bytes!("../../ui/js/newtab.js");
 static JS_FX_CRAZY: &[u8] = include_bytes!("../../ui/js/fx-crazy.js");
+static JS_PET_CRAZY: &[u8] = include_bytes!("../../ui/js/pet-crazy.js");
+static JS_GLOBE: &[u8] = include_bytes!("../../ui/js/globe.js");
 
 static ASSET_LOGO: &[u8] = include_bytes!("../../ui/assets/logo.svg");
+// PLACEHOLDER: self-generated procedural WebP Earth maps; verify license if replacing with NASA/Natural Earth assets.
+static ASSET_EARTH_DAY: &[u8] = include_bytes!("../../ui/assets/earth-day.webp");
+static ASSET_EARTH_NIGHT: &[u8] = include_bytes!("../../ui/assets/earth-night.webp");
+static ASSET_EARTH_FALLBACK: &[u8] = include_bytes!("../../ui/assets/earth-fallback.webp");
 
 const CSP_VALUE: &str = "default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';";
 
@@ -49,11 +57,18 @@ pub fn handle_rusty_request(_id: WebViewId, req: Request<Vec<u8>>) -> Response<C
         "js/icons.js" => ("text/javascript; charset=utf-8", JS_ICONS),
         "js/bridge.js" => ("text/javascript; charset=utf-8", JS_BRIDGE),
         "js/settings.js" => ("text/javascript; charset=utf-8", JS_SETTINGS),
+        "js/engines.js" => ("text/javascript; charset=utf-8", JS_ENGINES),
+        "js/locations.js" => ("text/javascript; charset=utf-8", JS_LOCATIONS),
         "js/chrome.js" => ("text/javascript; charset=utf-8", JS_CHROME),
         "js/newtab.js" => ("text/javascript; charset=utf-8", JS_NEWTAB),
         "js/fx-crazy.js" => ("text/javascript; charset=utf-8", JS_FX_CRAZY),
+        "js/pet-crazy.js" => ("text/javascript; charset=utf-8", JS_PET_CRAZY),
+        "js/globe.js" => ("text/javascript; charset=utf-8", JS_GLOBE),
 
         "assets/logo.svg" => ("image/svg+xml", ASSET_LOGO),
+        "assets/earth-day.webp" => ("image/webp", ASSET_EARTH_DAY),
+        "assets/earth-night.webp" => ("image/webp", ASSET_EARTH_NIGHT),
+        "assets/earth-fallback.webp" => ("image/webp", ASSET_EARTH_FALLBACK),
 
         _ => {
             return Response::builder()

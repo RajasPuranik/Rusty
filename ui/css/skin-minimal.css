@@ -78,6 +78,11 @@
   background-color: var(--bg-input-focus);
 }
 
+[data-skin="minimal"] .omnibox.omnibox-search-active,
+[data-skin="minimal"] .omnibox.omnibox-search-active:focus-within {
+  border-color: transparent !important;
+}
+
 /* ── Memory Badge ───────────────────────────────────────────────────────── */
 [data-skin="minimal"] .memory-badge {
   border-radius: var(--radius-sm);
@@ -106,7 +111,10 @@
   transform: none !important;
 }
 
-[data-skin="minimal"] .planet-decoration {
+[data-skin="minimal"] .planet-decoration,
+[data-skin="minimal"] #left-rail-bottom-slot,
+[data-skin="minimal"] #pet-roam-layer,
+[data-skin="minimal"] .pet-only-crazy {
   display: none !important;
 }
 

@@ -36,10 +36,33 @@
     { id: 2, filename: 'rustup-init.exe', url: 'https://win.rustup.rs', state: 'in_progress', progress: 68 }
   ];
 
+  let mockSplit = {
+    enabled: false,
+    ratio: 0.5,
+    focused_pane: 0,
+    left_tab_id: null,
+    right_tab_id: null
+  };
+
   let mockMemory = {
-    total_mb: 84.5,
+    metric: 'private_working_set',
+    total_mb: 72.4,
+    private_ws_mb: 72.4,
+    working_set_mb: 118.6,
+    commit_mb: 94.2,
+    host_private_ws_mb: 3.1,
+    process_count: 5,
     chrome_baseline_mb: 236.0,
-    savings_percent: 64.2
+    chrome_live_measured: false,
+    chrome_process_count: 0,
+    savings_percent: 69.3,
+    processes: [
+      { pid: 10420, parent_pid: 4120, kind: 'Host (Rusty)', exe_name: 'rusty_browser.exe', private_ws_mb: 3.1, working_set_mb: 11.4, commit_mb: 4.8 },
+      { pid: 10488, parent_pid: 10420, kind: 'WebView2 Manager', exe_name: 'msedgewebview2.exe', private_ws_mb: 19.8, working_set_mb: 35.2, commit_mb: 24.5 },
+      { pid: 10512, parent_pid: 10488, kind: 'GPU Process', exe_name: 'msedgewebview2.exe', private_ws_mb: 15.2, working_set_mb: 22.1, commit_mb: 18.6 },
+      { pid: 10540, parent_pid: 10488, kind: 'Renderer (Tab/UI)', exe_name: 'msedgewebview2.exe', private_ws_mb: 26.5, working_set_mb: 36.8, commit_mb: 34.1 },
+      { pid: 10576, parent_pid: 10488, kind: 'Network Service', exe_name: 'msedgewebview2.exe', private_ws_mb: 7.8, working_set_mb: 13.1, commit_mb: 12.2 }
+    ]
   };
 
   const Bridge = {
@@ -54,7 +77,6 @@
           console.error('[bridge] Failed to send IPC message:', err);
         }
       } else {
-        // Handle mock actions
         this._handleMockAction(action, payload);
       }
     },
@@ -85,21 +107,68 @@
     },
 
     _handleMockAction(action, payload) {
-      // console.log(`[bridge:mock] Action: ${action}`, payload);
+      const openBgDefault = root.Settings ? root.Settings.get('open_tabs_in_background') !== false : true;
       switch (action) {
         case 'new_tab': {
-          const newId = Date.now();
+          const newId = Date.now() + Math.floor(Math.random() * 1000);
+          const hasUrl = Boolean(payload && payload.url);
+          const defaultBg = hasUrl && openBgDefault;
+          const isBg = (payload && typeof payload.background === 'boolean') ? payload.background : defaultBg;
           const tab = {
             id: newId,
-            title: 'New Tab',
-            url: payload.url || 'about:blank',
+            title: (payload && payload.title) || (payload && payload.url) || 'New Tab',
+            url: (payload && payload.url) || 'about:blank',
+            active: !isBg,
+            sleeping: false,
+            pinned: false,
+            muted: false,
+            group_id: null
+          };
+          if (!isBg) {
+            mockTabs.forEach((t) => (t.active = false));
+            if (mockSplit.enabled) {
+              if (mockSplit.focused_pane === 1) mockSplit.right_tab_id = newId;
+              else mockSplit.left_tab_id = newId;
+            }
+          }
+          mockTabs.push(tab);
+          this._emitMockState();
+          break;
+        }
+        case 'paste_new_tab': {
+          const newId = Date.now() + Math.floor(Math.random() * 1000);
+          mockTabs.forEach((t) => (t.active = false));
+          mockTabs.push({
+            id: newId,
+            title: 'Example Domain (Pasted)',
+            url: 'https://example.com',
             active: true,
             sleeping: false,
             pinned: false,
+            muted: false,
             group_id: null
-          };
-          mockTabs.forEach((t) => (t.active = false));
-          mockTabs.push(tab);
+          });
+          this._emitMockState();
+          break;
+        }
+        case 'open_history_entry_in_new_tab': {
+          const dir = (payload && payload.direction) || 'back';
+          const url = dir === 'forward' ? 'https://www.rust-lang.org' : 'https://duckduckgo.com';
+          const isBg = (payload && typeof payload.background === 'boolean') ? payload.background : openBgDefault;
+          const newId = Date.now() + Math.floor(Math.random() * 1000);
+          if (!isBg) {
+            mockTabs.forEach((t) => (t.active = false));
+          }
+          mockTabs.push({
+            id: newId,
+            title: url.replace(/^https?:\/\//, ''),
+            url,
+            active: !isBg,
+            sleeping: false,
+            pinned: false,
+            muted: false,
+            group_id: null
+          });
           this._emitMockState();
           break;
         }
@@ -107,7 +176,13 @@
           mockTabs.forEach((t) => (t.active = t.id === payload.tab_id));
           const activeTab = mockTabs.find((t) => t.id === payload.tab_id);
           if (activeTab && activeTab.sleeping) {
-            activeTab.sleeping = false; // wake tab
+            activeTab.sleeping = false;
+          }
+          if (mockSplit.enabled) {
+            if (mockSplit.left_tab_id === payload.tab_id) mockSplit.focused_pane = 0;
+            else if (mockSplit.right_tab_id === payload.tab_id) mockSplit.focused_pane = 1;
+            else if (mockSplit.focused_pane === 1) mockSplit.right_tab_id = payload.tab_id;
+            else mockSplit.left_tab_id = payload.tab_id;
           }
           this._emitMockState();
           break;
@@ -115,22 +190,126 @@
         case 'close_tab': {
           const idx = mockTabs.findIndex((t) => t.id === payload.tab_id);
           if (idx !== -1) {
+            const closedId = mockTabs[idx].id;
             const wasActive = mockTabs[idx].active;
-            mockTabs.splice(idx, 1);
-            if (wasActive && mockTabs.length > 0) {
-              mockTabs[Math.max(0, idx - 1)].active = true;
+            if (mockSplit.enabled && (mockSplit.left_tab_id === closedId || mockSplit.right_tab_id === closedId)) {
+              const keepId = mockSplit.left_tab_id === closedId ? mockSplit.right_tab_id : mockSplit.left_tab_id;
+              mockSplit.enabled = false;
+              mockSplit.left_tab_id = null;
+              mockSplit.right_tab_id = null;
+              mockTabs.splice(idx, 1);
+              mockTabs.forEach((t) => (t.active = t.id === keepId));
+            } else {
+              mockTabs.splice(idx, 1);
+              if (wasActive && mockTabs.length > 0) {
+                mockTabs[Math.max(0, idx - 1)].active = true;
+              }
             }
           }
           this._emitMockState();
+          this.dispatch('pet_event', { event: 'tab_closed' });
           break;
         }
         case 'navigate': {
           const active = mockTabs.find((t) => t.active);
           if (active) {
-            active.url = payload.url;
-            active.title = payload.url.replace(/^https?:\/\//, '');
+            const raw = String((payload && payload.url) || '').trim();
+            const engineId = (root.Settings && root.Settings.get('default_search')) || 'google';
+            const custom = (root.Settings && root.Settings.get('custom_engines')) || [];
+            const resolved = (root.RustyEngines && typeof root.RustyEngines.buildSearchUrl === 'function')
+              ? root.RustyEngines.buildSearchUrl(raw, engineId, custom)
+              : raw;
+            active.url = resolved;
+            active.title = resolved.replace(/^https?:\/\//, '');
+            if (resolved && !resolved.startsWith('about:')) {
+              this.dispatch('pet_event', { event: 'page_loading' });
+              setTimeout(() => this.dispatch('pet_event', { event: 'page_loaded' }), 900);
+            }
           }
           this._emitMockState();
+          break;
+        }
+        case 'split_view': {
+          const want = (payload && typeof payload.enabled === 'boolean') ? payload.enabled : !mockSplit.enabled;
+          if (want && !mockSplit.enabled && mockTabs.length > 0) {
+            const left = mockTabs.find((t) => t.active) || mockTabs[0];
+            let right = mockTabs.find((t) => t.id !== left.id);
+            if (!right) {
+              right = {
+                id: Date.now() + 1,
+                title: 'New Tab',
+                url: 'about:blank',
+                active: false,
+                sleeping: false,
+                pinned: false,
+                muted: false,
+                group_id: null
+              };
+              mockTabs.push(right);
+            }
+            mockSplit.enabled = true;
+            mockSplit.left_tab_id = left.id;
+            mockSplit.right_tab_id = right.id;
+            mockSplit.focused_pane = 0;
+            mockTabs.forEach((t) => (t.active = t.id === left.id));
+          } else if (!want && mockSplit.enabled) {
+            const keepId = mockSplit.focused_pane === 1 ? mockSplit.right_tab_id : mockSplit.left_tab_id;
+            mockSplit.enabled = false;
+            mockSplit.left_tab_id = null;
+            mockSplit.right_tab_id = null;
+            mockSplit.focused_pane = 0;
+            if (keepId) {
+              mockTabs.forEach((t) => (t.active = t.id === keepId));
+            }
+          }
+          this._emitMockState();
+          break;
+        }
+        case 'split_close': {
+          this._handleMockAction('split_view', { enabled: false });
+          break;
+        }
+        case 'split_swap': {
+          if (mockSplit.enabled) {
+            const tmp = mockSplit.left_tab_id;
+            mockSplit.left_tab_id = mockSplit.right_tab_id;
+            mockSplit.right_tab_id = tmp;
+            mockSplit.focused_pane = mockSplit.focused_pane === 1 ? 0 : 1;
+            const focusTid = mockSplit.focused_pane === 1 ? mockSplit.right_tab_id : mockSplit.left_tab_id;
+            mockTabs.forEach((t) => (t.active = t.id === focusTid));
+            this._emitMockState();
+          }
+          break;
+        }
+        case 'split_focus': {
+          if (mockSplit.enabled) {
+            mockSplit.focused_pane = payload && payload.pane === 1 ? 1 : 0;
+            const focusTid = mockSplit.focused_pane === 1 ? mockSplit.right_tab_id : mockSplit.left_tab_id;
+            mockTabs.forEach((t) => (t.active = t.id === focusTid));
+            this._emitMockState();
+          }
+          break;
+        }
+        case 'split_navigate': {
+          if (mockSplit.enabled && payload && typeof payload.url === 'string') {
+            mockSplit.focused_pane = payload.pane === 1 ? 1 : 0;
+            const tid = mockSplit.focused_pane === 1 ? mockSplit.right_tab_id : mockSplit.left_tab_id;
+            const tab = mockTabs.find((t) => t.id === tid);
+            if (tab) {
+              const raw = payload.url.trim();
+              const engineId = (root.Settings && root.Settings.get('default_search')) || 'google';
+              const custom = (root.Settings && root.Settings.get('custom_engines')) || [];
+              const resolved = (root.RustyEngines && typeof root.RustyEngines.buildSearchUrl === 'function')
+                ? root.RustyEngines.buildSearchUrl(raw, engineId, custom)
+                : (/^https?:\/\//i.test(raw) || raw.startsWith('about:')
+                  ? raw
+                  : (raw.includes('.') && !raw.includes(' ') ? `https://${raw}` : `https://www.google.com/search?q=${encodeURIComponent(raw)}`));
+              tab.url = resolved;
+              tab.title = resolved.replace(/^https?:\/\//, '');
+              mockTabs.forEach((t) => (t.active = t.id === tid));
+            }
+            this._emitMockState();
+          }
           break;
         }
         case 'toggle_bookmark': {
@@ -184,10 +363,14 @@
           const tab = mockTabs.find((t) => t.id === payload.tab_id);
           if (tab) {
             const idx = mockTabs.indexOf(tab);
+            const isBg = (payload && typeof payload.background === 'boolean') ? payload.background : openBgDefault;
+            if (!isBg) {
+              mockTabs.forEach((t) => (t.active = false));
+            }
             const copy = {
               ...tab,
-              id: Date.now(),
-              active: false,
+              id: Date.now() + Math.floor(Math.random() * 1000),
+              active: !isBg,
               title: `${tab.title} (Copy)`
             };
             mockTabs.splice(idx + 1, 0, copy);
@@ -213,7 +396,6 @@
           const toIdx = mockTabs.findIndex((t) => t.id === payload.to_id);
           if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
             const [moved] = mockTabs.splice(fromIdx, 1);
-            // If dragging into another group, update group_id
             const target = mockTabs[toIdx > fromIdx ? toIdx - 1 : toIdx];
             if (target && !moved.pinned) {
               moved.group_id = target.group_id;
@@ -256,7 +438,9 @@
           break;
         }
         case 'content_rect': {
-          // Track layout changes
+          if (mockSplit.enabled && payload && typeof payload.ratio === 'number') {
+            mockSplit.ratio = Math.max(0.20, Math.min(0.80, payload.ratio));
+          }
           break;
         }
         case 'set_setting': {
@@ -269,7 +453,36 @@
           break;
         }
         case 'fetch_weather': {
-          const loc = (payload && payload.location) ? payload.location.trim() : 'Preview City';
+          const centroid = (root.RustyLocations && typeof root.RustyLocations.resolveLocalCentroid === 'function')
+            ? root.RustyLocations.resolveLocalCentroid()
+            : { city: 'Preview City', country: 'Local', lat: 28.61, lon: 77.21 };
+          const rawCity = (payload && typeof payload.location === 'string') ? payload.location.trim() : '';
+          const matched = rawCity && root.RustyLocations && typeof root.RustyLocations.findTimezoneForCity === 'function'
+            ? root.RustyLocations.findTimezoneForCity(rawCity)
+            : null;
+          const locName = (payload && payload.label) || (rawCity || (matched ? matched.city : centroid.city));
+          const countryName = (payload && payload.country) || (matched ? matched.country : centroid.country);
+          const lat = (payload && typeof payload.lat === 'number') ? payload.lat : centroid.lat;
+          const lon = (payload && typeof payload.lon === 'number') ? payload.lon : centroid.lon;
+          const nowMs = Date.now();
+          const codes = [
+            { code: 0, condition: 'Clear Sky', icon: 'sun', hi: 27, lo: 18 },
+            { code: 2, condition: 'Partly Cloudy', icon: 'partly-cloudy', hi: 26, lo: 17 },
+            { code: 3, condition: 'Overcast', icon: 'cloud', hi: 24, lo: 16 },
+            { code: 61, condition: 'Rain', icon: 'rain', hi: 22, lo: 15 },
+            { code: 1, condition: 'Mainly Clear', icon: 'sun', hi: 28, lo: 18 }
+          ];
+          const forecast = codes.map((c, idx) => {
+            const d = new Date(nowMs + idx * 86400000);
+            return {
+              date: d.toISOString().slice(0, 10),
+              temp_max_c: c.hi,
+              temp_min_c: c.lo,
+              weather_code: c.code,
+              condition: c.condition,
+              icon: c.icon
+            };
+          });
           this.dispatch('weather_update', {
             temperature_c: 26.4,
             apparent_c: 27.0,
@@ -277,11 +490,16 @@
             wind_kmh: 9.2,
             condition: 'Clear Sky (Preview)',
             icon: 'sun',
-            location: loc || 'Preview City',
+            location: `${locName}${countryName ? ', ' + countryName : ''}`,
+            country: countryName,
+            latitude: lat,
+            longitude: lon,
             is_day: true,
             weather_code: 0,
-            updated_secs: Math.floor(Date.now() / 1000),
-            query: (payload && payload.location) || ''
+            updated_secs: Math.floor(nowMs / 1000),
+            query: rawCity,
+            offline: typeof navigator !== 'undefined' && navigator.onLine === false,
+            forecast
           });
           break;
         }
@@ -301,6 +519,16 @@
           this.dispatch('open_find_bar', {});
           break;
         }
+        case 'focus_omnibox': {
+          this.dispatch('focus_omnibox', {});
+          break;
+        }
+        case 'copy_to_clipboard': {
+          if (payload && payload.text && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(payload.text).catch(() => {});
+          }
+          break;
+        }
         default:
           break;
       }
@@ -309,6 +537,8 @@
     _emitMockState() {
       const active = mockTabs.find((t) => t.active) || mockTabs[0];
       const isBookmarked = active ? mockBookmarks.some((b) => b.url === active.url) : false;
+      const leftTab = mockSplit.left_tab_id ? mockTabs.find((t) => t.id === mockSplit.left_tab_id) : null;
+      const rightTab = mockSplit.right_tab_id ? mockTabs.find((t) => t.id === mockSplit.right_tab_id) : null;
       this.dispatch('state_update', {
         tabs: mockTabs,
         groups: mockGroups,
@@ -319,10 +549,31 @@
         url: active ? active.url : 'about:blank',
         title: active ? active.title : 'New Tab',
         can_go_back: true,
-        can_go_forward: false,
+        can_go_forward: true,
         is_bookmarked: isBookmarked,
         zoom_percent: 100,
-        memory: mockMemory
+        memory: mockMemory,
+        split_view: mockSplit.enabled ? {
+          enabled: true,
+          ratio: mockSplit.ratio,
+          focused_pane: mockSplit.focused_pane,
+          left_tab_id: mockSplit.left_tab_id,
+          right_tab_id: mockSplit.right_tab_id,
+          left_url: leftTab ? leftTab.url : '',
+          right_url: rightTab ? rightTab.url : '',
+          left_title: leftTab ? leftTab.title : 'New Tab',
+          right_title: rightTab ? rightTab.title : 'New Tab'
+        } : {
+          enabled: false,
+          ratio: mockSplit.ratio,
+          focused_pane: 0,
+          left_tab_id: null,
+          right_tab_id: null,
+          left_url: '',
+          right_url: '',
+          left_title: '',
+          right_title: ''
+        }
       });
     }
   };
@@ -363,17 +614,20 @@
           sys_ram_total_gb: 16.0,
           sys_gpu_percent: 5.0,
           net_kbps: 12.4,
-          browser_mb: mockMemory.total_mb
+          browser_mb: mockMemory.total_mb,
+          browser_working_set_mb: mockMemory.working_set_mb,
+          browser_commit_mb: mockMemory.commit_mb
         });
         Bridge._handleMockAction('fetch_weather', { location: '' });
         setInterval(() => {
-          mockMemory.total_mb = +(84.0 + Math.random() * 2.5).toFixed(1);
+          const jitter = +(72.0 + Math.random() * 1.8).toFixed(1);
+          mockMemory.total_mb = jitter;
+          mockMemory.private_ws_mb = jitter;
           mockMemory.savings_percent = +(100 - (mockMemory.total_mb / mockMemory.chrome_baseline_mb) * 100).toFixed(1);
           Bridge.dispatch('memory_stats', mockMemory);
         }, 5000);
       }, 30);
     } else {
-      // Wait one tick after DOMContentLoaded so deferred listeners register first
       setTimeout(() => {
         Bridge.send('ui_ready', { role: getUiRole() });
       }, 0);

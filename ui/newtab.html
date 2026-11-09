@@ -14,6 +14,8 @@
   <script src="js/icons.js"></script>
   <script src="js/bridge.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/engines.js"></script>
+  <script src="js/locations.js"></script>
 </head>
 <body class="ntp-body">
   <!-- Interactive constellation canvas for Crazy skin -->
@@ -49,10 +51,8 @@
         </div>
       </div>
 
-      <!-- Glowing planet decoration at bottom (Crazy skin) -->
-      <div class="planet-decoration">
-        <div class="planet-sphere"></div>
-      </div>
+      <!-- Companion Pet Slot at bottom of Left Rail (Crazy skin only; hidden in Minimal) -->
+      <div class="planet-decoration pet-rail-slot" id="left-rail-bottom-slot"></div>
     </aside>
 
     <!-- ── Center Stage: Hero, Search, Dials, & Feature Cards ──────── -->
@@ -66,24 +66,26 @@
         <p class="brand-tagline">Browse • Create • Focus • Automate</p>
       </header>
 
-      <!-- Radiant Central Search Bar -->
+      <!-- Central Search Bar (Crisp Engine-Colored Mask Outline) -->
       <section class="search-section">
-        <div class="search-box glow-conic-box">
+        <div class="search-box engine-outline-box" id="search-box">
           <span class="search-icon"><script>document.write(window.Icons.get('search', '', 18));</script></span>
           <input id="search-input" class="search-input" type="text" placeholder="Search the web or enter a URL..." autocomplete="off" spellcheck="false" autofocus>
           <button class="btn-ai-sparkle" id="btn-search-ai" title="Search Prompt"><script>document.write(window.Icons.get('sparkles', '', 16));</script></button>
           <span class="search-key-badge">/</span>
         </div>
 
-        <!-- Search Engine Chips -->
-        <div id="engine-chips" class="engine-chips">
-          <button class="chip active" data-engine="google">Google</button>
-          <button class="chip" data-engine="duckduckgo">DuckDuckGo</button>
-          <button class="chip" data-engine="bing">Bing</button>
-          <button class="chip" data-engine="brave">Brave</button>
-          <button class="chip" data-engine="youtube">YouTube</button>
-          <button class="chip" data-engine="github">GitHub</button>
-        </div>
+        <!-- Search Engine Chips (Populated dynamically from RustyEngines table) -->
+        <div id="engine-chips" class="engine-chips"></div>
+
+        <!-- Inline Add Custom Search Engine Form -->
+        <form id="ntp-custom-engine-form" class="ntp-custom-engine-form" hidden>
+          <input id="ntp-engine-name" class="weather-city-input" type="text" placeholder="Name (e.g. Kagi)" maxlength="32" required>
+          <input id="ntp-engine-template" class="weather-city-input" type="text" placeholder="URL with %s (https://...?q=%s)" required>
+          <input id="ntp-engine-color" type="color" class="engine-color-picker" title="Outline color" value="#f97316">
+          <button type="submit" class="weather-city-save">Add</button>
+          <button type="button" id="ntp-engine-cancel" class="btn-icon-xs" title="Cancel"><script>document.write(window.Icons.get('close', '', 12));</script></button>
+        </form>
       </section>
 
       <!-- Speed Dial Pill Row -->
@@ -126,38 +128,69 @@
 
     <!-- ── Right Rail: Widgets Dashboard ───────────────────────────── -->
     <aside class="ntp-right-rail">
-      <!-- Clock Card -->
-      <div class="widget-card widget-clock-card" id="widget-clock">
-        <div class="clock-display">
-          <div id="clock-time" class="clock-time">--:-- <span class="clock-ampm">--</span></div>
-          <div id="clock-date" class="clock-date">Loading date...</div>
-        </div>
-        <div class="clock-planet-graphic"></div>
-      </div>
+      <!-- Merged Time & Weather Card (A1 + A2 Globe) -->
+      <div class="widget-card widget-time-weather-card" id="widget-time-weather" title="Tap to expand 5-day forecast &amp; world clocks">
+        <div class="tw-compact-row" id="tw-compact-row">
+          <div class="tw-left-col">
+            <div class="tw-clock-block" id="tw-clock-block">
+              <div id="clock-time" class="clock-time">--:-- <span class="clock-ampm">--</span></div>
+              <div id="clock-date" class="clock-date">Loading date...</div>
+            </div>
 
-      <!-- Live Weather Card -->
-      <div class="widget-card widget-weather-card" id="widget-weather" title="Click to change city">
-        <div class="weather-main-row">
-          <div class="weather-left">
-            <span class="weather-icon-wrap" id="weather-icon"><script>document.write(window.Icons.get('weather', '', 22));</script></span>
-            <div style="min-width: 0; flex: 1;">
-              <div class="weather-temp-row">
+            <div class="tw-weather-block" id="tw-weather-block">
+              <div class="tw-weather-main">
+                <span class="weather-icon-wrap" id="weather-icon"><script>document.write(window.Icons.get('weather', '', 18));</script></span>
                 <span class="weather-temp" id="weather-temp">--°C</span>
-                <span class="weather-condition" id="weather-condition">Updating...</span>
+                <span class="weather-condition" id="weather-condition">Offline</span>
+                <span class="tw-offline-badge" id="weather-offline-badge" hidden>Offline</span>
               </div>
-              <div class="weather-location" id="weather-location">Detecting location...</div>
-              <div class="weather-meta" id="weather-meta"></div>
+              <div class="tw-weather-sub">
+                <div class="tw-weather-details">
+                  <div class="weather-location" id="weather-location">Detecting timezone...</div>
+                  <div class="weather-meta" id="weather-meta"></div>
+                </div>
+                <div class="weather-actions">
+                  <button class="btn-icon-xs" id="btn-weather-refresh" type="button" title="Refresh weather"><script>document.write(window.Icons.get('reload', '', 12));</script></button>
+                  <button class="btn-icon-xs tw-expand-btn" id="tw-expand-btn" type="button" title="Expand 5-day forecast &amp; world clocks"><script>document.write(window.Icons.get('chevron-down', '', 12));</script></button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="weather-actions">
-            <button class="btn-icon-xs" id="btn-weather-refresh" type="button" title="Refresh weather"><script>document.write(window.Icons.get('reload', '', 12));</script></button>
-            <span class="weather-chevron" title="Set city"><script>document.write(window.Icons.get('chevron-right', '', 14));</script></span>
+
+          <div class="globe-slot" id="globe-slot" title="Drag to spin • Double-click to re-center">
+            <img class="globe-fallback-img" id="globe-fallback-img" src="assets/earth-fallback.webp" alt="Earth">
           </div>
         </div>
-        <form class="weather-city-form" id="weather-city-form">
-          <input id="weather-city-input" class="weather-city-input" type="text" placeholder="City name or 'auto'..." autocomplete="off" spellcheck="false">
-          <button type="submit" class="weather-city-save">Set</button>
-        </form>
+
+        <div class="tw-expanded" id="tw-expanded" hidden>
+          <div class="tw-forecast-section" id="tw-forecast-section">
+            <div class="tw-section-label">5-Day Forecast</div>
+            <div class="tw-forecast-row" id="weather-forecast-row"></div>
+          </div>
+
+          <div class="tw-worldclock-section" id="tw-worldclock-section">
+            <div class="tw-section-header">
+              <span class="tw-section-label">World Clocks</span>
+              <button type="button" class="btn-link-xs" id="btn-toggle-worldclock-add">+ Add city</button>
+            </div>
+            <div class="world-clock-row" id="world-clock-list"></div>
+            <form class="world-clock-form" id="world-clock-form" hidden>
+              <select id="world-clock-select" class="weather-city-input"></select>
+              <button type="submit" class="weather-city-save">Add</button>
+            </form>
+          </div>
+
+          <form class="weather-city-form" id="weather-city-form">
+            <input id="weather-city-input" class="weather-city-input" type="text" placeholder="City name (blank = timezone)..." autocomplete="off" spellcheck="false">
+            <button type="submit" class="weather-city-save">Set</button>
+            <button type="button" class="weather-loc-btn" id="btn-use-my-location" title="Use browser geolocation for weather &amp; globe pin">Use my location</button>
+          </form>
+
+          <label class="tw-clouds-toggle">
+            <input type="checkbox" id="toggle-globe-clouds">
+            <span>Cloud layer</span>
+          </label>
+        </div>
       </div>
 
       <!-- Quick Notes Checklist Card -->
@@ -235,6 +268,7 @@
     </aside>
   </div>
 
+  <script src="js/globe.js"></script>
   <script src="js/newtab.js"></script>
 </body>
 </html>

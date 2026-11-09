@@ -74,9 +74,44 @@ fn default_search_id() -> String {
 fn default_effects_intensity() -> u8 {
     80
 }
+fn default_pet_name() -> String {
+    "Pixel".to_owned()
+}
+fn default_pet_color() -> String {
+    "#f97316".to_owned()
+}
+fn default_pet_accessory() -> String {
+    "none".to_owned()
+}
+fn default_pet_mood() -> String {
+    "content".to_owned()
+}
+
+fn is_valid_hex_color(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomEngine {
+    pub id: String,
+    pub name: String,
+    pub template: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorldClockCity {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default, alias = "city")]
+    pub name: String,
+    #[serde(default, alias = "tz")]
+    pub timezone: String,
+}
 
 pub fn search_template_for_id(id: &str) -> String {
     match id {
+        "yahoo" => "https://search.yahoo.com/search?p=%s",
         "duckduckgo" => "https://duckduckgo.com/?q=%s",
         "bing" => "https://www.bing.com/search?q=%s",
         "brave" => "https://search.brave.com/search?q=%s",
@@ -85,6 +120,13 @@ pub fn search_template_for_id(id: &str) -> String {
         _ => "https://www.google.com/search?q=%s",
     }
     .to_owned()
+}
+
+pub fn resolve_search_template(id: &str, custom_engines: &[CustomEngine]) -> String {
+    if let Some(custom) = custom_engines.iter().find(|e| e.id == id && e.template.contains("%s")) {
+        return custom.template.clone();
+    }
+    search_template_for_id(id)
 }
 
 /// Browser user settings (persisted in `data.json` & synchronized with UI `localStorage`).
@@ -120,6 +162,10 @@ pub struct Settings {
     pub density: String,
     #[serde(default = "default_search_id")]
     pub default_search: String,
+    #[serde(default = "default_true")]
+    pub omnibox_engine_outline: bool,
+    #[serde(default)]
+    pub custom_engines: Vec<CustomEngine>,
     #[serde(default = "default_effects_intensity")]
     pub effects_intensity: u8,
     #[serde(default = "default_true")]
@@ -139,6 +185,8 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub show_memory_badge: bool,
     #[serde(default = "default_true")]
+    pub open_tabs_in_background: bool,
+    #[serde(default = "default_true")]
     pub ntp_show_clock: bool,
     #[serde(default = "default_true")]
     pub ntp_show_greeting: bool,
@@ -150,6 +198,24 @@ pub struct Settings {
     pub ntp_show_weather: bool,
     #[serde(default)]
     pub weather_location: String,
+    #[serde(default)]
+    pub world_clocks: Vec<WorldClockCity>,
+    #[serde(default)]
+    pub ntp_globe_clouds: bool,
+
+    // Crazy-skin companion pet state
+    #[serde(default)]
+    pub pet_type: String,
+    #[serde(default = "default_pet_name")]
+    pub pet_name: String,
+    #[serde(default = "default_pet_color")]
+    pub pet_color: String,
+    #[serde(default = "default_pet_accessory")]
+    pub pet_accessory: String,
+    #[serde(default = "default_pet_mood")]
+    pub pet_mood: String,
+    #[serde(default)]
+    pub pet_roam: bool,
 }
 
 impl Default for Settings {
@@ -169,6 +235,8 @@ impl Default for Settings {
             vertical_collapsed: false,
             density: default_density(),
             default_search: default_search_id(),
+            omnibox_engine_outline: true,
+            custom_engines: Vec::new(),
             effects_intensity: default_effects_intensity(),
             fx_glow: true,
             fx_tilt: true,
@@ -178,12 +246,21 @@ impl Default for Settings {
             fx_confetti: true,
             fx_canvas_bg: true,
             show_memory_badge: true,
+            open_tabs_in_background: true,
             ntp_show_clock: true,
             ntp_show_greeting: true,
             ntp_show_speed_dial: true,
             ntp_show_notes: true,
             ntp_show_weather: true,
             weather_location: String::new(),
+            world_clocks: Vec::new(),
+            ntp_globe_clouds: false,
+            pet_type: String::new(),
+            pet_name: default_pet_name(),
+            pet_color: default_pet_color(),
+            pet_accessory: default_pet_accessory(),
+            pet_mood: default_pet_mood(),
+            pet_roam: false,
         }
     }
 }
@@ -241,13 +318,47 @@ impl Settings {
             "default_search" => {
                 if let Some(s) = value.as_str() {
                     self.default_search = s.to_owned();
-                    self.default_search_template = search_template_for_id(s);
+                    self.default_search_template = resolve_search_template(s, &self.custom_engines);
                     return true;
                 }
             }
             "default_search_template" => {
                 if let Some(s) = value.as_str() {
                     self.default_search_template = s.to_owned();
+                    return true;
+                }
+            }
+            "omnibox_engine_outline" => {
+                if let Some(b) = value.as_bool() {
+                    self.omnibox_engine_outline = b;
+                    return true;
+                }
+            }
+            "custom_engines" => {
+                if let Ok(list) = serde_json::from_value::<Vec<CustomEngine>>(value.clone()) {
+                    self.custom_engines = list
+                        .into_iter()
+                        .filter(|e| !e.id.trim().is_empty() && e.template.contains("%s"))
+                        .take(24)
+                        .collect();
+                    self.default_search_template =
+                        resolve_search_template(&self.default_search, &self.custom_engines);
+                    return true;
+                }
+            }
+            "world_clocks" => {
+                if let Ok(list) = serde_json::from_value::<Vec<WorldClockCity>>(value.clone()) {
+                    self.world_clocks = list
+                        .into_iter()
+                        .filter(|c| !c.name.trim().is_empty() && !c.timezone.trim().is_empty())
+                        .take(12)
+                        .collect();
+                    return true;
+                }
+            }
+            "ntp_globe_clouds" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_globe_clouds = b;
                     return true;
                 }
             }
@@ -302,6 +413,12 @@ impl Settings {
             "show_memory_badge" => {
                 if let Some(b) = value.as_bool() {
                     self.show_memory_badge = b;
+                    return true;
+                }
+            }
+            "open_tabs_in_background" => {
+                if let Some(b) = value.as_bool() {
+                    self.open_tabs_in_background = b;
                     return true;
                 }
             }
@@ -371,6 +488,56 @@ impl Settings {
                     return true;
                 }
             }
+            "pet_type" => {
+                if let Some(s) = value.as_str() {
+                    if matches!(s, "" | "dog" | "cat" | "robot" | "fox" | "slime") {
+                        self.pet_type = s.to_owned();
+                        return true;
+                    }
+                }
+            }
+            "pet_name" => {
+                if let Some(s) = value.as_str() {
+                    let trimmed: String = s.trim().chars().take(24).collect();
+                    self.pet_name = if trimmed.is_empty() {
+                        default_pet_name()
+                    } else {
+                        trimmed
+                    };
+                    return true;
+                }
+            }
+            "pet_color" => {
+                if let Some(s) = value.as_str() {
+                    if is_valid_hex_color(s.trim()) {
+                        self.pet_color = s.trim().to_ascii_lowercase();
+                        return true;
+                    }
+                }
+            }
+            "pet_accessory" => {
+                if let Some(s) = value.as_str() {
+                    if matches!(s, "none" | "collar" | "bow" | "hat" | "glasses") {
+                        self.pet_accessory = s.to_owned();
+                        return true;
+                    }
+                }
+            }
+            "pet_mood" => {
+                if let Some(s) = value.as_str() {
+                    let clean: String = s.trim().chars().take(20).collect();
+                    if !clean.is_empty() && clean.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+                        self.pet_mood = clean;
+                        return true;
+                    }
+                }
+            }
+            "pet_roam" => {
+                if let Some(b) = value.as_bool() {
+                    self.pet_roam = b;
+                    return true;
+                }
+            }
             _ => {}
         }
         false
@@ -382,7 +549,15 @@ impl Settings {
             return false;
         };
         let mut any = false;
+        if let Some(ce) = map.get("custom_engines") {
+            if self.apply_setting("custom_engines", ce) {
+                any = true;
+            }
+        }
         for (k, v) in map {
+            if k == "custom_engines" {
+                continue;
+            }
             if self.apply_setting(k, v) {
                 any = true;
             }
@@ -401,6 +576,8 @@ impl Settings {
             "vertical_collapsed": self.vertical_collapsed,
             "density": self.density,
             "default_search": self.default_search,
+            "omnibox_engine_outline": self.omnibox_engine_outline,
+            "custom_engines": self.custom_engines,
             "effects_intensity": self.effects_intensity,
             "fx_glow": self.fx_glow,
             "fx_tilt": self.fx_tilt,
@@ -411,12 +588,21 @@ impl Settings {
             "fx_canvas_bg": self.fx_canvas_bg,
             "memory_saver_timeout_secs": self.discard_timeout_secs,
             "show_memory_badge": self.show_memory_badge,
+            "open_tabs_in_background": self.open_tabs_in_background,
             "ntp_show_clock": self.ntp_show_clock,
             "ntp_show_greeting": self.ntp_show_greeting,
             "ntp_show_speed_dial": self.ntp_show_speed_dial,
             "ntp_show_notes": self.ntp_show_notes,
             "ntp_show_weather": self.ntp_show_weather,
             "weather_location": self.weather_location,
+            "world_clocks": self.world_clocks,
+            "ntp_globe_clouds": self.ntp_globe_clouds,
+            "pet_type": self.pet_type,
+            "pet_name": self.pet_name,
+            "pet_color": self.pet_color,
+            "pet_accessory": self.pet_accessory,
+            "pet_mood": self.pet_mood,
+            "pet_roam": self.pet_roam,
         })
     }
 }
@@ -812,7 +998,89 @@ mod tests {
         assert!(!parsed.settings.apply_setting("skin", &serde_json::json!("invalid")));
         assert!(parsed.settings.apply_setting("default_search", &serde_json::json!("github")));
         assert_eq!(parsed.settings.default_search_template, "https://github.com/search?q=%s");
+        assert!(parsed.settings.open_tabs_in_background);
+        assert!(parsed.settings.apply_setting("open_tabs_in_background", &serde_json::json!(false)));
+        assert!(!parsed.settings.open_tabs_in_background);
         assert!(parsed.settings.apply_setting("weather_location", &serde_json::json!("  Mumbai  ")));
         assert_eq!(parsed.settings.weather_location, "Mumbai");
+    }
+
+    #[test]
+    fn test_yahoo_custom_engines_and_world_clocks() {
+        let mut s = Settings::default();
+        assert!(s.omnibox_engine_outline);
+        assert!(s.apply_setting("default_search", &serde_json::json!("yahoo")));
+        assert_eq!(s.default_search_template, "https://search.yahoo.com/search?p=%s");
+
+        assert!(s.merge_json(&serde_json::json!({
+            "default_search": "custom_kagi",
+            "custom_engines": [
+                { "id": "custom_kagi", "name": "Kagi", "template": "https://kagi.com/search?q=%s", "color": "#22c55e" }
+            ],
+            "omnibox_engine_outline": false,
+            "world_clocks": [
+                { "id": "tokyo", "name": "Tokyo", "timezone": "Asia/Tokyo" },
+                { "city": "London", "tz": "Europe/London" }
+            ],
+            "ntp_globe_clouds": true
+        })));
+        assert_eq!(s.default_search_template, "https://kagi.com/search?q=%s");
+        assert!(!s.omnibox_engine_outline);
+        assert_eq!(s.world_clocks.len(), 2);
+        assert_eq!(s.world_clocks[0].timezone, "Asia/Tokyo");
+        assert_eq!(s.world_clocks[1].name, "London");
+        assert_eq!(s.world_clocks[1].timezone, "Europe/London");
+        assert!(s.ntp_globe_clouds);
+    }
+
+    #[test]
+    fn test_pet_settings_validation_and_persistence() {
+        let mut s = Settings::default();
+        assert_eq!(s.pet_type, "");
+        assert_eq!(s.pet_name, "Pixel");
+        assert_eq!(s.pet_color, "#f97316");
+        assert_eq!(s.pet_accessory, "none");
+        assert_eq!(s.pet_mood, "content");
+        assert!(!s.pet_roam);
+
+        assert!(!s.apply_setting("pet_type", &serde_json::json!("pikachu")));
+        assert!(!s.apply_setting("pet_accessory", &serde_json::json!("jetpack")));
+        assert!(!s.apply_setting("pet_color", &serde_json::json!("not-hex")));
+
+        assert!(s.merge_json(&serde_json::json!({
+            "pet_type": "fox",
+            "pet_name": "  Sparky  ",
+            "pet_color": "#38BDF8",
+            "pet_accessory": "glasses",
+            "pet_mood": "happy",
+            "pet_roam": true
+        })));
+        assert_eq!(s.pet_type, "fox");
+        assert_eq!(s.pet_name, "Sparky");
+        assert_eq!(s.pet_color, "#38bdf8");
+        assert_eq!(s.pet_accessory, "glasses");
+        assert_eq!(s.pet_mood, "happy");
+        assert!(s.pet_roam);
+
+        let ui = s.to_ui_json();
+        assert_eq!(ui["pet_type"], "fox");
+        assert_eq!(ui["pet_name"], "Sparky");
+        assert_eq!(ui["pet_roam"], true);
+
+        let temp_dir = env::temp_dir().join("rusty_browser_test_pet");
+        let _ = fs::create_dir_all(&temp_dir);
+        let mut st = Storage::new();
+        st.data_dir = temp_dir.clone();
+        st.file_path = temp_dir.join("pet_data.json");
+        let _ = fs::remove_file(&st.file_path);
+        st.update_settings(s);
+
+        let mut st2 = Storage::new();
+        st2.data_dir = temp_dir.clone();
+        st2.file_path = temp_dir.join("pet_data.json");
+        assert_eq!(st2.settings().pet_type, "fox");
+        assert_eq!(st2.settings().pet_accessory, "glasses");
+        assert!(st2.settings().pet_roam);
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

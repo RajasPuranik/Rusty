@@ -12,7 +12,9 @@
     tabs_layout: 'horizontal',        // 'horizontal' | 'vertical'
     vertical_collapsed: false,
     density: 'normal',                // 'compact' | 'normal' | 'relaxed'
-    default_search: 'google',         // 'google' | 'duckduckgo' | 'bing' | 'brave' | 'youtube' | 'github'
+    default_search: 'google',         // 'google' | 'yahoo' | 'duckduckgo' | 'bing' | 'brave' | 'youtube' | 'github' | custom id
+    omnibox_engine_outline: true,
+    custom_engines: [],
     effects_intensity: 80,            // 0 to 100
     fx_glow: true,
     fx_tilt: true,
@@ -23,12 +25,21 @@
     fx_canvas_bg: true,
     memory_saver_timeout_secs: 600,
     show_memory_badge: true,
+    open_tabs_in_background: true,
     ntp_show_clock: true,
     ntp_show_greeting: true,
     ntp_show_speed_dial: true,
     ntp_show_notes: true,
     ntp_show_weather: true,
-    weather_location: ''
+    ntp_globe_clouds: false,
+    world_clocks: [],
+    weather_location: '',
+    pet_type: '',                     // '' | 'dog' | 'cat' | 'robot' | 'fox' | 'slime'
+    pet_name: 'Pixel',
+    pet_color: '#f97316',
+    pet_accessory: 'none',            // 'none' | 'collar' | 'bow' | 'hat' | 'glasses'
+    pet_mood: 'content',
+    pet_roam: false
   };
 
   class SettingsStore {
@@ -36,6 +47,20 @@
       this.data = { ...DEFAULT_SETTINGS };
       this.listeners = new Set();
       this.load();
+      if (typeof window !== 'undefined') {
+        window.addEventListener('storage', (e) => {
+          if (e.key !== STORAGE_KEY || !e.newValue) return;
+          try {
+            const incoming = JSON.parse(e.newValue);
+            if (!incoming || typeof incoming !== 'object') return;
+            this.data = { ...DEFAULT_SETTINGS, ...incoming };
+            if (root.BOOT_SETTINGS) {
+              Object.assign(root.BOOT_SETTINGS, this.data);
+            }
+            this.notify();
+          } catch (_) {}
+        });
+      }
     }
 
     load() {

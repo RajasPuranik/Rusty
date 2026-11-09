@@ -29,6 +29,12 @@ pub struct TabInfo {
     pub zoom_percent: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavHint {
+    Back,
+    Forward,
+}
+
 /// Internal state for a tab.
 pub struct Tab {
     pub id: TabId,
@@ -50,10 +56,45 @@ pub struct Tab {
     pub scroll_y: f64,
     /// Current zoom level factor (1.0 = 100%).
     pub zoom_level: f64,
+    /// Visited URL stack for middle-click Back/Forward history cloning.
+    nav_history: Vec<String>,
+    /// Current index within `nav_history`.
+    nav_index: usize,
+    /// Optional directional hint when WebView Back/Forward skips redirect hops.
+    pending_nav_hint: Option<NavHint>,
+}
+
+fn is_internal_newtab_alias(u: &str) -> bool {
+    u == "about:blank"
+        || u == "about:newtab"
+        || u.contains("rusty.app/newtab.html")
+        || u.contains("rusty://app/newtab.html")
+}
+
+fn canonical_history_key(u: &str) -> String {
+    if is_internal_newtab_alias(u) {
+        return "about:blank".to_owned();
+    }
+    if u.contains("://") {
+        if let Ok(parsed) = url::Url::parse(u) {
+            return parsed.as_str().to_owned();
+        }
+    }
+    u.to_owned()
+}
+
+/// Compare two URLs modulo internal newtab aliases and root trailing slash/default port normalization.
+pub fn urls_equivalent(a: &str, b: &str) -> bool {
+    a == b || canonical_history_key(a) == canonical_history_key(b)
 }
 
 impl Tab {
     pub fn new(id: TabId, url: String) -> Self {
+        let initial_history = if url.is_empty() {
+            vec!["about:blank".to_owned()]
+        } else {
+            vec![url.clone()]
+        };
         Self {
             id,
             title: "New Tab".to_owned(),
@@ -66,7 +107,96 @@ impl Tab {
             last_active: Instant::now(),
             scroll_y: 0.0,
             zoom_level: 1.0,
+            nav_history: initial_history,
+            nav_index: 0,
+            pending_nav_hint: None,
         }
+    }
+
+    pub fn set_pending_nav(&mut self, hint: Option<NavHint>) {
+        self.pending_nav_hint = hint;
+    }
+
+    /// Record a committed navigation URL, keeping Back/Forward pointers in sync
+    /// across redirects, `pushState` updates, and trailing-slash differences.
+    pub fn record_navigation(&mut self, url: &str) {
+        if url.is_empty() || url.starts_with("data:") {
+            return;
+        }
+        let normalized = if is_internal_newtab_alias(url) {
+            "about:blank".to_owned()
+        } else {
+            url.to_owned()
+        };
+
+        let hint = self.pending_nav_hint;
+
+        if let Some(current) = self.nav_history.get(self.nav_index) {
+            if urls_equivalent(current, &normalized) {
+                self.pending_nav_hint = None;
+                return;
+            }
+        }
+        if self.nav_index > 0 {
+            if let Some(prev) = self.nav_history.get(self.nav_index - 1) {
+                if urls_equivalent(prev, &normalized) {
+                    self.nav_index -= 1;
+                    self.pending_nav_hint = None;
+                    return;
+                }
+            }
+        }
+        if let Some(next) = self.nav_history.get(self.nav_index + 1) {
+            if urls_equivalent(next, &normalized) {
+                self.nav_index += 1;
+                self.pending_nav_hint = None;
+                return;
+            }
+        }
+
+        if hint == Some(NavHint::Back) && self.nav_index > 0 {
+            if let Some(pos) = self.nav_history[..self.nav_index]
+                .iter()
+                .rposition(|u| urls_equivalent(u, &normalized))
+            {
+                self.nav_index = pos;
+                self.pending_nav_hint = None;
+                return;
+            }
+        }
+        if hint == Some(NavHint::Forward) && self.nav_index + 1 < self.nav_history.len() {
+            if let Some(rel) = self.nav_history[self.nav_index + 1..]
+                .iter()
+                .position(|u| urls_equivalent(u, &normalized))
+            {
+                self.nav_index += 1 + rel;
+                self.pending_nav_hint = None;
+                return;
+            }
+        }
+
+        self.pending_nav_hint = None;
+        self.nav_history.truncate(self.nav_index + 1);
+        self.nav_history.push(normalized);
+        if self.nav_history.len() > 200 {
+            let overflow = self.nav_history.len() - 200;
+            self.nav_history.drain(0..overflow);
+        }
+        self.nav_index = self.nav_history.len().saturating_sub(1);
+    }
+
+    /// URL behind current history position (if any).
+    pub fn peek_back_url(&self) -> Option<&str> {
+        if self.nav_index > 0 {
+            self.nav_history.get(self.nav_index - 1).map(|s| s.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// URL ahead of current history position (if any).
+    pub fn peek_forward_url(&self) -> Option<&str> {
+        self.nav_history.get(self.nav_index + 1).map(|s| s.as_str())
     }
 
     pub fn info(&self, active_id: Option<TabId>) -> TabInfo {
@@ -107,6 +237,28 @@ impl TabManager {
         let id = self.next_id;
         self.next_id += 1;
         self.tabs.push(Tab::new(id, url));
+        if self.active.is_none() {
+            self.active = Some(id);
+        }
+        id
+    }
+
+    /// Create a new tab immediately after `after_id` (or at the end if not found).
+    /// Preserves the currently active tab so background opens stay unobtrusive.
+    pub fn create_tab_after(&mut self, after_id: Option<TabId>, url: String) -> TabId {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut tab = Tab::new(id, url);
+        if let Some(aid) = after_id {
+            if let Some(pos) = self.tabs.iter().position(|t| t.id == aid) {
+                tab.group_id = self.tabs[pos].group_id.clone();
+                self.tabs.insert(pos + 1, tab);
+            } else {
+                self.tabs.push(tab);
+            }
+        } else {
+            self.tabs.push(tab);
+        }
         if self.active.is_none() {
             self.active = Some(id);
         }
@@ -262,15 +414,25 @@ impl TabManager {
 
     /// Duplicate an existing tab. Returns ID of the newly created tab.
     pub fn duplicate(&mut self, id: TabId) -> Option<TabId> {
-        let (url, title, zoom) = {
+        let (url, title, zoom, nav_history, nav_index, group_id) = {
             let tab = self.get(id)?;
-            (tab.url.clone(), tab.title.clone(), tab.zoom_level)
+            (
+                tab.url.clone(),
+                tab.title.clone(),
+                tab.zoom_level,
+                tab.nav_history.clone(),
+                tab.nav_index,
+                tab.group_id.clone(),
+            )
         };
         let new_id = self.next_id;
         self.next_id += 1;
         let mut new_tab = Tab::new(new_id, url);
         new_tab.title = format!("{title} (Copy)");
         new_tab.zoom_level = zoom;
+        new_tab.nav_history = nav_history;
+        new_tab.nav_index = nav_index;
+        new_tab.group_id = group_id;
         let pos = self.tabs.iter().position(|t| t.id == id).unwrap_or(self.tabs.len());
         self.tabs.insert(pos + 1, new_tab);
         Some(new_id)
@@ -554,5 +716,72 @@ mod tests {
         let closed_below = mgr.close_below(t3);
         assert_eq!(closed_below, vec![t5, t6]);
         assert_eq!(mgr.all_ids(), vec![t1, t3]);
+    }
+
+    #[test]
+    fn nav_history_and_create_tab_after() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("about:blank".into());
+        let t2 = mgr.create_tab("https://end.com".into());
+
+        if let Some(tab) = mgr.get_mut(t1) {
+            tab.record_navigation("http://rusty.app/newtab.html?skin=crazy");
+            assert_eq!(tab.peek_back_url(), None);
+            tab.record_navigation("https://one.com");
+            assert_eq!(tab.peek_back_url(), Some("about:blank"));
+            tab.record_navigation("https://two.com");
+            assert_eq!(tab.peek_back_url(), Some("https://one.com"));
+            assert_eq!(tab.peek_forward_url(), None);
+
+            // Simulate clicking Back -> WebView navigates to one.com
+            tab.record_navigation("https://one.com");
+            assert_eq!(tab.peek_back_url(), Some("about:blank"));
+            assert_eq!(tab.peek_forward_url(), Some("https://two.com"));
+        }
+
+        // Background insertion preserves active tab (t1) and inserts immediately after t1
+        let t_bg = mgr.create_tab_after(Some(t1), "https://bg.com".into());
+        assert_eq!(mgr.active_id(), Some(t1));
+        assert_eq!(mgr.all_ids(), vec![t1, t_bg, t2]);
+    }
+
+    #[test]
+    fn test_back_forward_redirect_preserves_forward_history() {
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("about:blank".into());
+        let tab = mgr.get_mut(t1).unwrap();
+
+        tab.record_navigation("https://site.test/page-a");
+        tab.record_navigation("https://site.test/redir");
+        tab.record_navigation("https://site.test/final");
+        assert_eq!(tab.peek_back_url(), Some("https://site.test/redir"));
+        assert_eq!(tab.peek_forward_url(), None);
+
+        // Simulate WebView2 Back skipping redirect hop directly to page-a
+        tab.set_pending_nav(Some(NavHint::Back));
+        tab.record_navigation("https://site.test/page-a");
+        assert_eq!(tab.peek_back_url(), Some("about:blank"));
+        assert!(tab.peek_forward_url().is_some());
+
+        // Simulate WebView2 Forward skipping redirect hop directly to final
+        tab.set_pending_nav(Some(NavHint::Forward));
+        tab.record_navigation("https://site.test/final");
+        assert_eq!(tab.peek_forward_url(), None);
+        assert!(tab.peek_back_url().is_some());
+    }
+
+    #[test]
+    fn test_root_trailing_slash_normalization() {
+        assert!(urls_equivalent("http://127.0.0.1:8080", "http://127.0.0.1:8080/"));
+        assert!(urls_equivalent("https://Example.COM:443/path", "https://example.com/path"));
+        assert!(!urls_equivalent("https://example.com/a", "https://example.com/b"));
+
+        let mut mgr = TabManager::new();
+        let t1 = mgr.create_tab("about:blank".into());
+        let tab = mgr.get_mut(t1).unwrap();
+        tab.record_navigation("http://127.0.0.1:8080");
+        tab.record_navigation("http://127.0.0.1:8080/");
+        assert_eq!(tab.peek_back_url(), Some("about:blank"));
+        assert_eq!(tab.peek_forward_url(), None);
     }
 }

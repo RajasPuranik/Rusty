@@ -1,18 +1,14 @@
-// New Tab Page Controller: Clock, Search, Dials, Cards, Live Weather, Quick Notes, Focus Timer, Real System Monitor
+// New Tab Page Controller: Merged Time & Weather, Engine-Colored Search, Dials, Cards, Notes, Focus Timer, System Monitor
 (function () {
   'use strict';
 
-  const ENGINES = {
-    google: 'https://www.google.com/search?q=%s',
-    duckduckgo: 'https://duckduckgo.com/?q=%s',
-    bing: 'https://www.bing.com/search?q=%s',
-    brave: 'https://search.brave.com/search?q=%s',
-    youtube: 'https://www.youtube.com/results?search_query=%s',
-    github: 'https://github.com/search?q=%s'
-  };
+  const WEATHER_CACHE_KEY = 'rusty_weather_cache_v2';
+  const WEATHER_CACHE_TTL_MS = 30 * 60 * 1000;
 
   let activeEngine = (window.Settings && window.Settings.get('default_search')) || 'google';
   let savedWeatherQuery = (window.Settings && window.Settings.get('weather_location')) || '';
+  let lastWeatherData = null;
+  let manualGeoCoords = null;
 
   const DEFAULT_SPEED_DIALS = [
     { title: 'YouTube', url: 'https://youtube.com', avatar: 'YT', color: '#ef4444' },
@@ -32,8 +28,14 @@
   // DOM Elements
   const clockTime = document.getElementById('clock-time');
   const clockDate = document.getElementById('clock-date');
+  const searchBox = document.getElementById('search-box');
   const searchInput = document.getElementById('search-input');
   const chipContainer = document.getElementById('engine-chips');
+  const ntpCustomForm = document.getElementById('ntp-custom-engine-form');
+  const ntpEngineName = document.getElementById('ntp-engine-name');
+  const ntpEngineTemplate = document.getElementById('ntp-engine-template');
+  const ntpEngineColor = document.getElementById('ntp-engine-color');
+  const ntpEngineCancel = document.getElementById('ntp-engine-cancel');
   const speedDialGrid = document.getElementById('speed-dial-grid');
   const notesChecklist = document.getElementById('notes-checklist');
   const scratchpad = document.getElementById('scratchpad');
@@ -43,8 +45,20 @@
   const btnFocusPlay = document.getElementById('btn-focus-play');
   const btnFocusReset = document.getElementById('btn-focus-settings');
 
-  // Weather Elements
-  const weatherCard = document.getElementById('widget-weather');
+  // Merged Time & Weather Elements
+  const twCard = document.getElementById('widget-time-weather');
+  const twCompactRow = document.getElementById('tw-compact-row');
+  const twClockBlock = document.getElementById('tw-clock-block');
+  const twWeatherBlock = document.getElementById('tw-weather-block');
+  const twExpanded = document.getElementById('tw-expanded');
+  const twExpandBtn = document.getElementById('tw-expand-btn');
+  const twOfflineBadge = document.getElementById('weather-offline-badge');
+  const twForecastSection = document.getElementById('tw-forecast-section');
+  const weatherForecastRow = document.getElementById('weather-forecast-row');
+  const worldClockList = document.getElementById('world-clock-list');
+  const btnToggleWorldClockAdd = document.getElementById('btn-toggle-worldclock-add');
+  const worldClockForm = document.getElementById('world-clock-form');
+  const worldClockSelect = document.getElementById('world-clock-select');
   const weatherIcon = document.getElementById('weather-icon');
   const weatherTemp = document.getElementById('weather-temp');
   const weatherCondition = document.getElementById('weather-condition');
@@ -53,6 +67,9 @@
   const btnWeatherRefresh = document.getElementById('btn-weather-refresh');
   const weatherCityForm = document.getElementById('weather-city-form');
   const weatherCityInput = document.getElementById('weather-city-input');
+  const btnUseMyLocation = document.getElementById('btn-use-my-location');
+  const toggleGlobeClouds = document.getElementById('toggle-globe-clouds');
+  const globeSlot = document.getElementById('globe-slot');
 
   // System Monitor Elements
   const cpuVal = document.getElementById('cpu-val');
@@ -67,11 +84,31 @@
   // Widget Containers (for live settings toggle)
   const elBrandHero = document.getElementById('brand-hero');
   const elSpeedDialSec = document.getElementById('speed-dial-section');
-  const elWidgetClock = document.getElementById('widget-clock');
   const elWidgetNotes = document.getElementById('widget-notes');
 
-  // ── 1. Digital Clock & Date ──────────────────────────────────────────────
+  // ── 1. Digital Clock, Date & World Clocks ────────────────────────────────
+  function formatWorldClockTime(tz) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        timeZone: tz,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).format(new Date());
+    } catch (_) {
+      return '--:--';
+    }
+  }
+
+  function updateWorldClockTimesOnly() {
+    if (!worldClockList || (twExpanded && twExpanded.hidden)) return;
+    worldClockList.querySelectorAll('.world-clock-time[data-tz]').forEach((el) => {
+      el.textContent = formatWorldClockTime(el.dataset.tz);
+    });
+  }
+
   function updateClock() {
+    if (document.hidden) return;
     const now = new Date();
     let hours = now.getHours();
     const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -88,28 +125,137 @@
       const options = { weekday: 'short', month: 'short', day: 'numeric' };
       clockDate.textContent = now.toLocaleDateString(undefined, options);
     }
+
+    updateWorldClockTimesOnly();
   }
 
   setInterval(updateClock, 1000);
   updateClock();
 
-  // ── 2. Search Engine Chips & Navigation ───────────────────────────────────
-  function syncActiveEngineChip() {
-    if (!chipContainer) return;
-    chipContainer.querySelectorAll('.chip').forEach((c) => {
-      c.classList.toggle('active', c.dataset.engine === activeEngine);
+  // ── 2. Search Engine Chips, Crisp Outline & Navigation (A4) ──────────────
+  function getCustomEngines() {
+    return (window.Settings && Array.isArray(window.Settings.get('custom_engines')))
+      ? window.Settings.get('custom_engines')
+      : [];
+  }
+
+  function applySearchBoxOutline() {
+    if (!window.RustyEngines) return;
+    const custom = getCustomEngines();
+    const eng = window.RustyEngines.getById(activeEngine, custom);
+    activeEngine = eng.id;
+    if (searchBox) {
+      window.RustyEngines.applyOutlineStyles(searchBox, eng.id, custom);
+    }
+    if (searchInput) {
+      searchInput.placeholder = `Search with ${eng.name} or enter a URL...`;
+    }
+    if (chipContainer) {
+      const resolved = window.RustyEngines.resolveOutlineColors(eng, custom);
+      chipContainer.querySelectorAll('.chip[data-engine]').forEach((c) => {
+        const isActive = c.dataset.engine === activeEngine;
+        c.classList.toggle('active', isActive);
+        if (isActive) {
+          c.style.setProperty('--chip-color', resolved.caret);
+        } else {
+          c.style.removeProperty('--chip-color');
+        }
+      });
+    }
+  }
+
+  function renderEngineChips() {
+    if (!chipContainer || !window.RustyEngines) return;
+    const custom = getCustomEngines();
+    const engines = window.RustyEngines.getAll(custom);
+    chipContainer.innerHTML = '';
+
+    engines.forEach((eng) => {
+      const resolved = window.RustyEngines.resolveOutlineColors(eng, custom);
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = `chip ${eng.id === activeEngine ? 'active' : ''}`;
+      chip.dataset.engine = eng.id;
+
+      const dot = document.createElement('span');
+      dot.className = 'chip-color-dot';
+      dot.style.background = resolved.swatch;
+      chip.appendChild(dot);
+
+      const label = document.createElement('span');
+      label.textContent = eng.name;
+      chip.appendChild(label);
+
+      if (!eng.builtin) {
+        const rem = document.createElement('span');
+        rem.className = 'chip-remove';
+        rem.title = `Remove ${eng.name}`;
+        rem.textContent = '×';
+        rem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.RustyEngines.removeCustomEngine(eng.id);
+          activeEngine = (window.Settings && window.Settings.get('default_search')) || 'google';
+          renderEngineChips();
+        });
+        chip.appendChild(rem);
+      }
+
+      chip.addEventListener('click', () => {
+        activeEngine = eng.id;
+        applySearchBoxOutline();
+        if (window.Settings) {
+          window.Settings.set('default_search', eng.id);
+        }
+        searchInput && searchInput.focus();
+      });
+
+      chipContainer.appendChild(chip);
+    });
+
+    const addChip = document.createElement('button');
+    addChip.type = 'button';
+    addChip.id = 'btn-add-engine-ntp';
+    addChip.className = 'chip chip-add-engine';
+    addChip.title = 'Add custom search engine';
+    addChip.textContent = '+ Custom';
+    addChip.addEventListener('click', () => {
+      if (!ntpCustomForm) return;
+      const open = ntpCustomForm.hidden;
+      ntpCustomForm.hidden = !open;
+      if (open) {
+        if (ntpEngineColor && window.RustyEngines) {
+          ntpEngineColor.value = window.RustyEngines.getDefaultAccentHex();
+        }
+        ntpEngineName && ntpEngineName.focus();
+      }
+    });
+    chipContainer.appendChild(addChip);
+
+    applySearchBoxOutline();
+  }
+
+  renderEngineChips();
+
+  if (ntpEngineCancel && ntpCustomForm) {
+    ntpEngineCancel.addEventListener('click', () => {
+      ntpCustomForm.hidden = true;
     });
   }
-  syncActiveEngineChip();
 
-  if (chipContainer) {
-    chipContainer.addEventListener('click', (e) => {
-      const chip = e.target.closest('.chip');
-      if (!chip) return;
-      const engine = chip.dataset.engine;
-      if (ENGINES[engine]) {
-        activeEngine = engine;
-        syncActiveEngineChip();
+  if (ntpCustomForm && window.RustyEngines) {
+    ntpCustomForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = ntpEngineName ? ntpEngineName.value.trim() : '';
+      const template = ntpEngineTemplate ? ntpEngineTemplate.value.trim() : '';
+      const color = ntpEngineColor ? ntpEngineColor.value : window.RustyEngines.getDefaultAccentHex();
+      const added = window.RustyEngines.addCustomEngine({ name, template, color });
+      if (added) {
+        activeEngine = added.id;
+        if (window.Settings) window.Settings.set('default_search', added.id);
+        if (ntpEngineName) ntpEngineName.value = '';
+        if (ntpEngineTemplate) ntpEngineTemplate.value = '';
+        ntpCustomForm.hidden = true;
+        renderEngineChips();
         searchInput && searchInput.focus();
       }
     });
@@ -120,15 +266,10 @@
     const trimmed = query.trim();
     if (!trimmed) return;
 
-    let targetUrl;
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(trimmed)) {
-      targetUrl = trimmed;
-    } else if (/^[^\s]+\.[^\s]+$/i.test(trimmed) && !trimmed.includes(' ')) {
-      targetUrl = `https://${trimmed}`;
-    } else {
-      const template = ENGINES[activeEngine] || ENGINES.google;
-      targetUrl = template.replace('%s', encodeURIComponent(trimmed));
-    }
+    const custom = getCustomEngines();
+    const targetUrl = window.RustyEngines
+      ? window.RustyEngines.buildSearchUrl(trimmed, activeEngine, custom)
+      : `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 
     if (window.bridge && typeof window.bridge.send === 'function') {
       window.bridge.send('navigate', { url: targetUrl });
@@ -160,7 +301,7 @@
   // Keyboard shortcut '/' to focus search
   window.addEventListener('keydown', (e) => {
     const active = document.activeElement;
-    const isTyping = active === searchInput || active === scratchpad || active === weatherCityInput;
+    const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
     if (e.key === '/' && !isTyping) {
       e.preventDefault();
       if (searchInput) {
@@ -169,6 +310,25 @@
       }
     }
   });
+
+  // Suppress Windows middle-click autoscroll icon on NTP interactive controls
+  document.addEventListener('mousedown', (e) => {
+    if (e.button === 1 && e.target && e.target.closest('a, button, .dial-pill, .workspace-chip, .dock-btn, .action-card')) {
+      e.preventDefault();
+    }
+  }, true);
+
+  function openNtpItemInNewTab(url, title, e) {
+    if (window.bridge && typeof window.bridge.send === 'function') {
+      window.bridge.send('new_tab', {
+        url: url || 'about:blank',
+        background: (e && e.shiftKey) ? false : null,
+        title: title || null
+      });
+    } else if (url && !url.startsWith('about:')) {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
 
   // ── 3. Speed Dial Row ────────────────────────────────────────────────────
   function loadSpeedDials() {
@@ -189,17 +349,28 @@
       const a = document.createElement('a');
       a.className = 'dial-pill';
       a.href = d.url;
-      a.title = d.title;
+      a.title = `${d.title} (Middle-click: open in new tab)`;
       a.style.backgroundColor = d.color || '#1e293b';
       a.textContent = d.avatar || d.title.slice(0, 2).toUpperCase();
 
       a.addEventListener('click', (e) => {
         e.preventDefault();
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+          openNtpItemInNewTab(d.url, d.title, e);
+          return;
+        }
         if (window.bridge && typeof window.bridge.send === 'function') {
           window.bridge.send('navigate', { url: d.url });
         } else {
           window.location.href = d.url;
         }
+      });
+
+      a.addEventListener('auxclick', (e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openNtpItemInNewTab(d.url, d.title, e);
       });
       speedDialGrid.appendChild(a);
     });
@@ -230,8 +401,21 @@
 
   // ── 4. Action Cards & Left Rail Dock Handlers ────────────────────────────
   document.querySelectorAll('.action-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      const action = card.dataset.action;
+    const action = card.dataset.action;
+    const titleEl = card.querySelector('.action-card-title');
+    const cardTitle = titleEl ? titleEl.textContent.trim() : 'New Tab';
+    const newTabUrl = action === 'media'
+      ? 'https://youtube.com'
+      : action === 'tools'
+        ? 'about:settings'
+        : 'about:blank';
+
+    card.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        openNtpItemInNewTab(newTabUrl, cardTitle, e);
+        return;
+      }
       if (action === 'ai') {
         if (searchInput) {
           searchInput.focus();
@@ -245,6 +429,13 @@
         window.bridge && window.bridge.send('open_settings');
       }
     });
+
+    card.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openNtpItemInNewTab(newTabUrl, cardTitle, e);
+    });
   });
 
   const dockHome = document.getElementById('dock-btn-home');
@@ -256,21 +447,37 @@
   const dockDownloads = document.getElementById('dock-btn-downloads');
   const dockSettings = document.getElementById('dock-btn-settings');
 
-  if (dockHome && searchInput) dockHome.addEventListener('click', () => searchInput.focus());
-  if (dockAi && searchInput) dockAi.addEventListener('click', () => searchInput.focus());
-  if (dockApps) dockApps.addEventListener('click', () => window.bridge && window.bridge.send('open_command_palette'));
-  if (dockSpaces) {
-    dockSpaces.addEventListener('click', () => {
-      const current = (window.Settings && window.Settings.get('tabs_layout')) || 'horizontal';
-      const next = current === 'vertical' ? 'horizontal' : 'vertical';
-      if (window.Settings) window.Settings.data.tabs_layout = next;
-      window.bridge && window.bridge.send('set_setting', { key: 'tabs_layout', value: next });
+  function bindDockButton(btn, url, title, onNormalClick) {
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        openNtpItemInNewTab(url, title, e);
+        return;
+      }
+      onNormalClick();
+    });
+    btn.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openNtpItemInNewTab(url, title, e);
     });
   }
-  if (dockBookmarks) dockBookmarks.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'bookmarks' }));
-  if (dockHistory) dockHistory.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'history' }));
-  if (dockDownloads) dockDownloads.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'downloads' }));
-  if (dockSettings) dockSettings.addEventListener('click', () => window.bridge && window.bridge.send('open_settings'));
+
+  bindDockButton(dockHome, 'about:blank', 'New Tab', () => searchInput && searchInput.focus());
+  bindDockButton(dockAi, 'about:blank', 'New Tab', () => searchInput && searchInput.focus());
+  bindDockButton(dockApps, 'about:blank', 'New Tab', () => window.bridge && window.bridge.send('open_command_palette'));
+  bindDockButton(dockSpaces, 'about:blank', 'New Tab', () => {
+    const current = (window.Settings && window.Settings.get('tabs_layout')) || 'horizontal';
+    const next = current === 'vertical' ? 'horizontal' : 'vertical';
+    if (window.Settings) window.Settings.data.tabs_layout = next;
+    window.bridge && window.bridge.send('set_setting', { key: 'tabs_layout', value: next });
+  });
+  bindDockButton(dockBookmarks, 'about:bookmarks', 'Bookmarks', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'bookmarks' }));
+  bindDockButton(dockHistory, 'about:history', 'History', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'history' }));
+  bindDockButton(dockDownloads, 'about:downloads', 'Downloads', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'downloads' }));
+  bindDockButton(dockSettings, 'about:settings', 'Settings', () => window.bridge && window.bridge.send('open_settings'));
 
   // ── 5. Quick Notes Checklist ─────────────────────────────────────────────
   function loadNotes() {
@@ -403,62 +610,323 @@
 
   updateTimerDisplay();
 
-  // ── 7. Live Weather Widget (Real data pushed from Rust) ──────────────────
-  const WEATHER_CACHE_KEY = 'rusty_weather_cache_v1';
+  // ── 7. Merged Time & Weather Card (5-Day Forecast, World Clocks, Cache, Offline) ──
+  function normalizeWorldClockEntry(c) {
+    if (!c || typeof c !== 'object') return null;
+    const city = String(c.city || c.name || '').trim();
+    const tz = String(c.tz || c.timezone || '').trim();
+    if (!city || !tz) return null;
+    const id = String(c.id || tz.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    return { id, name: city, timezone: tz, city, tz };
+  }
+
+  function getSavedWorldClocks() {
+    const raw = window.Settings && window.Settings.get('world_clocks');
+    if (!Array.isArray(raw)) return [];
+    return raw.map(normalizeWorldClockEntry).filter(Boolean);
+  }
+
+  function populateWorldClockSelect() {
+    if (!worldClockSelect || !window.RustyLocations) return;
+    const existing = new Set(getSavedWorldClocks().map((c) => c.tz));
+    worldClockSelect.innerHTML = '';
+    const seenTz = new Set();
+    const choices = [];
+    window.RustyLocations.WORLD_CLOCK_PRESETS.forEach((p) => {
+      if (!seenTz.has(p.tz)) {
+        seenTz.add(p.tz);
+        choices.push(p);
+      }
+    });
+    Object.entries(window.RustyLocations.TZ_MAP).forEach(([tz, info]) => {
+      if (!seenTz.has(tz)) {
+        seenTz.add(tz);
+        choices.push({ city: info.city, country: info.country, tz });
+      }
+    });
+    choices.forEach((c) => {
+      if (existing.has(c.tz)) return;
+      const opt = document.createElement('option');
+      opt.value = JSON.stringify({ city: c.city, tz: c.tz });
+      opt.textContent = `${c.city} (${c.country})`;
+      worldClockSelect.appendChild(opt);
+    });
+  }
+
+  function renderWorldClocks() {
+    if (!worldClockList) return;
+    const clocks = getSavedWorldClocks();
+    worldClockList.innerHTML = '';
+    if (clocks.length === 0) {
+      const empty = document.createElement('span');
+      empty.style.cssText = 'font-size: 11px; color: var(--text-muted);';
+      empty.textContent = 'No extra cities added yet.';
+      worldClockList.appendChild(empty);
+      populateWorldClockSelect();
+      return;
+    }
+
+    clocks.forEach((wc, idx) => {
+      const pill = document.createElement('div');
+      pill.className = 'world-clock-pill';
+
+      const cityEl = document.createElement('span');
+      cityEl.className = 'world-clock-city';
+      cityEl.textContent = wc.city;
+
+      const timeEl = document.createElement('span');
+      timeEl.className = 'world-clock-time';
+      timeEl.dataset.tz = wc.tz;
+      timeEl.textContent = formatWorldClockTime(wc.tz);
+
+      const remBtn = document.createElement('button');
+      remBtn.type = 'button';
+      remBtn.className = 'world-clock-remove';
+      remBtn.title = `Remove ${wc.city}`;
+      remBtn.textContent = '×';
+      remBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = getSavedWorldClocks().filter((_, i) => i !== idx);
+        if (window.Settings) window.Settings.set('world_clocks', next);
+        renderWorldClocks();
+      });
+
+      pill.appendChild(cityEl);
+      pill.appendChild(timeEl);
+      pill.appendChild(remBtn);
+      worldClockList.appendChild(pill);
+    });
+    populateWorldClockSelect();
+  }
+
+  renderWorldClocks();
+
+  if (btnToggleWorldClockAdd && worldClockForm) {
+    btnToggleWorldClockAdd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      populateWorldClockSelect();
+      worldClockForm.hidden = !worldClockForm.hidden;
+    });
+  }
+
+  if (worldClockForm && worldClockSelect) {
+    worldClockForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!worldClockSelect.value) return;
+      try {
+        const picked = normalizeWorldClockEntry(JSON.parse(worldClockSelect.value));
+        if (!picked) return;
+        const cur = getSavedWorldClocks();
+        if (!cur.some((c) => c.tz === picked.tz)) {
+          const next = cur.concat([picked]);
+          if (window.Settings) window.Settings.set('world_clocks', next);
+        }
+        worldClockForm.hidden = true;
+        renderWorldClocks();
+      } catch (_) {}
+    });
+  }
+
+  function renderForecast(list) {
+    if (!weatherForecastRow) return;
+    weatherForecastRow.innerHTML = '';
+    const days = Array.isArray(list) ? list.slice(0, 5) : [];
+    if (days.length === 0) {
+      if (twForecastSection) twForecastSection.style.display = 'none';
+      return;
+    }
+    if (twForecastSection) twForecastSection.style.display = '';
+    days.forEach((day, idx) => {
+      const tile = document.createElement('div');
+      tile.className = 'tw-forecast-day';
+
+      let dayLabel = day.date || '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dayLabel)) {
+        const [y, m, d] = dayLabel.split('-').map(Number);
+        const localDate = new Date(y, m - 1, d);
+        dayLabel = idx === 0
+          ? 'Today'
+          : localDate.toLocaleDateString(undefined, { weekday: 'short' });
+      }
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'tw-forecast-name';
+      nameEl.textContent = dayLabel;
+
+      const iconEl = document.createElement('span');
+      iconEl.className = 'tw-forecast-icon';
+      iconEl.title = day.condition || '';
+      iconEl.innerHTML = window.Icons ? window.Icons.get(day.icon || 'weather', '', 14) : '';
+
+      const tempsEl = document.createElement('span');
+      tempsEl.className = 'tw-forecast-temps';
+      const hi = Math.round(Number(day.temp_max_c) || 0);
+      const lo = Math.round(Number(day.temp_min_c) || 0);
+      tempsEl.innerHTML = `${hi}° <span class="tw-forecast-lo">${lo}°</span>`;
+
+      tile.appendChild(nameEl);
+      tile.appendChild(iconEl);
+      tile.appendChild(tempsEl);
+      weatherForecastRow.appendChild(tile);
+    });
+  }
+
+  function emitGlobeLocation(lat, lon, city, country, source) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    window.dispatchEvent(new CustomEvent('rusty-globe-location', {
+      detail: { lat, lon, city: city || '', country: country || '', source: source || 'weather' }
+    }));
+  }
 
   function renderWeatherData(data) {
     if (!data || typeof data.temperature_c !== 'number') return;
+    lastWeatherData = data;
     if (weatherTemp) weatherTemp.textContent = `${Math.round(data.temperature_c)}°C`;
     if (weatherCondition) weatherCondition.textContent = data.condition || '';
     if (weatherLocation) weatherLocation.textContent = data.location || 'Local Area';
     if (weatherMeta) {
-      const hum = typeof data.humidity === 'number' ? `${data.humidity}% humidity` : '';
-      const wind = typeof data.wind_kmh === 'number' ? `${Math.round(data.wind_kmh)} km/h wind` : '';
+      const hum = typeof data.humidity === 'number' ? `${data.humidity}%` : '';
+      const wind = typeof data.wind_kmh === 'number' ? `${Math.round(data.wind_kmh)} km/h` : '';
       weatherMeta.textContent = [hum, wind].filter(Boolean).join(' • ');
     }
     if (weatherIcon && window.Icons) {
-      const iconKey = data.icon || 'weather';
-      weatherIcon.innerHTML = window.Icons.get(iconKey, '', 22);
+      weatherIcon.innerHTML = window.Icons.get(data.icon || 'weather', '', 18);
+    }
+    if (twOfflineBadge) {
+      const isOff = Boolean(data.offline) || (typeof navigator !== 'undefined' && navigator.onLine === false);
+      twOfflineBadge.hidden = !isOff;
     }
     if (typeof data.query === 'string') {
       savedWeatherQuery = data.query;
     }
+    renderForecast(data.forecast);
+    if (typeof data.latitude === 'number' && typeof data.longitude === 'number' && (data.latitude !== 0 || data.longitude !== 0)) {
+      emitGlobeLocation(data.latitude, data.longitude, data.location, data.country, data.query ? 'city' : 'centroid');
+    }
   }
 
-  try {
-    const cachedRaw = localStorage.getItem(WEATHER_CACHE_KEY);
-    if (cachedRaw) {
-      const cached = JSON.parse(cachedRaw);
-      renderWeatherData(cached);
+  function getActiveWeatherTarget() {
+    const city = String(savedWeatherQuery || '').trim();
+    if (city) {
+      return {
+        key: `city:${city.toLowerCase()}`,
+        payload: { location: city }
+      };
     }
-  } catch (_) {}
-
-  if (weatherCard) {
-    weatherCard.addEventListener('click', (e) => {
-      if (
-        (weatherCityForm && weatherCityForm.contains(e.target)) ||
-        (btnWeatherRefresh && btnWeatherRefresh.contains(e.target))
-      ) {
-        return;
+    if (manualGeoCoords) {
+      return {
+        key: `geo:${manualGeoCoords.lat.toFixed(2)},${manualGeoCoords.lon.toFixed(2)}`,
+        payload: {
+          location: '',
+          lat: manualGeoCoords.lat,
+          lon: manualGeoCoords.lon,
+          label: 'My Location',
+          country: ''
+        }
+      };
+    }
+    const c = (window.RustyLocations && typeof window.RustyLocations.resolveLocalCentroid === 'function')
+      ? window.RustyLocations.resolveLocalCentroid()
+      : { lat: 51.51, lon: -0.13, city: 'London', country: 'United Kingdom' };
+    return {
+      key: `tz:${c.city.toLowerCase()}`,
+      payload: {
+        location: '',
+        lat: c.lat,
+        lon: c.lon,
+        label: c.city,
+        country: c.country
       }
-      if (weatherCityForm) {
-        const isOpen = weatherCityForm.classList.toggle('open');
-        if (isOpen && weatherCityInput) {
-          weatherCityInput.value = savedWeatherQuery || '';
-          weatherCityInput.focus();
-          weatherCityInput.select();
+    };
+  }
+
+  function requestWeatherFetch(force = false) {
+    if (!window.bridge) return;
+    const target = getActiveWeatherTarget();
+    window.bridge.send('fetch_weather', { ...target.payload, force });
+  }
+
+  function emitPriority1OfflineFallback(query) {
+    const q = String(query || '').trim();
+    if (!q || !window.RustyLocations) return false;
+    const byCountry = typeof window.RustyLocations.findCountryCentroid === 'function'
+      ? window.RustyLocations.findCountryCentroid(q)
+      : null;
+    if (byCountry && Number.isFinite(byCountry.lat) && Number.isFinite(byCountry.lon)) {
+      emitGlobeLocation(byCountry.lat, byCountry.lon, q, byCountry.name, 'city');
+      return true;
+    }
+    const byTz = typeof window.RustyLocations.findTimezoneForCity === 'function'
+      ? window.RustyLocations.findTimezoneForCity(q)
+      : null;
+    const tzInfo = byTz && window.RustyLocations.TZ_MAP ? window.RustyLocations.TZ_MAP[byTz.tz] : null;
+    if (tzInfo && Number.isFinite(tzInfo.lat) && Number.isFinite(tzInfo.lon)) {
+      emitGlobeLocation(tzInfo.lat, tzInfo.lon, tzInfo.city || q, tzInfo.country || '', 'city');
+      return true;
+    }
+    return false;
+  }
+
+  // Hydrate 30-min weather cache immediately, then fetch if missing or expired
+  (function initWeatherCacheAndFetch() {
+    const target = getActiveWeatherTarget();
+    let hasFreshCache = false;
+    try {
+      const cachedRaw = localStorage.getItem(WEATHER_CACHE_KEY);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached && cached.data && typeof cached.data.temperature_c === 'number') {
+          renderWeatherData(cached.data);
+          const age = Date.now() - Number(cached.cachedAtMs || 0);
+          if (!cached.data.offline && cached.queryKey === target.key && age >= 0 && age < WEATHER_CACHE_TTL_MS) {
+            hasFreshCache = true;
+          }
         }
       }
+    } catch (_) {}
+
+    if (!hasFreshCache) {
+      if (savedWeatherQuery) {
+        emitPriority1OfflineFallback(savedWeatherQuery);
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        if (twOfflineBadge) twOfflineBadge.hidden = false;
+        if (!lastWeatherData && weatherCondition) weatherCondition.textContent = 'Offline';
+      } else {
+        requestWeatherFetch(false);
+      }
+    }
+  })();
+
+  function setTimeWeatherExpanded(expanded) {
+    if (!twCard || !twExpanded) return;
+    twExpanded.hidden = !expanded;
+    twCard.classList.toggle('expanded', expanded);
+    if (expanded) {
+      if (weatherCityInput && document.activeElement !== weatherCityInput) {
+        weatherCityInput.value = savedWeatherQuery || '';
+      }
+      renderWorldClocks();
+      updateWorldClockTimesOnly();
+    }
+  }
+
+  if (twCard) {
+    twCard.addEventListener('click', (e) => {
+      if (globeSlot && globeSlot.contains(e.target)) return;
+      const interactive = e.target.closest('button, input, select, label, form, a');
+      if (interactive && interactive !== twExpandBtn) return;
+      if (twExpanded) setTimeWeatherExpanded(twExpanded.hidden);
     });
   }
 
   if (btnWeatherRefresh) {
     btnWeatherRefresh.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (twOfflineBadge) twOfflineBadge.hidden = true;
       if (weatherCondition) weatherCondition.textContent = 'Refreshing...';
-      if (window.bridge) {
-        window.bridge.send('fetch_weather', { location: savedWeatherQuery || '', force: true });
-      }
+      requestWeatherFetch(true);
     });
   }
 
@@ -468,21 +936,63 @@
       e.stopPropagation();
       const rawCity = weatherCityInput ? weatherCityInput.value.trim() : '';
       const query = rawCity.toLowerCase() === 'auto' ? '' : rawCity;
+      manualGeoCoords = null;
       savedWeatherQuery = query;
       if (weatherCondition) weatherCondition.textContent = 'Updating...';
-      if (weatherLocation) weatherLocation.textContent = query ? `Searching ${query}...` : 'Detecting location...';
-      weatherCityForm.classList.remove('open');
-      if (window.bridge) {
-        window.bridge.send('set_setting', { key: 'weather_location', value: query });
-        window.bridge.send('fetch_weather', { location: query, force: true });
+      if (weatherLocation) weatherLocation.textContent = query ? `Searching ${query}...` : 'Using timezone city...';
+      if (window.Settings) {
+        window.Settings.set('weather_location', query);
       }
+      if (query) {
+        emitPriority1OfflineFallback(query);
+      } else if (window.RustyLocations && typeof window.RustyLocations.resolveLocalCentroid === 'function') {
+        const c = window.RustyLocations.resolveLocalCentroid();
+        emitGlobeLocation(c.lat, c.lon, c.city, c.country, 'centroid');
+      }
+      requestWeatherFetch(true);
+    });
+  }
+
+  if (btnUseMyLocation) {
+    btnUseMyLocation.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!navigator.geolocation) {
+        if (weatherMeta) weatherMeta.textContent = 'Geolocation not supported';
+        return;
+      }
+      btnUseMyLocation.disabled = true;
+      btnUseMyLocation.textContent = 'Locating...';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          btnUseMyLocation.disabled = false;
+          btnUseMyLocation.textContent = 'Use my location';
+          manualGeoCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          savedWeatherQuery = '';
+          if (window.Settings) window.Settings.set('weather_location', '');
+          if (weatherCityInput) weatherCityInput.value = '';
+          emitGlobeLocation(pos.coords.latitude, pos.coords.longitude, 'My Location', '', 'geolocation');
+          requestWeatherFetch(true);
+        },
+        () => {
+          btnUseMyLocation.disabled = false;
+          btnUseMyLocation.textContent = 'Use my location';
+          if (weatherMeta) weatherMeta.textContent = 'Location permission denied';
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
+      );
+    });
+  }
+
+  if (toggleGlobeClouds) {
+    toggleGlobeClouds.checked = Boolean(window.Settings && window.Settings.get('ntp_globe_clouds'));
+    toggleGlobeClouds.addEventListener('change', () => {
+      if (window.Settings) window.Settings.set('ntp_globe_clouds', toggleGlobeClouds.checked);
     });
   }
 
   if (weatherCityInput) {
     weatherCityInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && weatherCityForm) {
-        weatherCityForm.classList.remove('open');
+      if (e.key === 'Escape') {
         weatherCityInput.blur();
       }
     });
@@ -583,15 +1093,35 @@
     if (window.__applyAccentCss) {
       window.__applyAccentCss(s.use_custom_accent && s.custom_accent ? s.custom_accent : null);
     }
-    if (s.default_search && ENGINES[s.default_search]) {
+    if (s.default_search) {
       activeEngine = s.default_search;
-      syncActiveEngineChip();
     }
-    if (typeof s.weather_location === 'string') {
+    renderEngineChips();
+
+    if (typeof s.weather_location === 'string' && s.weather_location !== savedWeatherQuery) {
       savedWeatherQuery = s.weather_location;
+      manualGeoCoords = null;
+      if (weatherCityInput && document.activeElement !== weatherCityInput) {
+        weatherCityInput.value = savedWeatherQuery;
+      }
+      if (savedWeatherQuery) {
+        emitPriority1OfflineFallback(savedWeatherQuery);
+      } else if (window.RustyLocations && typeof window.RustyLocations.resolveLocalCentroid === 'function') {
+        const c = window.RustyLocations.resolveLocalCentroid();
+        emitGlobeLocation(c.lat, c.lon, c.city, c.country, 'centroid');
+      }
+      requestWeatherFetch(false);
     }
-    if (elWidgetClock && s.ntp_show_clock !== undefined) {
-      elWidgetClock.style.display = s.ntp_show_clock ? '' : 'none';
+    if (twClockBlock && s.ntp_show_clock !== undefined) {
+      twClockBlock.style.display = s.ntp_show_clock ? '' : 'none';
+    }
+    if (twWeatherBlock && s.ntp_show_weather !== undefined) {
+      twWeatherBlock.style.display = s.ntp_show_weather ? '' : 'none';
+    }
+    if (twCard) {
+      const showClock = s.ntp_show_clock !== undefined ? Boolean(s.ntp_show_clock) : true;
+      const showWeather = s.ntp_show_weather !== undefined ? Boolean(s.ntp_show_weather) : true;
+      twCard.style.display = (!showClock && !showWeather) ? 'none' : '';
     }
     if (elBrandHero && s.ntp_show_greeting !== undefined) {
       elBrandHero.style.display = s.ntp_show_greeting ? '' : 'none';
@@ -602,14 +1132,22 @@
     if (elWidgetNotes && s.ntp_show_notes !== undefined) {
       elWidgetNotes.style.display = s.ntp_show_notes ? '' : 'none';
     }
-    if (weatherCard && s.ntp_show_weather !== undefined) {
-      weatherCard.style.display = s.ntp_show_weather ? '' : 'none';
+    if (toggleGlobeClouds && s.ntp_globe_clouds !== undefined) {
+      toggleGlobeClouds.checked = Boolean(s.ntp_globe_clouds);
+    }
+    if (s.world_clocks !== undefined) {
+      renderWorldClocks();
     }
   }
 
   if (window.Settings && window.Settings.data) {
     applyNtpSettings(window.Settings.data);
   }
+
+  window.addEventListener('settings-changed', () => {
+    renderEngineChips();
+    renderWorldClocks();
+  });
 
   if (window.bridge) {
     window.bridge.on('telemetry_stats', handleTelemetryStats);
@@ -620,23 +1158,44 @@
       }
     });
     window.bridge.on('weather_update', (data) => {
+      const target = getActiveWeatherTarget();
       try {
-        localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({
+          queryKey: target.key,
+          cachedAtMs: Date.now(),
+          data
+        }));
       } catch (_) {}
       renderWeatherData(data);
     });
     window.bridge.on('weather_error', (err) => {
-      const msg = (err && err.message) ? err.message : 'Weather unavailable';
-      if (weatherCondition) weatherCondition.textContent = 'Offline';
-      if (weatherMeta) weatherMeta.textContent = msg;
+      const msg = (err && err.message) ? err.message : 'Unavailable offline';
+      if (twOfflineBadge) twOfflineBadge.hidden = false;
+      if (!lastWeatherData) {
+        if (weatherCondition) weatherCondition.textContent = 'Offline';
+        if (weatherMeta) weatherMeta.textContent = msg;
+      }
     });
   }
 
   // ── 10. Workspaces selector in Left Rail ──────────────────────────────────
   document.querySelectorAll('.workspace-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
+    const wsName = chip.textContent ? chip.textContent.trim() : (chip.dataset.ws || 'Workspace');
+    chip.title = `${wsName} workspace (Middle-click: open in new tab)`;
+    chip.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        openNtpItemInNewTab('about:blank', `Workspace: ${wsName}`, e);
+        return;
+      }
       document.querySelectorAll('.workspace-chip').forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
+    });
+    chip.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openNtpItemInNewTab('about:blank', `Workspace: ${wsName}`, e);
     });
   });
 })();
