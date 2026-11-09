@@ -8,11 +8,12 @@
     skin: 'crazy',                    // 'crazy' | 'minimal'
     theme: 'sunset',                  // 'sunset' | 'midnight' | 'light' | 'amoled' | 'aurora' | 'cyberpunk' | 'matcha' | 'sakura'
     custom_accent: '#f97316',
+    use_custom_accent: false,
     tabs_layout: 'horizontal',        // 'horizontal' | 'vertical'
     vertical_collapsed: false,
-    density: 'normal',               // 'compact' | 'normal' | 'relaxed'
-    default_search: 'google',        // 'google' | 'duckduckgo' | 'bing' | 'brave' | 'youtube' | 'github'
-    effects_intensity: 80,           // 0 to 100
+    density: 'normal',                // 'compact' | 'normal' | 'relaxed'
+    default_search: 'google',         // 'google' | 'duckduckgo' | 'bing' | 'brave' | 'youtube' | 'github'
+    effects_intensity: 80,            // 0 to 100
     fx_glow: true,
     fx_tilt: true,
     fx_magnetic: true,
@@ -26,7 +27,8 @@
     ntp_show_greeting: true,
     ntp_show_speed_dial: true,
     ntp_show_notes: true,
-    ntp_show_weather: true
+    ntp_show_weather: true,
+    weather_location: ''
   };
 
   class SettingsStore {
@@ -45,6 +47,9 @@
       } catch (e) {
         console.warn('[settings] Failed to load settings from storage:', e);
       }
+      if (root.BOOT_SETTINGS) {
+        this.data = { ...this.data, ...root.BOOT_SETTINGS };
+      }
     }
 
     save() {
@@ -53,8 +58,23 @@
       } catch (e) {
         console.error('[settings] Failed to save settings:', e);
       }
+      if (root.BOOT_SETTINGS) {
+        Object.assign(root.BOOT_SETTINGS, this.data);
+      }
       if (root.bridge) {
         root.bridge.send('save_settings', { settings: this.data });
+      }
+      this.notify();
+    }
+
+    syncFromHost(hostSettings) {
+      if (!hostSettings || typeof hostSettings !== 'object') return;
+      this.data = { ...this.data, ...hostSettings };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+      } catch (_) {}
+      if (root.BOOT_SETTINGS) {
+        Object.assign(root.BOOT_SETTINGS, this.data);
       }
       this.notify();
     }
@@ -66,18 +86,43 @@
     set(key, value) {
       if (this.data[key] === value) return;
       this.data[key] = value;
-      this.save();
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+      } catch (e) {
+        console.error('[settings] Failed to save settings:', e);
+      }
+      if (root.BOOT_SETTINGS) {
+        Object.assign(root.BOOT_SETTINGS, this.data);
+      }
+      if (root.bridge) {
+        root.bridge.send('set_setting', { key, value });
+      }
+      this.notify();
     }
 
     setMany(obj) {
+      const delta = {};
       let changed = false;
       for (const [k, v] of Object.entries(obj)) {
         if (this.data[k] !== v) {
           this.data[k] = v;
+          delta[k] = v;
           changed = true;
         }
       }
-      if (changed) this.save();
+      if (!changed) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+      } catch (e) {
+        console.error('[settings] Failed to save settings:', e);
+      }
+      if (root.BOOT_SETTINGS) {
+        Object.assign(root.BOOT_SETTINGS, this.data);
+      }
+      if (root.bridge) {
+        root.bridge.send('save_settings', { settings: delta });
+      }
+      this.notify();
     }
 
     onChange(fn) {
@@ -92,6 +137,9 @@
         } catch (e) {
           console.error('[settings] Error in change listener:', e);
         }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('settings-changed', { detail: this.data }));
       }
     }
   }

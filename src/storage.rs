@@ -44,8 +44,8 @@ pub struct DownloadRecord {
 fn default_true() -> bool {
     true
 }
-fn default_search() -> String {
-    "https://duckduckgo.com/?q=%s".to_owned()
+fn default_search_template() -> String {
+    "https://www.google.com/search?q=%s".to_owned()
 }
 fn default_discard() -> u64 {
     600
@@ -53,13 +53,46 @@ fn default_discard() -> u64 {
 fn default_zoom() -> f64 {
     1.0
 }
+fn default_skin() -> String {
+    "crazy".to_owned()
+}
+fn default_theme() -> String {
+    "sunset".to_owned()
+}
+fn default_accent() -> String {
+    "#f97316".to_owned()
+}
+fn default_tabs_layout() -> String {
+    "horizontal".to_owned()
+}
+fn default_density() -> String {
+    "normal".to_owned()
+}
+fn default_search_id() -> String {
+    "google".to_owned()
+}
+fn default_effects_intensity() -> u8 {
+    80
+}
 
-/// Browser user settings.
+pub fn search_template_for_id(id: &str) -> String {
+    match id {
+        "duckduckgo" => "https://duckduckgo.com/?q=%s",
+        "bing" => "https://www.bing.com/search?q=%s",
+        "brave" => "https://search.brave.com/search?q=%s",
+        "youtube" => "https://www.youtube.com/results?search_query=%s",
+        "github" => "https://github.com/search?q=%s",
+        _ => "https://www.google.com/search?q=%s",
+    }
+    .to_owned()
+}
+
+/// Browser user settings (persisted in `data.json` & synchronized with UI `localStorage`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    #[serde(default = "default_search")]
+    #[serde(default = "default_search_template")]
     pub default_search_template: String,
-    #[serde(default = "default_discard")]
+    #[serde(default = "default_discard", alias = "memory_saver_timeout_secs")]
     pub discard_timeout_secs: u64,
     #[serde(default = "default_zoom")]
     pub default_zoom: f64,
@@ -69,18 +102,322 @@ pub struct Settings {
     pub block_microphone: bool,
     #[serde(default = "default_true")]
     pub block_geolocation: bool,
+
+    // UI & Skin state
+    #[serde(default = "default_skin")]
+    pub skin: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_accent")]
+    pub custom_accent: String,
+    #[serde(default)]
+    pub use_custom_accent: bool,
+    #[serde(default = "default_tabs_layout")]
+    pub tabs_layout: String,
+    #[serde(default)]
+    pub vertical_collapsed: bool,
+    #[serde(default = "default_density")]
+    pub density: String,
+    #[serde(default = "default_search_id")]
+    pub default_search: String,
+    #[serde(default = "default_effects_intensity")]
+    pub effects_intensity: u8,
+    #[serde(default = "default_true")]
+    pub fx_glow: bool,
+    #[serde(default = "default_true")]
+    pub fx_tilt: bool,
+    #[serde(default = "default_true")]
+    pub fx_magnetic: bool,
+    #[serde(default = "default_true")]
+    pub fx_ripple: bool,
+    #[serde(default)]
+    pub fx_trail: bool,
+    #[serde(default = "default_true")]
+    pub fx_confetti: bool,
+    #[serde(default = "default_true")]
+    pub fx_canvas_bg: bool,
+    #[serde(default = "default_true")]
+    pub show_memory_badge: bool,
+    #[serde(default = "default_true")]
+    pub ntp_show_clock: bool,
+    #[serde(default = "default_true")]
+    pub ntp_show_greeting: bool,
+    #[serde(default = "default_true")]
+    pub ntp_show_speed_dial: bool,
+    #[serde(default = "default_true")]
+    pub ntp_show_notes: bool,
+    #[serde(default = "default_true")]
+    pub ntp_show_weather: bool,
+    #[serde(default)]
+    pub weather_location: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            default_search_template: default_search(),
+            default_search_template: default_search_template(),
             discard_timeout_secs: default_discard(),
             default_zoom: default_zoom(),
             block_camera: true,
             block_microphone: true,
             block_geolocation: true,
+            skin: default_skin(),
+            theme: default_theme(),
+            custom_accent: default_accent(),
+            use_custom_accent: false,
+            tabs_layout: default_tabs_layout(),
+            vertical_collapsed: false,
+            density: default_density(),
+            default_search: default_search_id(),
+            effects_intensity: default_effects_intensity(),
+            fx_glow: true,
+            fx_tilt: true,
+            fx_magnetic: true,
+            fx_ripple: true,
+            fx_trail: false,
+            fx_confetti: true,
+            fx_canvas_bg: true,
+            show_memory_badge: true,
+            ntp_show_clock: true,
+            ntp_show_greeting: true,
+            ntp_show_speed_dial: true,
+            ntp_show_notes: true,
+            ntp_show_weather: true,
+            weather_location: String::new(),
         }
+    }
+}
+
+impl Settings {
+    /// Apply a single key/value update from the UI IPC channel.
+    pub fn apply_setting(&mut self, key: &str, value: &serde_json::Value) -> bool {
+        match key {
+            "skin" => {
+                if let Some(s) = value.as_str() {
+                    if s == "minimal" || s == "crazy" {
+                        self.skin = s.to_owned();
+                        return true;
+                    }
+                }
+            }
+            "theme" => {
+                if let Some(s) = value.as_str() {
+                    self.theme = s.to_owned();
+                    return true;
+                }
+            }
+            "custom_accent" => {
+                if let Some(s) = value.as_str() {
+                    self.custom_accent = s.to_owned();
+                    return true;
+                }
+            }
+            "use_custom_accent" => {
+                if let Some(b) = value.as_bool() {
+                    self.use_custom_accent = b;
+                    return true;
+                }
+            }
+            "tabs_layout" => {
+                if let Some(s) = value.as_str() {
+                    if s == "horizontal" || s == "vertical" {
+                        self.tabs_layout = s.to_owned();
+                        return true;
+                    }
+                }
+            }
+            "vertical_collapsed" => {
+                if let Some(b) = value.as_bool() {
+                    self.vertical_collapsed = b;
+                    return true;
+                }
+            }
+            "density" => {
+                if let Some(s) = value.as_str() {
+                    self.density = s.to_owned();
+                    return true;
+                }
+            }
+            "default_search" => {
+                if let Some(s) = value.as_str() {
+                    self.default_search = s.to_owned();
+                    self.default_search_template = search_template_for_id(s);
+                    return true;
+                }
+            }
+            "default_search_template" => {
+                if let Some(s) = value.as_str() {
+                    self.default_search_template = s.to_owned();
+                    return true;
+                }
+            }
+            "effects_intensity" => {
+                if let Some(n) = value.as_u64() {
+                    self.effects_intensity = n.min(100) as u8;
+                    return true;
+                }
+            }
+            "fx_glow" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_glow = b;
+                    return true;
+                }
+            }
+            "fx_tilt" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_tilt = b;
+                    return true;
+                }
+            }
+            "fx_magnetic" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_magnetic = b;
+                    return true;
+                }
+            }
+            "fx_ripple" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_ripple = b;
+                    return true;
+                }
+            }
+            "fx_trail" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_trail = b;
+                    return true;
+                }
+            }
+            "fx_confetti" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_confetti = b;
+                    return true;
+                }
+            }
+            "fx_canvas_bg" => {
+                if let Some(b) = value.as_bool() {
+                    self.fx_canvas_bg = b;
+                    return true;
+                }
+            }
+            "show_memory_badge" => {
+                if let Some(b) = value.as_bool() {
+                    self.show_memory_badge = b;
+                    return true;
+                }
+            }
+            "ntp_show_clock" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_show_clock = b;
+                    return true;
+                }
+            }
+            "ntp_show_greeting" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_show_greeting = b;
+                    return true;
+                }
+            }
+            "ntp_show_speed_dial" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_show_speed_dial = b;
+                    return true;
+                }
+            }
+            "ntp_show_notes" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_show_notes = b;
+                    return true;
+                }
+            }
+            "ntp_show_weather" => {
+                if let Some(b) = value.as_bool() {
+                    self.ntp_show_weather = b;
+                    return true;
+                }
+            }
+            "weather_location" => {
+                if let Some(s) = value.as_str() {
+                    self.weather_location = s.trim().to_owned();
+                    return true;
+                }
+            }
+            "discard_timeout_secs" | "memory_saver_timeout_secs" => {
+                if let Some(n) = value.as_u64() {
+                    self.discard_timeout_secs = n;
+                    return true;
+                }
+            }
+            "default_zoom" => {
+                if let Some(z) = value.as_f64() {
+                    self.default_zoom = z.clamp(0.25, 4.0);
+                    return true;
+                }
+            }
+            "block_camera" => {
+                if let Some(b) = value.as_bool() {
+                    self.block_camera = b;
+                    return true;
+                }
+            }
+            "block_microphone" => {
+                if let Some(b) = value.as_bool() {
+                    self.block_microphone = b;
+                    return true;
+                }
+            }
+            "block_geolocation" => {
+                if let Some(b) = value.as_bool() {
+                    self.block_geolocation = b;
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Merge partial JSON object updates without clobbering unspecified fields.
+    pub fn merge_json(&mut self, obj: &serde_json::Value) -> bool {
+        let Some(map) = obj.as_object() else {
+            return false;
+        };
+        let mut any = false;
+        for (k, v) in map {
+            if self.apply_setting(k, v) {
+                any = true;
+            }
+        }
+        any
+    }
+
+    /// Serialize to a JSON value compatible with the UI `SettingsStore` schema.
+    pub fn to_ui_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "skin": self.skin,
+            "theme": self.theme,
+            "custom_accent": self.custom_accent,
+            "use_custom_accent": self.use_custom_accent,
+            "tabs_layout": self.tabs_layout,
+            "vertical_collapsed": self.vertical_collapsed,
+            "density": self.density,
+            "default_search": self.default_search,
+            "effects_intensity": self.effects_intensity,
+            "fx_glow": self.fx_glow,
+            "fx_tilt": self.fx_tilt,
+            "fx_magnetic": self.fx_magnetic,
+            "fx_ripple": self.fx_ripple,
+            "fx_trail": self.fx_trail,
+            "fx_confetti": self.fx_confetti,
+            "fx_canvas_bg": self.fx_canvas_bg,
+            "memory_saver_timeout_secs": self.discard_timeout_secs,
+            "show_memory_badge": self.show_memory_badge,
+            "ntp_show_clock": self.ntp_show_clock,
+            "ntp_show_greeting": self.ntp_show_greeting,
+            "ntp_show_speed_dial": self.ntp_show_speed_dial,
+            "ntp_show_notes": self.ntp_show_notes,
+            "ntp_show_weather": self.ntp_show_weather,
+            "weather_location": self.weather_location,
+        })
     }
 }
 
@@ -314,10 +651,31 @@ impl Storage {
     }
 
     /// Update settings and save to disk.
+    #[allow(dead_code)]
     pub fn update_settings(&mut self, settings: Settings) {
         self.ensure_loaded();
         self.data.settings = settings;
         self.save();
+    }
+
+    /// Update a single setting key/value and save to disk if valid/changed.
+    pub fn set_setting(&mut self, key: &str, value: &serde_json::Value) -> bool {
+        self.ensure_loaded();
+        let changed = self.data.settings.apply_setting(key, value);
+        if changed {
+            self.save();
+        }
+        changed
+    }
+
+    /// Merge partial JSON settings map without clobbering existing browser settings.
+    pub fn merge_settings_json(&mut self, obj: &serde_json::Value) -> bool {
+        self.ensure_loaded();
+        let changed = self.data.settings.merge_json(obj);
+        if changed {
+            self.save();
+        }
+        changed
     }
 
     /// Clear all browsing history.
@@ -427,5 +785,34 @@ mod tests {
 
         let dl_dir = Storage::resolve_downloads_dir();
         assert!(!dl_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_legacy_settings_migration_and_apply_setting() {
+        let legacy_json = r#"{
+            "history": [],
+            "bookmarks": [],
+            "downloads": [],
+            "settings": {
+                "default_search_template": "https://duckduckgo.com/?q=%s",
+                "discard_timeout_secs": 900,
+                "default_zoom": 1.0,
+                "block_camera": true,
+                "block_microphone": true,
+                "block_geolocation": true
+            }
+        }"#;
+        let mut parsed: StorageData = serde_json::from_str(legacy_json).expect("legacy json");
+        assert_eq!(parsed.settings.skin, "crazy");
+        assert_eq!(parsed.settings.theme, "sunset");
+        assert_eq!(parsed.settings.discard_timeout_secs, 900);
+
+        assert!(parsed.settings.apply_setting("skin", &serde_json::json!("minimal")));
+        assert_eq!(parsed.settings.skin, "minimal");
+        assert!(!parsed.settings.apply_setting("skin", &serde_json::json!("invalid")));
+        assert!(parsed.settings.apply_setting("default_search", &serde_json::json!("github")));
+        assert_eq!(parsed.settings.default_search_template, "https://github.com/search?q=%s");
+        assert!(parsed.settings.apply_setting("weather_location", &serde_json::json!("  Mumbai  ")));
+        assert_eq!(parsed.settings.weather_location, "Mumbai");
     }
 }

@@ -27,6 +27,11 @@
   --accent-secondary: #38bdf8;
   --accent-highlight: rgba(138, 180, 248, 0.2);
   --accent-glow: rgba(138, 180, 248, 0.45);
+
+  --bg-glass: rgba(15, 23, 42, 0.65);
+  --bg-glass-hover: rgba(30, 41, 59, 0.8);
+  --bg-glass-input: rgba(18, 24, 38, 0.78);
+  --border-glass: rgba(255, 255, 255, 0.1);
 }
 
 /* ── 2. Light Theme ──────────────────────────────────────────────────────── */
@@ -36,7 +41,7 @@
   --bg-surface-alt: #f1f5f9;
   --bg-canvas: #e2e8f0;
   --bg-subtle: #e2e8f0;
-  --bg-hover: #e2e8f0;
+  --bg-hover: #cbd5e1;
   --bg-input: #ffffff;
   --bg-input-focus: #ffffff;
   --bg-tab: #f1f5f9;
@@ -52,6 +57,12 @@
   --accent-primary: #1a73e8;
   --accent-secondary: #0284c7;
   --accent-highlight: rgba(26, 115, 232, 0.15);
+  --accent-glow: rgba(26, 115, 232, 0.35);
+
+  --bg-glass: rgba(255, 255, 255, 0.78);
+  --bg-glass-hover: rgba(255, 255, 255, 0.92);
+  --bg-glass-input: rgba(255, 255, 255, 0.88);
+  --border-glass: rgba(15, 23, 42, 0.12);
 }
 
 /* ── 3. AMOLED Black (True 0x000000 for OLED efficiency) ─────────────────── */
@@ -77,6 +88,11 @@
   --accent-primary: #3b82f6;
   --accent-secondary: #60a5fa;
   --accent-highlight: rgba(59, 130, 246, 0.25);
+  --accent-glow: rgba(59, 130, 246, 0.5);
+  --bg-glass: rgba(10, 10, 10, 0.78);
+  --bg-glass-hover: rgba(24, 24, 27, 0.9);
+  --bg-glass-input: rgba(15, 15, 18, 0.85);
+  --border-glass: rgba(255, 255, 255, 0.1);
 }
 
 /* ── 4. Aurora (Deep Northern Teal & Emerald) ────────────────────────────── */
@@ -102,6 +118,11 @@
   --accent-primary: #2dd4bf;
   --accent-secondary: #34d399;
   --accent-highlight: rgba(45, 212, 191, 0.25);
+  --accent-glow: rgba(45, 212, 191, 0.5);
+  --bg-glass: rgba(11, 26, 35, 0.72);
+  --bg-glass-hover: rgba(20, 46, 61, 0.85);
+  --bg-glass-input: rgba(15, 36, 48, 0.82);
+  --border-glass: rgba(45, 212, 191, 0.18);
 }
 
 /* ── 5. Cyberpunk (Neon Yellow, Electric Magenta & Cyan) ─────────────────── */
@@ -127,6 +148,11 @@
   --accent-primary: #facc15;
   --accent-secondary: #ec4899;
   --accent-highlight: rgba(250, 204, 21, 0.3);
+  --accent-glow: rgba(250, 204, 21, 0.55);
+  --bg-glass: rgba(18, 19, 32, 0.74);
+  --bg-glass-hover: rgba(32, 33, 54, 0.88);
+  --bg-glass-input: rgba(24, 25, 38, 0.84);
+  --border-glass: rgba(250, 204, 21, 0.18);
 }
 
 /* ── 6. Sunset (Warm Twilight, Tangerine & Rose) ─────────────────────────── */
@@ -153,6 +179,10 @@
   --accent-secondary: #fb7185;
   --accent-highlight: rgba(249, 115, 22, 0.25);
   --accent-glow: rgba(249, 115, 22, 0.55);
+  --bg-glass: rgba(34, 20, 32, 0.72);
+  --bg-glass-hover: rgba(48, 28, 45, 0.85);
+  --bg-glass-input: rgba(43, 26, 41, 0.82);
+  --border-glass: rgba(249, 115, 22, 0.16);
 }
 
 /* ── 7. Matcha (Forest Sage & Soothing Leaf Green) ───────────────────────── */
@@ -178,6 +208,11 @@
   --accent-primary: #4ade80;
   --accent-secondary: #22c55e;
   --accent-highlight: rgba(74, 222, 128, 0.22);
+  --accent-glow: rgba(74, 222, 128, 0.45);
+  --bg-glass: rgba(22, 29, 24, 0.72);
+  --bg-glass-hover: rgba(35, 45, 38, 0.85);
+  --bg-glass-input: rgba(28, 36, 30, 0.82);
+  --border-glass: rgba(74, 222, 128, 0.16);
 }
 
 /* ── 8. Sakura (Blossom Plum & Soft Rose) ────────────────────────────────── */
@@ -203,4 +238,9 @@
   --accent-primary: #f472b6;
   --accent-secondary: #fda4af;
   --accent-highlight: rgba(244, 114, 182, 0.25);
+  --accent-glow: rgba(244, 114, 182, 0.5);
+  --bg-glass: rgba(31, 22, 28, 0.72);
+  --bg-glass-hover: rgba(47, 34, 43, 0.85);
+  --bg-glass-input: rgba(39, 28, 35, 0.82);
+  --border-glass: rgba(244, 114, 182, 0.16);
 }

@@ -29,10 +29,12 @@ comment in its respective source file.
    - How to replace: Supply a `faviconUrl` string in the speed-dial entry object.
 
 4. WALLPAPERS (OPTIONAL)
-   - Files: ui/assets/wallpaper.jpg, ui/css/newtab.css, ui/newtab.html
-   - Purpose: Cinematic cosmic planetary landscape wallpaper for the Crazy skin new tab page.
-   - Status: Photorealistic planetary sunrise astronaut wallpaper asset (303 KB).
-   - How to replace: Drop any 1920x1080 or 4K wallpaper JPEG into `ui/assets/wallpaper.jpg`.
+   - Files: ui/css/newtab.css
+   - Purpose: Ambient background for the Crazy skin new tab page.
+   - Status: Pure CSS layered radial nebula gradient driven by theme accent variables
+     (no bitmap wallpaper shipped by default so widgets stay sharp and overlap-free).
+   - How to replace: Add a background rule under `[data-skin="crazy"] body.ntp-body` in
+     `ui/css/newtab.css` if you wish to attach a custom photo wallpaper.
 
 5. DISPLAY FONT FOR CLOCK (OPTIONAL)
    - Files: ui/css/newtab.css, ui/newtab.html
@@ -42,11 +44,10 @@ comment in its respective source file.
      or local monospace/display font.
 
 6. WEATHER WIDGET DATA SOURCE
-   - Files: ui/newtab.html, ui/js/newtab.js
+   - Files: src/weather.rs, ui/newtab.html, ui/js/newtab.js
    - Purpose: Live weather forecast on the new tab page.
-   - Status: Static placeholder widget slot rendering current date and placeholder
-     weather chip ("--°C Offline").
-   - How to replace: Hook a weather API or native Rust geolocation/weather provider
-     into `newtab.js:renderWeatherWidget()`.
+   - Status: Rust-fetched live Open-Meteo + geojs.io provider via WinHTTP (falls back
+     gracefully to cached weather or "Offline" when disconnected).
+   - How to replace: Modify `src/weather.rs` to point to a different weather provider.
 
 ================================================================================

@@ -16,6 +16,21 @@
   let isReaderActive = false;
   let contextMenuTargetTabId = null;
   let draggedTabId = null;
+  let lastMemoryInfo = null;
+  let lastTelemetryInfo = null;
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function safeHexColor(color) {
+    return typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#3b82f6';
+  }
 
   // DOM Elements
   const btnBack = document.getElementById('btn-back');
@@ -194,15 +209,16 @@
       groupContainer.className = `tab-group-container ${group.collapsed ? 'collapsed' : ''}`;
       groupContainer.dataset.groupId = group.id;
 
+      const grpColor = safeHexColor(group.color);
       const header = document.createElement('div');
       header.className = `tab-group-header ${group.collapsed ? 'collapsed' : ''}`;
-      header.style.backgroundColor = `${group.color}22`;
-      header.style.borderColor = group.color;
-      header.style.color = group.color;
+      header.style.backgroundColor = `${grpColor}22`;
+      header.style.borderColor = grpColor;
+      header.style.color = grpColor;
 
       const dot = document.createElement('span');
       dot.className = 'tab-group-dot';
-      dot.style.backgroundColor = group.color;
+      dot.style.backgroundColor = grpColor;
       header.appendChild(dot);
 
       const title = document.createElement('span');
@@ -447,8 +463,8 @@
       const gItem = document.createElement('div');
       gItem.className = 'context-item';
       gItem.innerHTML = `
-        <span class="tab-group-dot" style="background-color: ${g.color};"></span>
-        <span class="menu-label">${g.name}</span>
+        <span class="tab-group-dot" style="background-color: ${safeHexColor(g.color)};"></span>
+        <span class="menu-label">${escapeHtml(g.name)}</span>
       `;
       gItem.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -632,7 +648,7 @@
         item.className = 'panel-item';
         item.innerHTML = `
           ${window.Icons ? window.Icons.get('star', '', 13) : '★'}
-          <div class="item-title">${b.title}</div>
+          <div class="item-title">${escapeHtml(b.title || b.url)}</div>
           <button class="btn-icon" title="Remove" style="width: 20px; height: 20px;">
             ${window.Icons ? window.Icons.get('close', '', 10) : '×'}
           </button>
@@ -677,8 +693,8 @@
         item.innerHTML = `
           ${window.Icons ? window.Icons.get('clock', '', 13) : '🕒'}
           <div style="flex: 1; overflow: hidden;">
-            <div class="item-title">${h.title}</div>
-            <div class="item-sub">${h.url}</div>
+            <div class="item-title">${escapeHtml(h.title || h.url)}</div>
+            <div class="item-sub">${escapeHtml(h.url)}</div>
           </div>
         `;
         item.addEventListener('click', () => window.bridge.send('navigate', { url: h.url }));
@@ -689,26 +705,26 @@
       if (panelIcon) panelIcon.innerHTML = window.Icons ? window.Icons.get('download', '', 16) : '';
       if (panelActionBtn) panelActionBtn.style.display = 'none';
 
-      const dls = currentDownloads.length > 0 ? currentDownloads : [
-        { id: 1, filename: 'rusty_browser-v0.2.0-windows-x64.zip', state: 'completed', progress: 100 },
-        { id: 2, filename: 'rustup-init.exe', state: 'in_progress', progress: 68 }
-      ];
+      const dls = currentDownloads;
+      if (dls.length === 0) {
+        panelContent.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px;">No downloads yet</div>';
+        return;
+      }
 
       dls.forEach((dl) => {
+        const pct = Math.max(0, Math.min(100, Number(dl.progress) || 0));
         const card = document.createElement('div');
         card.className = 'download-card';
         card.innerHTML = `
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500;">
-            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${dl.filename}</span>
-            <span style="color: var(--text-muted); font-size: 11px;">${dl.progress}%</span>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${escapeHtml(dl.filename)}</span>
+            <span style="color: var(--text-muted); font-size: 11px;">${pct}%</span>
           </div>
           <div class="download-progress-bar">
-            <div class="download-progress-fill" style="width: ${dl.progress}%;"></div>
+            <div class="download-progress-fill" style="width: ${pct}%;"></div>
           </div>
           <div class="download-actions">
-            ${dl.state === 'completed'
-              ? `<button class="btn-icon" style="width: auto; padding: 2px 8px; font-size: 11px; border: 1px solid var(--border-subtle);">Open</button>`
-              : `<button class="btn-icon" style="width: auto; padding: 2px 8px; font-size: 11px; border: 1px solid var(--border-subtle); color: #f87171;">Cancel</button>`}
+            <span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(dl.state || 'completed')}</span>
           </div>
         `;
         panelContent.appendChild(card);
@@ -811,8 +827,14 @@
       if (badgeMin) badgeMin.style.display = currentSkin === 'minimal' ? 'inline-block' : 'none';
       if (badgeCrz) badgeCrz.style.display = currentSkin === 'crazy' ? 'inline-block' : 'none';
 
-      cardMin.onclick = () => window.switchSkin('minimal');
-      cardCrz.onclick = () => window.switchSkin('crazy');
+      cardMin.onclick = () => {
+        closeSettings();
+        window.switchSkin('minimal');
+      };
+      cardCrz.onclick = () => {
+        closeSettings();
+        window.switchSkin('crazy');
+      };
     }
 
     // Themes Grid
@@ -824,7 +846,7 @@
         swatch.className = `theme-swatch ${thm.id === currentTheme ? 'active' : ''}`;
         swatch.innerHTML = `
           <span class="theme-swatch-dot" style="background-color: ${thm.dot};"></span>
-          <span>${thm.name}</span>
+          <span>${escapeHtml(thm.name)}</span>
         `;
         swatch.addEventListener('click', () => {
           window.switchTheme(thm.id);
@@ -837,6 +859,10 @@
     // Custom Accent Picker
     const accentPicker = document.getElementById('custom-accent-picker');
     if (accentPicker) {
+      const savedAccent = window.Settings ? window.Settings.get('custom_accent') : '#f97316';
+      if (savedAccent && /^#[0-9a-fA-F]{6}$/.test(savedAccent)) {
+        accentPicker.value = savedAccent;
+      }
       accentPicker.oninput = (e) => applyCustomAccent(e.target.value);
     }
 
@@ -851,12 +877,23 @@
       };
     }
 
+    // UI Density Dropdown
+    const selDensity = document.getElementById('setting-density');
+    if (selDensity) {
+      selDensity.value = (window.Settings && window.Settings.get('density')) || 'normal';
+      selDensity.onchange = () => {
+        if (window.Settings) window.Settings.set('density', selDensity.value);
+        root.setAttribute('data-density', selDensity.value);
+        setTimeout(reportContentRect, 50);
+      };
+    }
+
     // Effects Intensity Slider
     const fxSlider = document.getElementById('setting-effects-intensity');
     const fxVal = document.getElementById('effects-intensity-val');
     if (fxSlider && fxVal) {
-      const saved = window.Settings ? window.Settings.get('effects_intensity') : 60;
-      fxSlider.value = saved !== undefined ? saved : 60;
+      const saved = window.Settings ? window.Settings.get('effects_intensity') : 80;
+      fxSlider.value = saved !== undefined ? saved : 80;
       fxVal.textContent = `${fxSlider.value}%`;
       fxSlider.oninput = (e) => {
         fxVal.textContent = `${e.target.value}%`;
@@ -889,7 +926,7 @@
         el.onchange = () => {
           window.Settings.set(key, el.checked);
           if (key === 'show_memory_badge' && memoryBadge) {
-            memoryBadge.style.display = el.checked ? 'flex' : 'none';
+            memoryBadge.style.display = el.checked ? 'inline-flex' : 'none';
           }
         };
       }
@@ -901,13 +938,15 @@
       selEngine.value = window.Settings ? window.Settings.get('default_search') || 'google' : 'google';
       selEngine.onchange = () => {
         if (window.Settings) window.Settings.set('default_search', selEngine.value);
+        updateOmniboxPlaceholder(selEngine.value);
       };
     }
 
     // Memory Discard Timeout
     const selMemTimeout = document.getElementById('setting-memory-timeout');
     if (selMemTimeout) {
-      selMemTimeout.value = String(window.Settings ? window.Settings.get('memory_saver_timeout_secs') || 600 : 600);
+      const memTimeoutVal = window.Settings ? window.Settings.get('memory_saver_timeout_secs') : undefined;
+      selMemTimeout.value = String(memTimeoutVal !== undefined ? memTimeoutVal : 600);
       selMemTimeout.onchange = () => {
         if (window.Settings) window.Settings.set('memory_saver_timeout_secs', Number(selMemTimeout.value));
       };
@@ -935,24 +974,77 @@
     }
   }
 
+  function updateOmniboxPlaceholder(engineId) {
+    if (!omniboxInput) return;
+    const names = {
+      google: 'Google',
+      duckduckgo: 'DuckDuckGo',
+      bing: 'Bing',
+      brave: 'Brave Search',
+      youtube: 'YouTube',
+      github: 'GitHub'
+    };
+    const label = names[engineId] || 'Google';
+    omniboxInput.placeholder = `Search with ${label} or enter address`;
+  }
+
   // Automatic secondary accent calculation
   function applyCustomAccent(hex) {
-    const r = parseInt(hex.slice(1, 3), 16) || 59;
-    const g = parseInt(hex.slice(3, 5), 16) || 130;
-    const b = parseInt(hex.slice(5, 7), 16) || 246;
-
-    const secR = Math.min(255, Math.floor(r * 0.7 + 60));
-    const secG = Math.min(255, Math.floor(g * 0.7 + 80));
-    const secB = Math.min(255, Math.floor(b * 0.7 + 120));
-    const secHex = `#${secR.toString(16).padStart(2, '0')}${secG.toString(16).padStart(2, '0')}${secB.toString(16).padStart(2, '0')}`;
-    const highlightRgba = `rgba(${r}, ${g}, ${b}, 0.22)`;
-
-    document.documentElement.style.setProperty('--accent-primary', hex);
-    document.documentElement.style.setProperty('--accent-secondary', secHex);
-    document.documentElement.style.setProperty('--accent-highlight', highlightRgba);
-
-    if (window.Settings) window.Settings.set('custom_accent', hex);
+    if (window.__applyAccentCss) {
+      window.__applyAccentCss(hex);
+    }
+    if (window.Settings) {
+      window.Settings.setMany({ custom_accent: hex, use_custom_accent: true });
+    }
   }
+
+  function applyHostSettingsToChrome(s) {
+    if (!s || typeof s !== 'object') return;
+    const root = document.documentElement;
+    if (s.theme) root.setAttribute('data-theme', s.theme);
+    if (s.tabs_layout) root.setAttribute('data-tabs', s.tabs_layout === 'vertical' ? 'vertical' : 'horizontal');
+    if (s.vertical_collapsed !== undefined) {
+      if (s.vertical_collapsed) root.setAttribute('data-sidebar-collapsed', 'true');
+      else root.removeAttribute('data-sidebar-collapsed');
+    }
+    if (s.density) root.setAttribute('data-density', s.density);
+    if (window.__applyAccentCss) {
+      window.__applyAccentCss(s.use_custom_accent && s.custom_accent ? s.custom_accent : null);
+    }
+    if (s.show_memory_badge !== undefined && memoryBadge) {
+      memoryBadge.style.display = s.show_memory_badge ? 'inline-flex' : 'none';
+    }
+    if (s.default_search) {
+      updateOmniboxPlaceholder(s.default_search);
+    }
+    if (settingsModal && settingsModal.style.display === 'flex') {
+      populateSettingsUI();
+    }
+  }
+
+  // Initialize from loaded Settings
+  if (window.Settings && window.Settings.data) {
+    applyHostSettingsToChrome(window.Settings.data);
+  }
+
+  window.bridge.on('ui_settings_sync', (data) => {
+    if (!data || !data.settings) return;
+    if (window.Settings && typeof window.Settings.syncFromHost === 'function') {
+      window.Settings.syncFromHost(data.settings);
+    }
+    const currentSkin = document.documentElement.getAttribute('data-skin');
+    if (!window.__isSwitchingSkin && data.settings.skin && data.settings.skin !== currentSkin && window.switchSkin) {
+      window.switchSkin(data.settings.skin);
+      return;
+    }
+    applyHostSettingsToChrome(data.settings);
+    setTimeout(reportContentRect, 40);
+  });
+
+  window.bridge.on('open_settings', openSettings);
+  window.bridge.on('open_command_palette', openCommandPalette);
+  window.bridge.on('open_side_panel', (data) => openSidePanel((data && data.panel) || 'bookmarks'));
+  window.bridge.on('open_find_bar', openFindBar);
 
   // ── 13. State Update Listener from Bridge ─────────────────────────────────
   window.bridge.on('state_update', (data) => {
@@ -1004,16 +1096,36 @@
   });
 
   // ── 14. Memory Badge Updates ─────────────────────────────────────────────
-  function updateMemoryBadge(mem) {
-    if (!memoryText) return;
-    const mb = mem.total_mb ? `${mem.total_mb.toFixed(0)} MB` : '85 MB';
-    memoryText.textContent = mb;
-    if (mem.savings_percent && memoryBadge) {
-      memoryBadge.title = `Total RAM: ${mem.total_mb} MB (${mem.savings_percent}% less memory than Chrome baseline)`;
+  function refreshMemoryBadgeDisplay() {
+    if (!memoryText || !lastMemoryInfo) return;
+    const totalMb = lastMemoryInfo.total_mb;
+    memoryText.textContent = totalMb ? `${totalMb.toFixed(0)} MB` : '-- MB';
+    if (memoryBadge) {
+      const parts = [];
+      if (totalMb) {
+        parts.push(`Browser RAM tree: ${totalMb.toFixed(1)} MB`);
+      }
+      if (lastMemoryInfo.savings_percent !== undefined) {
+        parts.push(`${lastMemoryInfo.savings_percent.toFixed(1)}% less than Chrome baseline`);
+      }
+      if (lastTelemetryInfo) {
+        parts.push(`OS CPU: ${Math.round(lastTelemetryInfo.sys_cpu_percent)}%`);
+        parts.push(`OS RAM: ${Math.round(lastTelemetryInfo.sys_ram_percent)}% (${lastTelemetryInfo.sys_ram_used_gb}/${lastTelemetryInfo.sys_ram_total_gb} GB)`);
+      }
+      memoryBadge.title = parts.join(' • ') || 'Live process memory';
     }
   }
 
+  function updateMemoryBadge(mem) {
+    lastMemoryInfo = mem;
+    refreshMemoryBadgeDisplay();
+  }
+
   window.bridge.on('memory_stats', updateMemoryBadge);
+  window.bridge.on('telemetry_stats', (snap) => {
+    lastTelemetryInfo = snap;
+    refreshMemoryBadgeDisplay();
+  });
 
   // ── 15. Mock Viewport Iframe for standalone browser preview ──────────────
   let mockIframe = null;
@@ -1026,7 +1138,12 @@
       mockIframe.style.border = 'none';
       viewport.appendChild(mockIframe);
     }
-    const targetSrc = (url === 'about:blank' || url.startsWith('about:')) ? 'newtab.html' : url;
+    const root = document.documentElement;
+    const skin = root.getAttribute('data-skin') || 'crazy';
+    const theme = root.getAttribute('data-theme') || 'sunset';
+    const targetSrc = (url === 'about:blank' || url.startsWith('about:'))
+      ? `newtab.html?skin=${encodeURIComponent(skin)}&theme=${encodeURIComponent(theme)}`
+      : url;
     if (mockIframe.src !== targetSrc && !mockIframe.src.endsWith(targetSrc)) {
       mockIframe.src = targetSrc;
     }
@@ -1164,9 +1281,9 @@
       const el = document.createElement('div');
       el.className = `palette-item ${index === paletteSelectedIndex ? 'selected' : ''}`;
       el.innerHTML = `
-        <span class="item-title">${item.title}</span>
-        ${item.sub ? `<span class="item-sub">${item.sub}</span>` : ''}
-        <span class="item-badge">${item.badge}</span>
+        <span class="item-title">${escapeHtml(item.title)}</span>
+        ${item.sub ? `<span class="item-sub">${escapeHtml(item.sub)}</span>` : ''}
+        <span class="item-badge">${escapeHtml(item.badge)}</span>
       `;
       el.addEventListener('click', () => {
         closeCommandPalette();

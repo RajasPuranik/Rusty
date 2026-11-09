@@ -14,15 +14,17 @@
 
 mod storage;
 mod tab;
+mod telemetry;
 mod ui;
 mod url_resolver;
+mod weather;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::env;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tao::{
     dpi::LogicalSize,
     event::{Event, StartCause, WindowEvent},
@@ -53,7 +55,7 @@ pub struct TabGroup {
     pub collapsed: bool,
 }
 
-/// Custom user event sent from IPC handlers to the main event loop.
+/// Custom user event sent from IPC handlers and worker threads to the main event loop.
 #[derive(Debug)]
 enum UserEvent {
     /// IPC message from chrome or trusted internal webview.
@@ -66,6 +68,10 @@ enum UserEvent {
     DownloadStarted(String, String),
     /// Download finished (url, destination path, success).
     DownloadCompleted(String, String, bool),
+    /// Real-time OS and process tree telemetry snapshot.
+    Telemetry(telemetry::TelemetrySnapshot),
+    /// Live weather lookup completed in worker thread.
+    WeatherFetched(Result<weather::WeatherData, String>),
 }
 
 /// Strongly-typed IPC command matching `ui/IPC_CONTRACT.md`.
@@ -74,7 +80,7 @@ enum UserEvent {
 #[serde(tag = "action")]
 enum UiMessage {
     #[serde(rename = "ui_ready")]
-    UiReady,
+    UiReady { role: Option<String> },
 
     #[serde(rename = "new_tab")]
     NewTab { url: Option<String> },
@@ -161,8 +167,32 @@ enum UiMessage {
     #[serde(rename = "overlay")]
     Overlay { open: bool },
 
+    #[serde(rename = "set_setting")]
+    SetSetting {
+        key: String,
+        value: serde_json::Value,
+    },
+
     #[serde(rename = "save_settings")]
-    SaveSettings { settings: crate::storage::Settings },
+    SaveSettings { settings: serde_json::Value },
+
+    #[serde(rename = "fetch_weather")]
+    FetchWeather {
+        location: Option<String>,
+        force: Option<bool>,
+    },
+
+    #[serde(rename = "open_settings")]
+    OpenSettings,
+
+    #[serde(rename = "open_command_palette")]
+    OpenCommandPalette,
+
+    #[serde(rename = "open_side_panel")]
+    OpenSidePanel { panel: String },
+
+    #[serde(rename = "open_find_bar")]
+    OpenFindBar,
 
     #[serde(rename = "zoom")]
     Zoom { level: f64 },
@@ -234,13 +264,14 @@ enum UiMessage {
 const CONTENT_INIT_SCRIPT: &str = r#"
 window.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && e.key.toLowerCase() === 't') {
+    const key = e.key.toLowerCase();
+    if (ctrl && key === 't') {
         e.preventDefault();
         window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'new_tab' }));
-    } else if (ctrl && e.key.toLowerCase() === 'w') {
+    } else if (ctrl && key === 'w') {
         e.preventDefault();
         window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'close_current_tab' }));
-    } else if (ctrl && e.key.toLowerCase() === 'r') {
+    } else if (ctrl && key === 'r') {
         e.preventDefault();
         window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'reload' }));
     } else if (ctrl && (e.key === '=' || e.key === '+')) {
@@ -252,7 +283,22 @@ window.addEventListener('keydown', (e) => {
     } else if (ctrl && e.key === '0') {
         e.preventDefault();
         window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'zoom_reset' }));
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'n') {
+    } else if (ctrl && key === 'k') {
+        e.preventDefault();
+        window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_command_palette' }));
+    } else if (ctrl && key === 'f') {
+        e.preventDefault();
+        window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_find_bar' }));
+    } else if (ctrl && e.key === ',') {
+        e.preventDefault();
+        window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_settings' }));
+    } else if (ctrl && key === 'h') {
+        e.preventDefault();
+        window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_side_panel', panel: 'history' }));
+    } else if (ctrl && key === 'j') {
+        e.preventDefault();
+        window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_side_panel', panel: 'downloads' }));
+    } else if (ctrl && e.shiftKey && key === 'n') {
         e.preventDefault();
         window.ipc && window.ipc.postMessage(JSON.stringify({ action: 'open_private_window' }));
     } else if (ctrl && e.key === 'Tab') {
@@ -264,140 +310,132 @@ window.addEventListener('keydown', (e) => {
 });
 "#;
 
-/// Determine tab discard timeout from environment or default (10 minutes).
-fn get_discard_timeout() -> Duration {
+/// Return optional `RUSTY_DISCARD_SECS` environment override.
+fn get_discard_timeout_override() -> Option<Duration> {
     if let Ok(val) = env::var("RUSTY_DISCARD_SECS") {
         if let Ok(secs) = val.parse::<u64>() {
-            return Duration::from_secs(secs);
+            return Some(Duration::from_secs(secs));
         }
     }
-    Duration::from_secs(600)
+    None
 }
 
-/// Calculate current process working set + child WebView2 processes in megabytes.
-fn get_process_memory_mb(active_webviews: usize) -> f64 {
-    #[cfg(target_os = "windows")]
+/// Compute effective background tab discard timeout from settings or env override.
+fn effective_discard_timeout(
+    settings: &storage::Settings,
+    override_timeout: Option<Duration>,
+) -> Option<Duration> {
+    if let Some(d) = override_timeout {
+        return if d.is_zero() { None } else { Some(d) };
+    }
+    if settings.discard_timeout_secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(settings.discard_timeout_secs))
+    }
+}
+
+/// Check whether a tab URL represents the internal New Tab page.
+fn is_newtab_url(url: &str) -> bool {
+    url == "about:blank"
+        || url == "about:newtab"
+        || (is_trusted_origin(url) && url.contains("newtab.html"))
+}
+
+/// Append active skin/theme/layout query parameters for internal chrome and newtab pages.
+fn append_skin_theme_query(base: &str, settings: &storage::Settings) -> String {
+    let skin = if settings.skin == "minimal" { "minimal" } else { "crazy" };
+    let theme = percent_encoding::utf8_percent_encode(
+        &settings.theme,
+        percent_encoding::NON_ALPHANUMERIC,
+    );
+    let tabs = if settings.tabs_layout == "vertical" {
+        "vertical"
+    } else {
+        "horizontal"
+    };
+    let sep = if base.contains('?') { '&' } else { '?' };
+    format!("{base}{sep}skin={skin}&theme={theme}&tabs={tabs}")
+}
+
+/// Resolve virtual URLs and inject current skin/theme/layout params for internal UI pages.
+fn resolve_content_url_with_settings(url: &str, settings: &storage::Settings) -> String {
+    let resolved = resolve_content_url(url);
+    if is_trusted_origin(&resolved)
+        && (resolved.contains("index.html") || resolved.contains("newtab.html"))
     {
-        use std::collections::HashSet;
+        append_skin_theme_query(&resolved, settings)
+    } else {
+        resolved
+    }
+}
 
-        #[repr(C)]
-        #[allow(non_snake_case)]
-        struct PROCESS_MEMORY_COUNTERS {
-            cb: u32,
-            PageFaultCount: u32,
-            PeakWorkingSetSize: usize,
-            WorkingSetSize: usize,
-            QuotaPeakPagedPoolUsage: usize,
-            QuotaPagedPoolUsage: usize,
-            QuotaPeakNonPagedPoolUsage: usize,
-            QuotaNonPagedPoolUsage: usize,
-            PagefileUsage: usize,
-            PeakPagefileUsage: usize,
-        }
+fn eval_on_webview(wv: &WebView, msg: &serde_json::Value) {
+    let js = format!("if (window.__onRustMessage) {{ window.__onRustMessage({msg}); }}");
+    let _ = wv.evaluate_script(&js);
+}
 
-        #[repr(C)]
-        #[allow(non_snake_case)]
-        struct PROCESSENTRY32W {
-            dwSize: u32,
-            cntUsage: u32,
-            th32ProcessID: u32,
-            th32DefaultHeapID: usize,
-            th32ModuleID: u32,
-            cntThreads: u32,
-            th32ParentProcessID: u32,
-            pcPriClassBase: i32,
-            dwFlags: u32,
-            szExeFile: [u16; 260],
-        }
-
-        extern "system" {
-            fn GetCurrentProcess() -> isize;
-            fn GetCurrentProcessId() -> u32;
-            fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> isize;
-            fn Process32FirstW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
-            fn Process32NextW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
-            fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> isize;
-            fn CloseHandle(hObject: isize) -> i32;
-            fn K32GetProcessMemoryInfo(
-                process: isize,
-                ppsmc: *mut PROCESS_MEMORY_COUNTERS,
-                cb: u32,
-            ) -> i32;
-        }
-
-        const TH32CS_SNAPPROCESS: u32 = 0x00000002;
-        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
-        const INVALID_HANDLE_VALUE: isize = -1;
-
-        unsafe {
-            let mut total_bytes: usize = 0;
-
-            // 1. Host process (rusty_browser.exe) memory
-            let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-            counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-            if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) != 0 {
-                total_bytes += counters.WorkingSetSize;
-            }
-
-            // 2. Child and grandchild WebView2 processes (msedgewebview2.exe)
-            let my_pid = GetCurrentProcessId();
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot != INVALID_HANDLE_VALUE && snapshot != 0 {
-                let mut tree_pids: HashSet<u32> = HashSet::new();
-                tree_pids.insert(my_pid);
-
-                let mut all_entries: Vec<(u32, u32)> = Vec::new();
-                let mut pe: PROCESSENTRY32W = std::mem::zeroed();
-                pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-
-                if Process32FirstW(snapshot, &mut pe) != 0 {
-                    loop {
-                        all_entries.push((pe.th32ProcessID, pe.th32ParentProcessID));
-                        pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-                        if Process32NextW(snapshot, &mut pe) == 0 {
-                            break;
-                        }
-                    }
-                }
-                CloseHandle(snapshot);
-
-                let mut changed = true;
-                while changed {
-                    changed = false;
-                    for &(pid, parent) in &all_entries {
-                        if tree_pids.contains(&parent) && tree_pids.insert(pid) {
-                            changed = true;
-                        }
-                    }
-                }
-
-                for &pid in &tree_pids {
-                    if pid == my_pid {
-                        continue;
-                    }
-                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-                    if handle != 0 && handle != INVALID_HANDLE_VALUE {
-                        let mut child_counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-                        child_counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-                        if K32GetProcessMemoryInfo(handle, &mut child_counters, child_counters.cb) != 0 {
-                            total_bytes += child_counters.WorkingSetSize;
-                        }
-                        CloseHandle(handle);
-                    }
-                }
-            }
-
-            if total_bytes > 0 {
-                (total_bytes as f64) / (1024.0 * 1024.0)
-            } else {
-                35.0 + (active_webviews as f64 * 30.0)
+fn broadcast_to_newtab_views(
+    tabs: &TabManager,
+    content_webviews: &HashMap<TabId, WebView>,
+    msg: &serde_json::Value,
+) {
+    for (tab_id, wv) in content_webviews {
+        if let Some(tab) = tabs.get(*tab_id) {
+            if is_newtab_url(&tab.url) {
+                eval_on_webview(wv, msg);
             }
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        35.0 + (active_webviews as f64 * 30.0)
+}
+
+fn broadcast_to_internal_views(
+    chrome_wv: &WebView,
+    tabs: &TabManager,
+    content_webviews: &HashMap<TabId, WebView>,
+    msg: &serde_json::Value,
+) {
+    eval_on_webview(chrome_wv, msg);
+    broadcast_to_newtab_views(tabs, content_webviews, msg);
+}
+
+fn build_memory_payload(browser_mb: f64, tab_count: usize) -> serde_json::Value {
+    let chrome_baseline = 236.0 + (tab_count.max(1) as f64 * 75.0);
+    let savings = ((chrome_baseline - browser_mb) / chrome_baseline * 100.0).clamp(0.0, 95.0);
+    json!({
+        "type": "memory_stats",
+        "total_mb": (browser_mb * 10.0).round() / 10.0,
+        "chrome_baseline_mb": (chrome_baseline * 10.0).round() / 10.0,
+        "savings_percent": (savings * 10.0).round() / 10.0,
+    })
+}
+
+fn build_telemetry_payload(snap: &telemetry::TelemetrySnapshot) -> serde_json::Value {
+    json!({
+        "type": "telemetry_stats",
+        "sys_cpu_percent": snap.sys_cpu_percent,
+        "sys_ram_percent": snap.sys_ram_percent,
+        "sys_ram_used_gb": snap.sys_ram_used_gb,
+        "sys_ram_total_gb": snap.sys_ram_total_gb,
+        "sys_gpu_percent": snap.sys_gpu_percent,
+        "net_kbps": snap.net_kbps,
+        "browser_mb": snap.browser_mb,
+    })
+}
+
+fn build_weather_payload(w: &weather::WeatherData) -> serde_json::Value {
+    let mut val = serde_json::to_value(w).unwrap_or_else(|_| json!({}));
+    if let Some(obj) = val.as_object_mut() {
+        obj.insert("type".to_owned(), json!("weather_update"));
     }
+    val
+}
+
+fn spawn_weather_fetch(proxy: tao::event_loop::EventLoopProxy<UserEvent>, location: String) {
+    std::thread::spawn(move || {
+        let res = weather::fetch_weather(&location);
+        let _ = proxy.send_event(UserEvent::WeatherFetched(res));
+    });
 }
 
 /// Validate whether an origin URI corresponds to trusted internal browser chrome/pages.
@@ -497,18 +535,28 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
                 // Untrusted external web page: whitelist harmless accelerator key actions only
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
                     if let Some(action) = val.get("action").and_then(|a| a.as_str()) {
-                        if matches!(
-                            action,
-                            "new_tab"
-                                | "close_current_tab"
-                                | "reload"
-                                | "next_tab"
-                                | "prev_tab"
-                                | "stop"
-                                | "zoom_in"
-                                | "zoom_out"
-                                | "zoom_reset"
-                        ) {
+                        let allowed_panel = action == "open_side_panel"
+                            && matches!(
+                                val.get("panel").and_then(|p| p.as_str()),
+                                Some("bookmarks" | "history" | "downloads")
+                            );
+                        if allowed_panel
+                            || matches!(
+                                action,
+                                "new_tab"
+                                    | "close_current_tab"
+                                    | "reload"
+                                    | "next_tab"
+                                    | "prev_tab"
+                                    | "stop"
+                                    | "zoom_in"
+                                    | "zoom_out"
+                                    | "zoom_reset"
+                                    | "open_command_palette"
+                                    | "open_find_bar"
+                                    | "open_settings"
+                            )
+                        {
                             let _ = proxy.send_event(UserEvent::ChromeIpc(body));
                             return;
                         }
@@ -600,8 +648,9 @@ fn build_chrome_webview(
     proxy: tao::event_loop::EventLoopProxy<UserEvent>,
     window_width: f64,
     window_height: f64,
+    settings: &storage::Settings,
 ) -> Result<WebView> {
-    let chrome_url = resolve_content_url("rusty://app/index.html");
+    let chrome_url = resolve_content_url_with_settings("rusty://app/index.html", settings);
     let builder = WebViewBuilder::new()
         .with_bounds(wry::Rect {
             position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, 0.0)),
@@ -716,9 +765,8 @@ fn sync_chrome_ui(
         })
         .collect();
 
-    let mem_mb = get_process_memory_mb(content_webviews.len());
-    let chrome_baseline = 236.0 + (tabs.count() as f64 * 75.0);
-    let savings = ((chrome_baseline - mem_mb) / chrome_baseline * 100.0).clamp(0.0, 95.0);
+    let mem_mb = telemetry::sample_browser_memory_mb(content_webviews.len());
+    let mem_payload = build_memory_payload(mem_mb, tabs.count());
 
     let state = json!({
         "type": "state_update",
@@ -736,21 +784,20 @@ fn sync_chrome_ui(
         "history": history,
         "downloads": downloads,
         "memory": {
-            "total_mb": (mem_mb * 10.0).round() / 10.0,
-            "chrome_baseline_mb": (chrome_baseline * 10.0).round() / 10.0,
-            "savings_percent": (savings * 10.0).round() / 10.0,
+            "total_mb": mem_payload["total_mb"],
+            "chrome_baseline_mb": mem_payload["chrome_baseline_mb"],
+            "savings_percent": mem_payload["savings_percent"],
         }
     });
 
-    let js = format!("window.__onRustMessage({});", state);
-    let _ = chrome_wv.evaluate_script(&js);
+    eval_on_webview(chrome_wv, &state);
 }
 
 /// Load content into a webview, routing new tabs to `rusty://app/newtab.html`.
 fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
     match url {
         "about:blank" | "about:newtab" => {
-            let target = resolve_content_url("about:blank");
+            let target = resolve_content_url_with_settings("about:blank", storage.settings());
             println!("[content] Loading new tab page: {target}");
             let _ = wv.load_url(&target);
         }
@@ -771,7 +818,7 @@ fn load_target_url(wv: &WebView, url: &str, storage: &mut Storage) {
             let _ = wv.load_html(&ui::pages::render_settings_page(&settings));
         }
         other => {
-            let target = resolve_content_url(other);
+            let target = resolve_content_url_with_settings(other, storage.settings());
             let _ = wv.load_url(&target);
         }
     }
@@ -801,12 +848,16 @@ fn ensure_active_tab_webview(
                 None => return Ok(()),
             };
 
-            let initial_url = resolve_content_url(&url);
             let settings = storage.settings().clone();
+            let initial_url = resolve_content_url_with_settings(&url, &settings);
+            let needs_html_page = matches!(
+                url.as_str(),
+                "about:history" | "about:bookmarks" | "about:downloads" | "about:settings"
+            );
             println!("[memory] Lazily creating webview for tab #{active_id} (url={url}, scroll={scroll_y:.0}px, incognito={is_incognito})");
             let wv = build_content_webview(ContentWebViewParams {
                 window,
-                url: &initial_url,
+                url: if needs_html_page { "about:blank" } else { &initial_url },
                 tab_id: active_id,
                 proxy: proxy.clone(),
                 content_rect,
@@ -818,7 +869,9 @@ fn ensure_active_tab_webview(
                 block_geolocation: settings.block_geolocation,
             })?;
 
-            load_target_url(&wv, &url, storage);
+            if needs_html_page {
+                load_target_url(&wv, &url, storage);
+            }
             if is_overlay_open {
                 let _ = wv.set_visible(false);
             }
@@ -881,15 +934,20 @@ fn main() -> Result<()> {
             .collect()
     };
 
-    let discard_timeout = get_discard_timeout();
-    println!(
-        "[rusty_browser] Discard timeout configured to {}s (incognito={is_incognito})",
-        discard_timeout.as_secs()
-    );
-
     // ── Persistent storage ─────────────────────────────────────────────
     let mut storage = Storage::new();
     println!("[storage] Data directory: {}", storage.data_dir().display());
+    let initial_settings = storage.settings().clone();
+
+    let discard_timeout_override = get_discard_timeout_override();
+    let initial_discard_secs =
+        effective_discard_timeout(&initial_settings, discard_timeout_override)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+    println!(
+        "[rusty_browser] Discard timeout configured to {initial_discard_secs}s (incognito={is_incognito}, skin={}, theme={})",
+        initial_settings.skin, initial_settings.theme
+    );
 
     // ── Event loop ─────────────────────────────────────────────────────
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -916,6 +974,12 @@ fn main() -> Result<()> {
     let mut content_webviews: HashMap<TabId, WebView> = HashMap::new();
     let mut is_overlay_open = false;
 
+    let mut latest_telemetry: Option<telemetry::TelemetrySnapshot> = None;
+    let mut latest_weather: Option<weather::WeatherData> = None;
+    let mut last_weather_error: Option<String> = None;
+    let mut last_weather_fetch = Instant::now();
+    let mut next_maintenance_at = Instant::now() + DISCARD_CHECK_INTERVAL;
+
     let mut current_content_rect = wry::Rect {
         position: wry::dpi::Position::Logical(wry::dpi::LogicalPosition::new(0.0, DEFAULT_TOP_BAR_HEIGHT)),
         size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(
@@ -925,7 +989,20 @@ fn main() -> Result<()> {
     };
 
     // ── Build Chrome UI WebView ────────────────────────────────────────
-    let chrome_wv = build_chrome_webview(&window, proxy.clone(), DEFAULT_WIDTH, DEFAULT_HEIGHT)?;
+    let chrome_wv = build_chrome_webview(
+        &window,
+        proxy.clone(),
+        DEFAULT_WIDTH,
+        DEFAULT_HEIGHT,
+        &initial_settings,
+    )?;
+
+    // ── Background Real OS Telemetry & Live Weather ────────────────────
+    let tel_proxy = proxy.clone();
+    telemetry::spawn_telemetry_collector(Duration::from_secs(2), move |snap| {
+        tel_proxy.send_event(UserEvent::Telemetry(snap)).is_ok()
+    });
+    spawn_weather_fetch(proxy.clone(), initial_settings.weather_location.clone());
 
     // ── Create tabs for initial URLs ───────────────────────────────────
     for (i, url) in initial_urls.iter().enumerate() {
@@ -940,11 +1017,15 @@ fn main() -> Result<()> {
         for tab_id in tabs.all_ids() {
             if let Some(t) = tabs.get(tab_id) {
                 let url = t.url.clone();
-                let initial_url = resolve_content_url(&url);
                 let settings = storage.settings().clone();
+                let initial_url = resolve_content_url_with_settings(&url, &settings);
+                let needs_html_page = matches!(
+                    url.as_str(),
+                    "about:history" | "about:bookmarks" | "about:downloads" | "about:settings"
+                );
                 if let Ok(wv) = build_content_webview(ContentWebViewParams {
                     window: &window,
-                    url: &initial_url,
+                    url: if needs_html_page { "about:blank" } else { &initial_url },
                     tab_id,
                     proxy: proxy.clone(),
                     content_rect: current_content_rect,
@@ -955,7 +1036,9 @@ fn main() -> Result<()> {
                     block_microphone: settings.block_microphone,
                     block_geolocation: settings.block_geolocation,
                 }) {
-                    load_target_url(&wv, &url, &mut storage);
+                    if needs_html_page {
+                        load_target_url(&wv, &url, &mut storage);
+                    }
                     if Some(tab_id) != tabs.active_id() {
                         let _ = wv.set_visible(false);
                     }
@@ -983,37 +1066,42 @@ fn main() -> Result<()> {
 
     // ── Event loop ─────────────────────────────────────────────────────
     event_loop.run(move |event, _event_loop, control_flow| {
-        *control_flow = ControlFlow::WaitUntil(
-            std::time::Instant::now() + DISCARD_CHECK_INTERVAL,
-        );
+        if *control_flow != ControlFlow::Exit {
+            *control_flow = ControlFlow::WaitUntil(next_maintenance_at);
+        }
 
         match event {
-            // ── Periodic timer for automatic tab discarding & live memory stats ─
+            // ── Periodic timer for automatic tab discarding & weather refresh ─
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-                discard_inactive_tabs(
-                    &mut tabs,
-                    &mut content_webviews,
-                    discard_timeout,
-                    &chrome_wv,
-                    &groups,
-                    &mut storage,
-                    is_incognito,
-                );
+                let now = Instant::now();
+                next_maintenance_at = now + DISCARD_CHECK_INTERVAL;
+                if *control_flow != ControlFlow::Exit {
+                    *control_flow = ControlFlow::WaitUntil(next_maintenance_at);
+                }
 
-                let mem_mb = get_process_memory_mb(content_webviews.len());
-                let chrome_baseline = 236.0 + (tabs.count() as f64 * 75.0);
-                let savings = ((chrome_baseline - mem_mb) / chrome_baseline * 100.0).clamp(0.0, 95.0);
-                let mem_json = json!({
-                    "type": "memory_stats",
-                    "total_mb": (mem_mb * 10.0).round() / 10.0,
-                    "chrome_baseline_mb": (chrome_baseline * 10.0).round() / 10.0,
-                    "savings_percent": (savings * 10.0).round() / 10.0,
-                });
-                let _ = chrome_wv.evaluate_script(&format!("window.__onRustMessage({mem_json});"));
-                if let Some(active_id) = tabs.active_id() {
-                    if let Some(wv) = content_webviews.get(&active_id) {
-                        let _ = wv.evaluate_script(&format!("window.__onRustMessage({mem_json});"));
-                    }
+                if let Some(threshold) =
+                    effective_discard_timeout(storage.settings(), discard_timeout_override)
+                {
+                    discard_inactive_tabs(
+                        &mut tabs,
+                        &mut content_webviews,
+                        threshold,
+                        &chrome_wv,
+                        &groups,
+                        &mut storage,
+                        is_incognito,
+                    );
+                }
+
+                if last_weather_fetch.elapsed() >= Duration::from_secs(900) {
+                    last_weather_fetch = now;
+                    spawn_weather_fetch(proxy.clone(), storage.settings().weather_location.clone());
+                }
+
+                if latest_telemetry.is_none() {
+                    let mem_mb = telemetry::sample_browser_memory_mb(content_webviews.len());
+                    let mem_json = build_memory_payload(mem_mb, tabs.count());
+                    broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &mem_json);
                 }
             }
 
@@ -1051,8 +1139,53 @@ fn main() -> Result<()> {
                 };
 
                 match cmd {
-                    UiMessage::UiReady => {
-                        sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito);
+                    UiMessage::UiReady { role } => {
+                        let settings_msg = json!({
+                            "type": "ui_settings_sync",
+                            "settings": storage.settings().to_ui_json(),
+                        });
+
+                        if role.as_deref() == Some("newtab") {
+                            broadcast_to_newtab_views(&tabs, &content_webviews, &settings_msg);
+                            if let Some(snap) = &latest_telemetry {
+                                let tel_msg = build_telemetry_payload(snap);
+                                let mem_msg = build_memory_payload(snap.browser_mb, tabs.count());
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &tel_msg);
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &mem_msg);
+                            } else {
+                                let mem_mb = telemetry::sample_browser_memory_mb(content_webviews.len());
+                                let mem_msg = build_memory_payload(mem_mb, tabs.count());
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &mem_msg);
+                            }
+
+                            if let Some(w) = &latest_weather {
+                                let w_msg = build_weather_payload(w);
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &w_msg);
+                            } else if let Some(err) = &last_weather_error {
+                                let err_msg = json!({
+                                    "type": "weather_error",
+                                    "message": err,
+                                });
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &err_msg);
+                            }
+                        } else {
+                            // Chrome ready (initial boot or clean skin reload)
+                            is_overlay_open = false;
+                            if let Some(active_id) = tabs.active_id() {
+                                if let Some(wv) = content_webviews.get(&active_id) {
+                                    let _ = wv.set_visible(true);
+                                    let _ = wv.set_bounds(current_content_rect);
+                                }
+                            }
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito);
+                            eval_on_webview(&chrome_wv, &settings_msg);
+                            if let Some(snap) = &latest_telemetry {
+                                let tel_msg = build_telemetry_payload(snap);
+                                let mem_msg = build_memory_payload(snap.browser_mb, tabs.count());
+                                eval_on_webview(&chrome_wv, &tel_msg);
+                                eval_on_webview(&chrome_wv, &mem_msg);
+                            }
+                        }
                     }
 
                     UiMessage::ContentRect { x, y, width, height } => {
@@ -1101,7 +1234,7 @@ fn main() -> Result<()> {
                             );
                             if let Some(wv) = content_webviews.get(&active_id) {
                                 load_target_url(wv, &url, &mut storage);
-                                if !is_incognito && !url.starts_with("about:") {
+                                if !is_incognito && !url.starts_with("about:") && !is_trusted_origin(&url) {
                                     let title = tabs.get(active_id).map(|t| t.title.as_str()).unwrap_or("");
                                     storage.record_history(&url, title);
                                 }
@@ -1377,9 +1510,107 @@ fn main() -> Result<()> {
                         sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito);
                     }
 
+                    UiMessage::SetSetting { key, value } => {
+                        let old_skin = storage.settings().skin.clone();
+                        if storage.set_setting(&key, &value) {
+                            println!("[settings] Updated `{key}` = {value}");
+                            let skin_changed = key == "skin" && storage.settings().skin != old_skin;
+                            if skin_changed {
+                                is_overlay_open = false;
+                                let nt_target = resolve_content_url_with_settings("about:blank", storage.settings());
+                                for (tid, wv) in &content_webviews {
+                                    if tabs.get(*tid).map(|t| is_newtab_url(&t.url)).unwrap_or(false) {
+                                        let _ = wv.load_url(&nt_target);
+                                    }
+                                    if Some(*tid) == tabs.active_id() {
+                                        let _ = wv.set_visible(true);
+                                        let _ = wv.set_bounds(current_content_rect);
+                                    }
+                                }
+                                let sync_msg = json!({
+                                    "type": "ui_settings_sync",
+                                    "settings": storage.settings().to_ui_json(),
+                                });
+                                eval_on_webview(&chrome_wv, &sync_msg);
+                            } else {
+                                let sync_msg = json!({
+                                    "type": "ui_settings_sync",
+                                    "settings": storage.settings().to_ui_json(),
+                                });
+                                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &sync_msg);
+                            }
+                        }
+                    }
+
                     UiMessage::SaveSettings { settings } => {
-                        println!("[settings] Saving updated browser settings");
-                        storage.update_settings(settings);
+                        let old_skin = storage.settings().skin.clone();
+                        if storage.merge_settings_json(&settings) {
+                            println!("[settings] Saved updated browser settings");
+                            if storage.settings().skin != old_skin {
+                                is_overlay_open = false;
+                                let nt_target = resolve_content_url_with_settings("about:blank", storage.settings());
+                                for (tid, wv) in &content_webviews {
+                                    if tabs.get(*tid).map(|t| is_newtab_url(&t.url)).unwrap_or(false) {
+                                        let _ = wv.load_url(&nt_target);
+                                    }
+                                    if Some(*tid) == tabs.active_id() {
+                                        let _ = wv.set_visible(true);
+                                        let _ = wv.set_bounds(current_content_rect);
+                                    }
+                                }
+                            }
+                            let sync_msg = json!({
+                                "type": "ui_settings_sync",
+                                "settings": storage.settings().to_ui_json(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &sync_msg);
+                        }
+                    }
+
+                    UiMessage::FetchWeather { location, force } => {
+                        let prev_loc = storage.settings().weather_location.clone();
+                        let query_loc = match location {
+                            Some(ref loc) => {
+                                let trimmed = loc.trim().to_owned();
+                                if trimmed != prev_loc {
+                                    storage.set_setting("weather_location", &json!(trimmed));
+                                }
+                                trimmed
+                            }
+                            None => prev_loc.clone(),
+                        };
+
+                        let loc_changed = query_loc != prev_loc;
+                        let force_refresh = force.unwrap_or(false)
+                            || loc_changed
+                            || latest_weather.is_none();
+
+                        if force_refresh {
+                            last_weather_fetch = Instant::now();
+                            spawn_weather_fetch(proxy.clone(), query_loc);
+                        } else if let Some(w) = &latest_weather {
+                            let w_msg = build_weather_payload(w);
+                            broadcast_to_newtab_views(&tabs, &content_webviews, &w_msg);
+                        }
+                    }
+
+                    UiMessage::OpenSettings => {
+                        eval_on_webview(&chrome_wv, &json!({ "type": "open_settings" }));
+                    }
+
+                    UiMessage::OpenCommandPalette => {
+                        eval_on_webview(&chrome_wv, &json!({ "type": "open_command_palette" }));
+                    }
+
+                    UiMessage::OpenSidePanel { panel } => {
+                        eval_on_webview(
+                            &chrome_wv,
+                            &json!({ "type": "open_side_panel", "panel": panel }),
+                        );
+                    }
+
+                    UiMessage::OpenFindBar => {
+                        eval_on_webview(&chrome_wv, &json!({ "type": "open_find_bar" }));
                     }
 
                     UiMessage::Zoom { level } => {
@@ -1619,6 +1850,64 @@ fn main() -> Result<()> {
                 sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito);
             }
 
+            // ── Real-time OS & Process Telemetry Snapshot ──────────────
+            Event::UserEvent(UserEvent::Telemetry(snap)) => {
+                let tel_msg = build_telemetry_payload(&snap);
+                let mem_msg = build_memory_payload(snap.browser_mb, tabs.count());
+                latest_telemetry = Some(snap);
+
+                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &tel_msg);
+                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &mem_msg);
+
+                let now = Instant::now();
+                if now >= next_maintenance_at {
+                    next_maintenance_at = now + DISCARD_CHECK_INTERVAL;
+                    if let Some(threshold) =
+                        effective_discard_timeout(storage.settings(), discard_timeout_override)
+                    {
+                        discard_inactive_tabs(
+                            &mut tabs,
+                            &mut content_webviews,
+                            threshold,
+                            &chrome_wv,
+                            &groups,
+                            &mut storage,
+                            is_incognito,
+                        );
+                    }
+                    if last_weather_fetch.elapsed() >= Duration::from_secs(900) {
+                        last_weather_fetch = now;
+                        spawn_weather_fetch(proxy.clone(), storage.settings().weather_location.clone());
+                    }
+                }
+            }
+
+            // ── Live Weather Lookup Result ─────────────────────────────
+            Event::UserEvent(UserEvent::WeatherFetched(res)) => {
+                last_weather_fetch = Instant::now();
+                match res {
+                    Ok(w) => {
+                        println!(
+                            "[weather] Updated: {} {:.1}°C ({})",
+                            w.location, w.temperature_c, w.condition
+                        );
+                        last_weather_error = None;
+                        let msg = build_weather_payload(&w);
+                        latest_weather = Some(w);
+                        broadcast_to_newtab_views(&tabs, &content_webviews, &msg);
+                    }
+                    Err(err) => {
+                        eprintln!("[weather] Lookup failed: {err}");
+                        last_weather_error = Some(err.clone());
+                        let err_msg = json!({
+                            "type": "weather_error",
+                            "message": err,
+                        });
+                        broadcast_to_newtab_views(&tabs, &content_webviews, &err_msg);
+                    }
+                }
+            }
+
             _ => {}
         }
     });
@@ -1636,6 +1925,7 @@ mod tests {
         assert!(is_trusted_origin("http://rusty.app/"));
         assert!(is_trusted_origin("http://rusty.app/index.html"));
         assert!(is_trusted_origin("http://rusty.app/newtab.html"));
+        assert!(is_trusted_origin("http://rusty.app/newtab.html?skin=minimal&theme=sunset"));
         assert!(is_trusted_origin("https://rusty.app/index.html"));
         assert!(is_trusted_origin("data:text/html;charset=utf-8,<html></html>"));
     }
@@ -1663,5 +1953,43 @@ mod tests {
             assert_eq!(resolve_content_url("about:newtab"), "rusty://app/newtab.html");
         }
         assert_eq!(resolve_content_url("https://crates.io"), "https://crates.io");
+    }
+
+    #[test]
+    fn test_resolve_content_url_with_settings_and_newtab_detection() {
+        assert!(is_newtab_url("about:blank"));
+        assert!(is_newtab_url("about:newtab"));
+        assert!(is_newtab_url("http://rusty.app/newtab.html?skin=crazy"));
+        assert!(!is_newtab_url("https://example.com/newtab.html"));
+
+        let s = storage::Settings {
+            skin: "minimal".to_owned(),
+            theme: "aurora".to_owned(),
+            tabs_layout: "vertical".to_owned(),
+            ..Default::default()
+        };
+
+        let resolved = resolve_content_url_with_settings("about:blank", &s);
+        assert!(resolved.contains("newtab.html?skin=minimal&theme=aurora&tabs=vertical"));
+        assert_eq!(
+            resolve_content_url_with_settings("https://crates.io", &s),
+            "https://crates.io"
+        );
+    }
+
+    #[test]
+    fn test_effective_discard_timeout() {
+        let mut s = storage::Settings {
+            discard_timeout_secs: 0,
+            ..Default::default()
+        };
+        assert_eq!(effective_discard_timeout(&s, None), None);
+        s.discard_timeout_secs = 300;
+        assert_eq!(effective_discard_timeout(&s, None), Some(Duration::from_secs(300)));
+        assert_eq!(
+            effective_discard_timeout(&s, Some(Duration::from_secs(45))),
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(effective_discard_timeout(&s, Some(Duration::ZERO)), None);
     }
 }

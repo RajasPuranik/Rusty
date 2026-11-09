@@ -43,19 +43,26 @@ Dispatched from JavaScript via `window.ipc.postMessage(JSON.stringify(msg))`.
 | `content_rect` | `{"action": "content_rect", "x": number, "y": number, "width": number, "height": number}` | **Critical**: Informs Rust of the exact pixel boundaries of the content viewport so child WebView2 can be sized and positioned without overlapping chrome, sidebars, or find bars. |
 | `overlay` | `{"action": "overlay", "open": boolean}` | **Critical**: Informs Rust when a full modal (Command Palette, Settings) is open so Rust can temporarily hide or dim the native child webview so popups render seamlessly. |
 
-### 1.4 Bookmarks, Storage & Settings
+### 1.4 Bookmarks, Storage, Settings, Telemetry & Weather
 | Action | Payload Schema | Description |
 |---|---|---|
+| `ui_ready` | `{"action": "ui_ready", "role"?: "chrome" \| "newtab"}` | Emitted once DOM scripts have registered listeners so Rust syncs initial state, settings, telemetry, and weather. |
 | `toggle_bookmark` | `{"action": "toggle_bookmark", "url": string}` | Add or remove URL from bookmarks. |
-| `save_settings` | `{"action": "save_settings", "settings": object}` | Persist updated settings map to `data.json`. |
+| `set_setting` | `{"action": "set_setting", "key": string, "value": any}` | Atomically update a single persisted setting (`skin`, `theme`, `tabs_layout`, `weather_location`, etc.), reload internal New Tab views on skin change, and broadcast `ui_settings_sync`. |
+| `save_settings` | `{"action": "save_settings", "settings": object}` | Merge updated settings keys into `data.json` without clobbering unrelated fields and broadcast `ui_settings_sync`. |
+| `fetch_weather` | `{"action": "fetch_weather", "location"?: string, "force"?: boolean}` | Trigger Rust WinHTTP HTTPS weather lookup via auto IP geolocation (`""`) or city query and emit `weather_update` / `weather_error`. |
+| `open_settings` | `{"action": "open_settings"}` | Instruct Chrome UI to open the Settings modal. |
+| `open_command_palette` | `{"action": "open_command_palette"}` | Instruct Chrome UI to open the Command Palette. |
+| `open_side_panel` | `{"action": "open_side_panel", "panel": "bookmarks" \| "history" \| "downloads"}` | Instruct Chrome UI to toggle the requested side panel. |
+| `open_find_bar` | `{"action": "open_find_bar"}` | Instruct Chrome UI to toggle the Find-in-Page bar. |
 | `zoom` | `{"action": "zoom", "level": number}` | Set active tab zoom factor (e.g. `1.1` = 110%). |
-| `find_in_page` | `{"action": "find_in_page", "query": string, "forward": boolean}` | Execute find-in-page match. |
+| `find_in_page` | `{"action": "find_in_page", "query": string, "forward": boolean, "match_case"?: boolean}` | Execute find-in-page match. |
 
 ---
 
 ## 2. Rust ➔ UI Messages
 
-Dispatched from Rust by evaluating `window.__onRustMessage(json)` in the chrome webview.
+Dispatched from Rust by evaluating `window.__onRustMessage(json)` on the Chrome webview and trusted internal New Tab webviews.
 
 ### 2.1 State Synchronization (`state_update`)
 ```json
@@ -106,7 +113,53 @@ Dispatched from Rust by evaluating `window.__onRustMessage(json)` in the chrome 
 }
 ```
 
-### 2.3 Download Progress (`download_progress`)
+### 2.3 Real-Time System & Browser Telemetry (`telemetry_stats`)
+Pushed every 2 seconds from Rust's background Win32 telemetry collector (`GetSystemTimes`, `GlobalMemoryStatusEx`, PDH WDDM GPU & Network counters, Toolhelp32 process tree):
+```json
+{
+  "type": "telemetry_stats",
+  "sys_cpu_percent": 14.2,
+  "sys_ram_percent": 41.0,
+  "sys_ram_used_gb": 6.56,
+  "sys_ram_total_gb": 16.0,
+  "sys_gpu_percent": 5.3,
+  "net_kbps": 12.4,
+  "browser_mb": 85.2
+}
+```
+(`sys_gpu_percent` is `null` if no GPU PDH counter is exposed by the active display driver.)
+
+### 2.4 Live Weather Updates (`weather_update` & `weather_error`)
+Fetched asynchronously in Rust via WinHTTP (`api.open-meteo.com` + GeoJS/ipwho.is):
+```json
+{
+  "type": "weather_update",
+  "temperature_c": 26.4,
+  "apparent_c": 27.0,
+  "humidity": 44,
+  "wind_kmh": 9.2,
+  "condition": "Clear Sky",
+  "icon": "sun",
+  "location": "Indore, IN",
+  "is_day": true,
+  "weather_code": 0,
+  "updated_secs": 1794213908,
+  "query": ""
+}
+```
+Error fallback:
+```json
+{
+  "type": "weather_error",
+  "message": "Could not detect IP geolocation (offline or service unreachable)"
+}
+```
+
+### 2.5 Settings & Modal Sync (`ui_settings_sync`, `open_*`)
+- `{"type": "ui_settings_sync", "settings": { ... }}` — Broadcasts persisted settings so Chrome and all open New Tab pages stay synchronized in real time.
+- `{"type": "open_settings"}` / `{"type": "open_command_palette"}` / `{"type": "open_find_bar"}` / `{"type": "open_side_panel", "panel": "..."}` — Forwarded UI trigger events from New Tab shortcuts and content webview accelerators.
+
+### 2.6 Download Progress (`download_progress`)
 ```json
 {
   "type": "download_progress",

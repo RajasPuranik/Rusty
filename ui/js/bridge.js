@@ -259,6 +259,48 @@
           // Track layout changes
           break;
         }
+        case 'set_setting': {
+          const settings = root.Settings ? { ...root.Settings.data, [payload.key]: payload.value } : { [payload.key]: payload.value };
+          this.dispatch('ui_settings_sync', { settings });
+          break;
+        }
+        case 'save_settings': {
+          this.dispatch('ui_settings_sync', { settings: payload.settings || {} });
+          break;
+        }
+        case 'fetch_weather': {
+          const loc = (payload && payload.location) ? payload.location.trim() : 'Preview City';
+          this.dispatch('weather_update', {
+            temperature_c: 26.4,
+            apparent_c: 27.0,
+            humidity: 44,
+            wind_kmh: 9.2,
+            condition: 'Clear Sky (Preview)',
+            icon: 'sun',
+            location: loc || 'Preview City',
+            is_day: true,
+            weather_code: 0,
+            updated_secs: Math.floor(Date.now() / 1000),
+            query: (payload && payload.location) || ''
+          });
+          break;
+        }
+        case 'open_settings': {
+          this.dispatch('open_settings', {});
+          break;
+        }
+        case 'open_command_palette': {
+          this.dispatch('open_command_palette', {});
+          break;
+        }
+        case 'open_side_panel': {
+          this.dispatch('open_side_panel', { panel: payload.panel || 'bookmarks' });
+          break;
+        }
+        case 'open_find_bar': {
+          this.dispatch('open_find_bar', {});
+          break;
+        }
         default:
           break;
       }
@@ -272,6 +314,7 @@
         groups: mockGroups,
         bookmarks: mockBookmarks,
         history: mockHistory,
+        downloads: mockDownloads,
         active_tab: active ? active.id : 1,
         url: active ? active.url : 'about:blank',
         title: active ? active.title : 'New Tab',
@@ -298,23 +341,49 @@
     Bridge.dispatch(type, data);
   };
 
-  // Mock mode ticker for memory badge and initial emit
-  if (Bridge.isMock) {
-    console.info('%c[bridge:mock] Standalone preview mode active (no native IPC found).', 'color: #3b82f6; font-weight: bold;');
-    setTimeout(() => {
-      Bridge._emitMockState();
-      // Periodically slight variation to simulate live memory monitoring
-      setInterval(() => {
-        mockMemory.total_mb = +(84.0 + Math.random() * 2.5).toFixed(1);
-        mockMemory.savings_percent = +(100 - (mockMemory.total_mb / mockMemory.chrome_baseline_mb) * 100).toFixed(1);
-        Bridge.dispatch('memory_stats', mockMemory);
-      }, 5000);
-    }, 50);
+  function getUiRole() {
+    if (document.body && document.body.classList.contains('ntp-body')) {
+      return 'newtab';
+    }
+    if (window.location && String(window.location.pathname).includes('newtab')) {
+      return 'newtab';
+    }
+    return 'chrome';
+  }
+
+  function onDomReady() {
+    if (Bridge.isMock) {
+      console.info('%c[bridge:mock] Standalone preview mode active (no native IPC found).', 'color: #3b82f6; font-weight: bold;');
+      setTimeout(() => {
+        Bridge._emitMockState();
+        Bridge.dispatch('telemetry_stats', {
+          sys_cpu_percent: 14.0,
+          sys_ram_percent: 42.0,
+          sys_ram_used_gb: 6.7,
+          sys_ram_total_gb: 16.0,
+          sys_gpu_percent: 5.0,
+          net_kbps: 12.4,
+          browser_mb: mockMemory.total_mb
+        });
+        Bridge._handleMockAction('fetch_weather', { location: '' });
+        setInterval(() => {
+          mockMemory.total_mb = +(84.0 + Math.random() * 2.5).toFixed(1);
+          mockMemory.savings_percent = +(100 - (mockMemory.total_mb / mockMemory.chrome_baseline_mb) * 100).toFixed(1);
+          Bridge.dispatch('memory_stats', mockMemory);
+        }, 5000);
+      }, 30);
+    } else {
+      // Wait one tick after DOMContentLoaded so deferred listeners register first
+      setTimeout(() => {
+        Bridge.send('ui_ready', { role: getUiRole() });
+      }, 0);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onDomReady);
   } else {
-    // Real IPC: notify Rust backend that UI webview is ready to receive state
-    setTimeout(() => {
-      Bridge.send('ui_ready');
-    }, 10);
+    onDomReady();
   }
 
   root.bridge = Bridge;

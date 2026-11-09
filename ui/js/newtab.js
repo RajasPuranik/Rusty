@@ -1,4 +1,4 @@
-// New Tab Page Controller: Full Dashboard (Clock, Search, Dials, Cards, Notes Checklist, Focus Timer, System Monitor)
+// New Tab Page Controller: Clock, Search, Dials, Cards, Live Weather, Quick Notes, Focus Timer, Real System Monitor
 (function () {
   'use strict';
 
@@ -11,7 +11,8 @@
     github: 'https://github.com/search?q=%s'
   };
 
-  let activeEngine = 'google';
+  let activeEngine = (window.Settings && window.Settings.get('default_search')) || 'google';
+  let savedWeatherQuery = (window.Settings && window.Settings.get('weather_location')) || '';
 
   const DEFAULT_SPEED_DIALS = [
     { title: 'YouTube', url: 'https://youtube.com', avatar: 'YT', color: '#ef4444' },
@@ -41,10 +42,33 @@
   const focusTimeDisplay = document.getElementById('focus-time-display');
   const btnFocusPlay = document.getElementById('btn-focus-play');
   const btnFocusReset = document.getElementById('btn-focus-settings');
+
+  // Weather Elements
+  const weatherCard = document.getElementById('widget-weather');
+  const weatherIcon = document.getElementById('weather-icon');
+  const weatherTemp = document.getElementById('weather-temp');
+  const weatherCondition = document.getElementById('weather-condition');
+  const weatherLocation = document.getElementById('weather-location');
+  const weatherMeta = document.getElementById('weather-meta');
+  const btnWeatherRefresh = document.getElementById('btn-weather-refresh');
+  const weatherCityForm = document.getElementById('weather-city-form');
+  const weatherCityInput = document.getElementById('weather-city-input');
+
+  // System Monitor Elements
   const cpuVal = document.getElementById('cpu-val');
   const ramVal = document.getElementById('ram-val');
   const ramFill = document.getElementById('ram-fill');
   const gpuVal = document.getElementById('gpu-val');
+  const cpuSparkPath = document.getElementById('cpu-spark-path');
+  const gpuSparkPath = document.getElementById('gpu-spark-path');
+  const monitorAppMem = document.getElementById('monitor-app-mem');
+  const monitorNetSpeed = document.getElementById('monitor-net-speed');
+
+  // Widget Containers (for live settings toggle)
+  const elBrandHero = document.getElementById('brand-hero');
+  const elSpeedDialSec = document.getElementById('speed-dial-section');
+  const elWidgetClock = document.getElementById('widget-clock');
+  const elWidgetNotes = document.getElementById('widget-notes');
 
   // ── 1. Digital Clock & Date ──────────────────────────────────────────────
   function updateClock() {
@@ -70,6 +94,14 @@
   updateClock();
 
   // ── 2. Search Engine Chips & Navigation ───────────────────────────────────
+  function syncActiveEngineChip() {
+    if (!chipContainer) return;
+    chipContainer.querySelectorAll('.chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.engine === activeEngine);
+    });
+  }
+  syncActiveEngineChip();
+
   if (chipContainer) {
     chipContainer.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
@@ -77,8 +109,7 @@
       const engine = chip.dataset.engine;
       if (ENGINES[engine]) {
         activeEngine = engine;
-        chipContainer.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-        chip.classList.add('active');
+        syncActiveEngineChip();
         searchInput && searchInput.focus();
       }
     });
@@ -121,14 +152,16 @@
         handleSearch(searchInput.value);
       } else if (searchInput) {
         searchInput.focus();
-        searchInput.placeholder = 'Ask AI assistant anything...';
+        searchInput.placeholder = 'Search the web, @yt, @gh, or @w...';
       }
     });
   }
 
   // Keyboard shortcut '/' to focus search
   window.addEventListener('keydown', (e) => {
-    if (e.key === '/' && document.activeElement !== searchInput && document.activeElement !== scratchpad) {
+    const active = document.activeElement;
+    const isTyping = active === searchInput || active === scratchpad || active === weatherCityInput;
+    if (e.key === '/' && !isTyping) {
       e.preventDefault();
       if (searchInput) {
         searchInput.focus();
@@ -171,7 +204,6 @@
       speedDialGrid.appendChild(a);
     });
 
-    // Add dial button
     const addBtn = document.createElement('button');
     addBtn.className = 'dial-pill add-btn';
     addBtn.title = 'Add Site to Speed Dial';
@@ -196,25 +228,49 @@
 
   renderSpeedDials();
 
-  // ── 4. Action Cards Click Handlers ───────────────────────────────────────
+  // ── 4. Action Cards & Left Rail Dock Handlers ────────────────────────────
   document.querySelectorAll('.action-card').forEach((card) => {
     card.addEventListener('click', () => {
       const action = card.dataset.action;
       if (action === 'ai') {
         if (searchInput) {
           searchInput.focus();
-          searchInput.value = '';
-          searchInput.placeholder = 'Ask AI assistant a question or prompt...';
+          searchInput.select();
         }
       } else if (action === 'spaces') {
-        if (window.bridge) window.bridge.send('open_find_bar');
+        window.bridge && window.bridge.send('open_command_palette');
       } else if (action === 'media') {
-        if (window.bridge) window.bridge.send('navigate', { url: 'https://youtube.com' });
+        window.bridge && window.bridge.send('navigate', { url: 'https://youtube.com' });
       } else if (action === 'tools') {
-        if (window.bridge) window.bridge.send('open_find_bar');
+        window.bridge && window.bridge.send('open_settings');
       }
     });
   });
+
+  const dockHome = document.getElementById('dock-btn-home');
+  const dockApps = document.getElementById('dock-btn-apps');
+  const dockSpaces = document.getElementById('dock-btn-spaces');
+  const dockAi = document.getElementById('dock-btn-ai');
+  const dockBookmarks = document.getElementById('dock-btn-bookmarks');
+  const dockHistory = document.getElementById('dock-btn-history');
+  const dockDownloads = document.getElementById('dock-btn-downloads');
+  const dockSettings = document.getElementById('dock-btn-settings');
+
+  if (dockHome && searchInput) dockHome.addEventListener('click', () => searchInput.focus());
+  if (dockAi && searchInput) dockAi.addEventListener('click', () => searchInput.focus());
+  if (dockApps) dockApps.addEventListener('click', () => window.bridge && window.bridge.send('open_command_palette'));
+  if (dockSpaces) {
+    dockSpaces.addEventListener('click', () => {
+      const current = (window.Settings && window.Settings.get('tabs_layout')) || 'horizontal';
+      const next = current === 'vertical' ? 'horizontal' : 'vertical';
+      if (window.Settings) window.Settings.data.tabs_layout = next;
+      window.bridge && window.bridge.send('set_setting', { key: 'tabs_layout', value: next });
+    });
+  }
+  if (dockBookmarks) dockBookmarks.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'bookmarks' }));
+  if (dockHistory) dockHistory.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'history' }));
+  if (dockDownloads) dockDownloads.addEventListener('click', () => window.bridge && window.bridge.send('open_side_panel', { panel: 'downloads' }));
+  if (dockSettings) dockSettings.addEventListener('click', () => window.bridge && window.bridge.send('open_settings'));
 
   // ── 5. Quick Notes Checklist ─────────────────────────────────────────────
   function loadNotes() {
@@ -272,7 +328,6 @@
 
   renderNotes();
 
-  // Scratchpad
   if (scratchpad) {
     scratchpad.value = localStorage.getItem('rusty_scratchpad') || '';
     scratchpad.addEventListener('input', () => {
@@ -348,38 +403,240 @@
 
   updateTimerDisplay();
 
-  // ── 7. System Monitor Live Telemetry ─────────────────────────────────────
-  function updateTelemetry(mem) {
-    if (!cpuVal || !ramVal) return;
-    const randCpu = Math.floor(10 + Math.random() * 8);
-    const randGpu = Math.floor(4 + Math.random() * 5);
-    const ramUsage = mem && mem.total_mb ? Math.min(100, Math.round((mem.total_mb / 236.0) * 100)) : 38;
+  // ── 7. Live Weather Widget (Real data pushed from Rust) ──────────────────
+  const WEATHER_CACHE_KEY = 'rusty_weather_cache_v1';
 
-    cpuVal.textContent = `${randCpu}%`;
-    gpuVal.textContent = `${randGpu}%`;
-    ramVal.textContent = `${ramUsage}%`;
-    if (ramFill) ramFill.style.width = `${ramUsage}%`;
+  function renderWeatherData(data) {
+    if (!data || typeof data.temperature_c !== 'number') return;
+    if (weatherTemp) weatherTemp.textContent = `${Math.round(data.temperature_c)}°C`;
+    if (weatherCondition) weatherCondition.textContent = data.condition || '';
+    if (weatherLocation) weatherLocation.textContent = data.location || 'Local Area';
+    if (weatherMeta) {
+      const hum = typeof data.humidity === 'number' ? `${data.humidity}% humidity` : '';
+      const wind = typeof data.wind_kmh === 'number' ? `${Math.round(data.wind_kmh)} km/h wind` : '';
+      weatherMeta.textContent = [hum, wind].filter(Boolean).join(' • ');
+    }
+    if (weatherIcon && window.Icons) {
+      const iconKey = data.icon || 'weather';
+      weatherIcon.innerHTML = window.Icons.get(iconKey, '', 22);
+    }
+    if (typeof data.query === 'string') {
+      savedWeatherQuery = data.query;
+    }
   }
 
-  setInterval(() => updateTelemetry(null), 3000);
+  try {
+    const cachedRaw = localStorage.getItem(WEATHER_CACHE_KEY);
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      renderWeatherData(cached);
+    }
+  } catch (_) {}
+
+  if (weatherCard) {
+    weatherCard.addEventListener('click', (e) => {
+      if (
+        (weatherCityForm && weatherCityForm.contains(e.target)) ||
+        (btnWeatherRefresh && btnWeatherRefresh.contains(e.target))
+      ) {
+        return;
+      }
+      if (weatherCityForm) {
+        const isOpen = weatherCityForm.classList.toggle('open');
+        if (isOpen && weatherCityInput) {
+          weatherCityInput.value = savedWeatherQuery || '';
+          weatherCityInput.focus();
+          weatherCityInput.select();
+        }
+      }
+    });
+  }
+
+  if (btnWeatherRefresh) {
+    btnWeatherRefresh.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (weatherCondition) weatherCondition.textContent = 'Refreshing...';
+      if (window.bridge) {
+        window.bridge.send('fetch_weather', { location: savedWeatherQuery || '', force: true });
+      }
+    });
+  }
+
+  if (weatherCityForm) {
+    weatherCityForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rawCity = weatherCityInput ? weatherCityInput.value.trim() : '';
+      const query = rawCity.toLowerCase() === 'auto' ? '' : rawCity;
+      savedWeatherQuery = query;
+      if (weatherCondition) weatherCondition.textContent = 'Updating...';
+      if (weatherLocation) weatherLocation.textContent = query ? `Searching ${query}...` : 'Detecting location...';
+      weatherCityForm.classList.remove('open');
+      if (window.bridge) {
+        window.bridge.send('set_setting', { key: 'weather_location', value: query });
+        window.bridge.send('fetch_weather', { location: query, force: true });
+      }
+    });
+  }
+
+  if (weatherCityInput) {
+    weatherCityInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && weatherCityForm) {
+        weatherCityForm.classList.remove('open');
+        weatherCityInput.blur();
+      }
+    });
+  }
+
+  // ── 8. System Monitor (100% Real Windows OS Telemetry) ───────────────────
+  const MAX_SPARK_POINTS = 24;
+  const cpuHistory = [];
+  const gpuHistory = [];
+  let lastBrowserMb = null;
+  let lastSysRamText = '';
+
+  function buildSparkPath(values) {
+    if (!values || values.length === 0) return 'M0,18 L100,18';
+    if (values.length === 1) {
+      const y = (18 - (Math.max(0, Math.min(100, values[0])) / 100) * 16).toFixed(1);
+      return `M0,${y} L100,${y}`;
+    }
+    const stepX = 100 / (values.length - 1);
+    return values
+      .map((val, idx) => {
+        const x = (idx * stepX).toFixed(1);
+        const clamped = Math.max(0, Math.min(100, val));
+        const y = (18 - (clamped / 100) * 16).toFixed(1);
+        return `${idx === 0 ? 'M' : 'L'}${x},${y}`;
+      })
+      .join(' ');
+  }
+
+  function formatNetRate(kbps) {
+    if (typeof kbps !== 'number' || !Number.isFinite(kbps) || kbps < 0) return 'Net --';
+    if (kbps >= 1024) return `Net ${(kbps / 1024).toFixed(1)} MB/s`;
+    return `Net ${Math.round(kbps)} KB/s`;
+  }
+
+  function updateAppMemLine() {
+    if (!monitorAppMem) return;
+    const appPart = typeof lastBrowserMb === 'number' ? `App ${Math.round(lastBrowserMb)} MB` : 'App -- MB';
+    monitorAppMem.textContent = lastSysRamText ? `${appPart} • ${lastSysRamText}` : appPart;
+  }
+
+  function handleTelemetryStats(snap) {
+    if (!snap || typeof snap !== 'object') return;
+
+    if (typeof snap.sys_cpu_percent === 'number') {
+      const cpuPct = Math.round(snap.sys_cpu_percent);
+      if (cpuVal) cpuVal.textContent = `${cpuPct}%`;
+      cpuHistory.push(snap.sys_cpu_percent);
+      if (cpuHistory.length > MAX_SPARK_POINTS) cpuHistory.shift();
+      if (cpuSparkPath) cpuSparkPath.setAttribute('d', buildSparkPath(cpuHistory));
+    }
+
+    if (typeof snap.sys_ram_percent === 'number') {
+      const ramPct = Math.max(0, Math.min(100, Math.round(snap.sys_ram_percent)));
+      if (ramVal) ramVal.textContent = `${ramPct}%`;
+      if (ramFill) ramFill.style.width = `${ramPct}%`;
+    }
+
+    if (typeof snap.sys_gpu_percent === 'number') {
+      const gpuPct = Math.round(snap.sys_gpu_percent);
+      if (gpuVal) gpuVal.textContent = `${gpuPct}%`;
+      gpuHistory.push(snap.sys_gpu_percent);
+      if (gpuHistory.length > MAX_SPARK_POINTS) gpuHistory.shift();
+      if (gpuSparkPath) gpuSparkPath.setAttribute('d', buildSparkPath(gpuHistory));
+    } else if (snap.sys_gpu_percent === null) {
+      if (gpuVal) gpuVal.textContent = 'N/A';
+      if (gpuSparkPath) gpuSparkPath.setAttribute('d', 'M0,18 L100,18');
+    }
+
+    if (typeof snap.browser_mb === 'number' && snap.browser_mb > 0) {
+      lastBrowserMb = snap.browser_mb;
+    }
+    if (typeof snap.sys_ram_used_gb === 'number' && typeof snap.sys_ram_total_gb === 'number' && snap.sys_ram_total_gb > 0) {
+      lastSysRamText = `${snap.sys_ram_used_gb.toFixed(1)}/${snap.sys_ram_total_gb.toFixed(0)} GB`;
+    }
+    updateAppMemLine();
+
+    if (monitorNetSpeed) {
+      monitorNetSpeed.textContent = formatNetRate(snap.net_kbps);
+    }
+  }
+
+  function handleMemoryStats(mem) {
+    if (!mem || typeof mem.total_mb !== 'number') return;
+    lastBrowserMb = mem.total_mb;
+    updateAppMemLine();
+  }
+
+  // ── 9. Host IPC Listeners (Settings sync, Weather, Telemetry) ────────────
+  function applyNtpSettings(s) {
+    if (!s || typeof s !== 'object') return;
+    if (window.Settings && typeof window.Settings.syncFromHost === 'function') {
+      window.Settings.syncFromHost(s);
+    }
+    if (s.theme) {
+      document.documentElement.setAttribute('data-theme', s.theme);
+    }
+    if (window.__applyAccentCss) {
+      window.__applyAccentCss(s.use_custom_accent && s.custom_accent ? s.custom_accent : null);
+    }
+    if (s.default_search && ENGINES[s.default_search]) {
+      activeEngine = s.default_search;
+      syncActiveEngineChip();
+    }
+    if (typeof s.weather_location === 'string') {
+      savedWeatherQuery = s.weather_location;
+    }
+    if (elWidgetClock && s.ntp_show_clock !== undefined) {
+      elWidgetClock.style.display = s.ntp_show_clock ? '' : 'none';
+    }
+    if (elBrandHero && s.ntp_show_greeting !== undefined) {
+      elBrandHero.style.display = s.ntp_show_greeting ? '' : 'none';
+    }
+    if (elSpeedDialSec && s.ntp_show_speed_dial !== undefined) {
+      elSpeedDialSec.style.display = s.ntp_show_speed_dial ? '' : 'none';
+    }
+    if (elWidgetNotes && s.ntp_show_notes !== undefined) {
+      elWidgetNotes.style.display = s.ntp_show_notes ? '' : 'none';
+    }
+    if (weatherCard && s.ntp_show_weather !== undefined) {
+      weatherCard.style.display = s.ntp_show_weather ? '' : 'none';
+    }
+  }
+
+  if (window.Settings && window.Settings.data) {
+    applyNtpSettings(window.Settings.data);
+  }
 
   if (window.bridge) {
-    window.bridge.on('memory_stats', updateTelemetry);
+    window.bridge.on('telemetry_stats', handleTelemetryStats);
+    window.bridge.on('memory_stats', handleMemoryStats);
+    window.bridge.on('ui_settings_sync', (data) => {
+      if (data && data.settings) {
+        applyNtpSettings(data.settings);
+      }
+    });
+    window.bridge.on('weather_update', (data) => {
+      try {
+        localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
+      } catch (_) {}
+      renderWeatherData(data);
+    });
+    window.bridge.on('weather_error', (err) => {
+      const msg = (err && err.message) ? err.message : 'Weather unavailable';
+      if (weatherCondition) weatherCondition.textContent = 'Offline';
+      if (weatherMeta) weatherMeta.textContent = msg;
+    });
   }
 
-  // ── 8. Workspaces selector in Left Rail ───────────────────────────────────
+  // ── 10. Workspaces selector in Left Rail ──────────────────────────────────
   document.querySelectorAll('.workspace-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('.workspace-chip').forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
     });
   });
-
-  // Dock settings button opens browser settings
-  const dockSettings = document.getElementById('dock-btn-settings');
-  if (dockSettings && window.bridge) {
-    dockSettings.addEventListener('click', () => {
-      window.bridge.send('open_find_bar');
-    });
-  }
 })();

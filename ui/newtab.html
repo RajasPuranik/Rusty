@@ -24,14 +24,14 @@
     <aside class="ntp-left-rail">
       <!-- Icon dock -->
       <nav class="dock-icons">
-        <button class="dock-btn active" title="Home"><script>document.write(window.Icons.get('home', '', 18));</script></button>
-        <button class="dock-btn" title="Apps"><script>document.write(window.Icons.get('grid', '', 18));</script></button>
-        <button class="dock-btn" title="Spaces"><script>document.write(window.Icons.get('layers', '', 18));</script></button>
-        <button class="dock-btn ai-badge" title="AI Assistant"><script>document.write(window.Icons.get('cpu', '', 18));</script></button>
-        <button class="dock-btn" title="Gaming"><script>document.write(window.Icons.get('gamepad', '', 18));</script></button>
-        <button class="dock-btn" title="Projects"><script>document.write(window.Icons.get('briefcase', '', 18));</script></button>
-        <button class="dock-btn" title="Tools"><script>document.write(window.Icons.get('box', '', 18));</script></button>
-        <button class="dock-btn" title="Settings" id="dock-btn-settings"><script>document.write(window.Icons.get('settings', '', 18));</script></button>
+        <button class="dock-btn active" id="dock-btn-home" title="Focus Search (/)"><script>document.write(window.Icons.get('home', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-apps" title="Command Palette (Ctrl+K)"><script>document.write(window.Icons.get('command', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-spaces" title="Toggle Vertical Tabs (Ctrl+Shift+V)"><script>document.write(window.Icons.get('vertical-tabs', '', 18));</script></button>
+        <button class="dock-btn ai-badge" id="dock-btn-ai" title="Search / AI Prompt"><script>document.write(window.Icons.get('sparkles', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-bookmarks" title="Bookmarks Panel"><script>document.write(window.Icons.get('bookmark', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-history" title="History Panel (Ctrl+H)"><script>document.write(window.Icons.get('history', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-downloads" title="Downloads Panel (Ctrl+J)"><script>document.write(window.Icons.get('download', '', 18));</script></button>
+        <button class="dock-btn" id="dock-btn-settings" title="Settings (Ctrl+,)"><script>document.write(window.Icons.get('settings', '', 18));</script></button>
       </nav>
 
       <!-- Workspaces List -->
@@ -49,7 +49,7 @@
         </div>
       </div>
 
-      <!-- Glowing planet decoration at bottom -->
+      <!-- Glowing planet decoration at bottom (Crazy skin) -->
       <div class="planet-decoration">
         <div class="planet-sphere"></div>
       </div>
@@ -58,7 +58,7 @@
     <!-- ── Center Stage: Hero, Search, Dials, & Feature Cards ──────── -->
     <main class="ntp-center">
       <!-- Hero Brand -->
-      <header class="brand-hero">
+      <header class="brand-hero" id="brand-hero">
         <div class="brand-logo-wrap">
           <img src="assets/logo.svg" alt="Rusty Browser" class="brand-logo-img">
           <h1 class="brand-title">Rusty Browser</h1>
@@ -70,8 +70,8 @@
       <section class="search-section">
         <div class="search-box glow-conic-box">
           <span class="search-icon"><script>document.write(window.Icons.get('search', '', 18));</script></span>
-          <input id="search-input" class="search-input" type="text" placeholder="Search the web, ask AI, or run a command..." autocomplete="off" spellcheck="false" autofocus>
-          <button class="btn-ai-sparkle" id="btn-search-ai" title="AI Command Prompt"><script>document.write(window.Icons.get('sparkles', '', 16));</script></button>
+          <input id="search-input" class="search-input" type="text" placeholder="Search the web or enter a URL..." autocomplete="off" spellcheck="false" autofocus>
+          <button class="btn-ai-sparkle" id="btn-search-ai" title="Search Prompt"><script>document.write(window.Icons.get('sparkles', '', 16));</script></button>
           <span class="search-key-badge">/</span>
         </div>
 
@@ -87,7 +87,7 @@
       </section>
 
       <!-- Speed Dial Pill Row -->
-      <section class="speed-dial-section">
+      <section class="speed-dial-section" id="speed-dial-section">
         <div id="speed-dial-grid" class="speed-dial-row"></div>
       </section>
 
@@ -96,29 +96,29 @@
         <div class="action-card" data-action="ai">
           <div class="action-card-icon icon-ai"><script>document.write(window.Icons.get('sparkles', '', 18));</script></div>
           <div class="action-card-text">
-            <div class="action-card-title">AI Assistant</div>
-            <div class="action-card-desc">Summarize, explain, write, create or automate...</div>
+            <div class="action-card-title">Quick Search</div>
+            <div class="action-card-desc">Jump to search, @yt, @gh, or @w shortcuts</div>
           </div>
         </div>
         <div class="action-card" data-action="spaces">
           <div class="action-card-icon icon-spaces"><script>document.write(window.Icons.get('layers', '', 18));</script></div>
           <div class="action-card-text">
-            <div class="action-card-title">Spaces</div>
-            <div class="action-card-desc">Organize tabs, tools and projects</div>
+            <div class="action-card-title">Command Palette</div>
+            <div class="action-card-desc">Switch skins, themes, tabs, and actions</div>
           </div>
         </div>
         <div class="action-card" data-action="media">
           <div class="action-card-icon icon-media"><script>document.write(window.Icons.get('play', '', 16));</script></div>
           <div class="action-card-text">
             <div class="action-card-title">Media Hub</div>
-            <div class="action-card-desc">Videos, music, downloads & more</div>
+            <div class="action-card-desc">Videos, streams, music & downloads</div>
           </div>
         </div>
         <div class="action-card" data-action="tools">
-          <div class="action-card-icon icon-tools"><script>document.write(window.Icons.get('box', '', 18));</script></div>
+          <div class="action-card-icon icon-tools"><script>document.write(window.Icons.get('settings', '', 18));</script></div>
           <div class="action-card-text">
-            <div class="action-card-title">Tools</div>
-            <div class="action-card-desc">Image, PDF, Code, Converters & utilities</div>
+            <div class="action-card-title">Customize UI</div>
+            <div class="action-card-desc">Skins, effects intensity, memory saver</div>
           </div>
         </div>
       </section>
@@ -126,30 +126,42 @@
 
     <!-- ── Right Rail: Widgets Dashboard ───────────────────────────── -->
     <aside class="ntp-right-rail">
-      <!-- Clock Card with Planet Graphic -->
-      <div class="widget-card widget-clock-card">
+      <!-- Clock Card -->
+      <div class="widget-card widget-clock-card" id="widget-clock">
         <div class="clock-display">
-          <div id="clock-time" class="clock-time">02:14 <span class="clock-ampm">AM</span></div>
-          <div id="clock-date" class="clock-date">Sat, Nov 7</div>
+          <div id="clock-time" class="clock-time">--:-- <span class="clock-ampm">--</span></div>
+          <div id="clock-date" class="clock-date">Loading date...</div>
         </div>
         <div class="clock-planet-graphic"></div>
       </div>
 
-      <!-- Weather Card (Placeholder) -->
-      <!-- /* PLACEHOLDER: weather widget data source */ -->
-      <div class="widget-card widget-weather-card">
-        <div class="weather-left">
-          <span class="weather-icon-wrap"><script>document.write(window.Icons.get('weather', '', 20));</script></span>
-          <div>
-            <div class="weather-temp" id="weather-temp">24°C</div>
-            <div class="weather-location" id="weather-location">Indore</div>
+      <!-- Live Weather Card -->
+      <div class="widget-card widget-weather-card" id="widget-weather" title="Click to change city">
+        <div class="weather-main-row">
+          <div class="weather-left">
+            <span class="weather-icon-wrap" id="weather-icon"><script>document.write(window.Icons.get('weather', '', 22));</script></span>
+            <div style="min-width: 0; flex: 1;">
+              <div class="weather-temp-row">
+                <span class="weather-temp" id="weather-temp">--°C</span>
+                <span class="weather-condition" id="weather-condition">Updating...</span>
+              </div>
+              <div class="weather-location" id="weather-location">Detecting location...</div>
+              <div class="weather-meta" id="weather-meta"></div>
+            </div>
+          </div>
+          <div class="weather-actions">
+            <button class="btn-icon-xs" id="btn-weather-refresh" type="button" title="Refresh weather"><script>document.write(window.Icons.get('reload', '', 12));</script></button>
+            <span class="weather-chevron" title="Set city"><script>document.write(window.Icons.get('chevron-right', '', 14));</script></span>
           </div>
         </div>
-        <span class="weather-chevron"><script>document.write(window.Icons.get('chevron-right', '', 14));</script></span>
+        <form class="weather-city-form" id="weather-city-form">
+          <input id="weather-city-input" class="weather-city-input" type="text" placeholder="City name or 'auto'..." autocomplete="off" spellcheck="false">
+          <button type="submit" class="weather-city-save">Set</button>
+        </form>
       </div>
 
       <!-- Quick Notes Checklist Card -->
-      <div class="widget-card widget-notes-card">
+      <div class="widget-card widget-notes-card" id="widget-notes">
         <div class="widget-header">
           <div class="widget-title-wrap">
             <span class="widget-icon text-orange"><script>document.write(window.Icons.get('pencil', '', 14));</script></span>
@@ -164,7 +176,7 @@
       </div>
 
       <!-- Focus / Pomodoro Timer Card -->
-      <div class="widget-card widget-focus-card">
+      <div class="widget-card widget-focus-card" id="widget-focus">
         <div class="widget-header">
           <div class="widget-title-wrap">
             <span class="widget-icon text-orange"><script>document.write(window.Icons.get('target', '', 14));</script></span>
@@ -183,36 +195,40 @@
         </div>
       </div>
 
-      <!-- System Monitor Card -->
-      <div class="widget-card widget-monitor-card">
+      <!-- System Monitor Card (Live OS Telemetry from Rust) -->
+      <div class="widget-card widget-monitor-card" id="widget-monitor">
         <div class="widget-header">
           <div class="widget-title-wrap">
             <span class="widget-icon text-orange"><script>document.write(window.Icons.get('activity', '', 14));</script></span>
             <span class="widget-title">System Monitor</span>
           </div>
-          <span class="chevron-xs"><script>document.write(window.Icons.get('chevron-right', '', 12));</script></span>
+          <span class="chevron-xs" title="Real Windows OS Telemetry"><script>document.write(window.Icons.get('cpu', '', 12));</script></span>
         </div>
         <div class="monitor-metrics">
           <div class="monitor-row">
             <span class="monitor-label">CPU</span>
             <svg class="sparkline-svg" viewBox="0 0 100 20" id="cpu-sparkline">
-              <path d="M0,15 Q20,5 40,12 T80,8 T100,10" fill="none" stroke="#38bdf8" stroke-width="2"/>
+              <path id="cpu-spark-path" d="M0,18 L100,18" fill="none" stroke="var(--accent-secondary)" stroke-width="1.8"/>
             </svg>
-            <span class="monitor-value" id="cpu-val">12%</span>
+            <span class="monitor-value" id="cpu-val">--%</span>
           </div>
           <div class="monitor-row">
             <span class="monitor-label">RAM</span>
             <div class="progress-bar-wrap">
-              <div class="progress-bar-fill" id="ram-fill" style="width: 38%;"></div>
+              <div class="progress-bar-fill" id="ram-fill" style="width: 0%;"></div>
             </div>
-            <span class="monitor-value" id="ram-val">38%</span>
+            <span class="monitor-value" id="ram-val">--%</span>
           </div>
           <div class="monitor-row">
             <span class="monitor-label">GPU</span>
             <svg class="sparkline-svg" viewBox="0 0 100 20" id="gpu-sparkline">
-              <path d="M0,18 Q25,10 50,16 T75,4 T100,14" fill="none" stroke="#34d399" stroke-width="2"/>
+              <path id="gpu-spark-path" d="M0,18 L100,18" fill="none" stroke="var(--accent-primary)" stroke-width="1.8"/>
             </svg>
-            <span class="monitor-value" id="gpu-val">6%</span>
+            <span class="monitor-value" id="gpu-val">--%</span>
+          </div>
+          <div class="monitor-subrow">
+            <span id="monitor-app-mem">App -- MB</span>
+            <span id="monitor-net-speed">Net --</span>
           </div>
         </div>
       </div>
