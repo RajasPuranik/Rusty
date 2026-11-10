@@ -70,4 +70,23 @@ test('Milestone R5: Visual Skins (Softer Dark & Mayank White) Suite', async (t) 
     assert.ok(indexHtml.includes('skin-card-mayank'), 'Renders Mayank White skin card in Settings');
     assert.ok(indexHtml.includes('setting-accent-palette'), 'Renders Accent Palette selector in Settings');
   });
+
+  await t.test('Feature: Theme Persistence & Full Page Background Color Synchronization', () => {
+    const bootJs = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'js', 'boot.js'), 'utf8');
+    assert.ok(bootJs.includes("save_settings") && bootJs.includes("switchTheme"), 'switchTheme sends save_settings to bridge');
+    assert.ok(bootJs.includes("save_settings") && bootJs.includes("switchPalette"), 'switchPalette sends save_settings to bridge');
+
+    const settingsJs = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'js', 'settings.js'), 'utf8');
+    assert.ok(settingsJs.includes("root.bridge.send('save_settings'"), 'SettingsStore.setMany dispatches save_settings to bridge');
+
+    const newtabJs = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'js', 'newtab.js'), 'utf8');
+    assert.ok(newtabJs.includes("applyNtpSettings(s, false)"), 'newtab.js updates NTP theme on settings-changed');
+
+    const themesCss = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'css', 'themes.css'), 'utf8');
+    // Ensure all 12 themes define distinct bg-canvas values
+    const themes = ['midnight', 'light', 'amoled', 'aurora', 'cyberpunk', 'sunset', 'matcha', 'sakura', 'graphite', 'slate', 'mocha', 'midnight_blue'];
+    for (const thm of themes) {
+      assert.ok(themesCss.includes(`[data-theme="${thm}"]`), `themes.css defines selector for theme ${thm}`);
+    }
+  });
 });

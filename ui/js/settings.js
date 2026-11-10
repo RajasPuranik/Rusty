@@ -132,16 +132,8 @@
     }
 
     setMany(obj) {
-      const delta = {};
-      let changed = false;
-      for (const [k, v] of Object.entries(obj)) {
-        if (this.data[k] !== v) {
-          this.data[k] = v;
-          delta[k] = v;
-          changed = true;
-        }
-      }
-      if (!changed) return;
+      if (!obj || typeof obj !== 'object') return;
+      Object.assign(this.data, obj);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
       } catch (e) {
@@ -150,8 +142,8 @@
       if (root.BOOT_SETTINGS) {
         Object.assign(root.BOOT_SETTINGS, this.data);
       }
-      if (root.bridge) {
-        root.bridge.send('save_settings', { settings: delta });
+      if (root.bridge && typeof root.bridge.send === 'function') {
+        root.bridge.send('save_settings', { settings: obj });
       }
       this.notify();
     }

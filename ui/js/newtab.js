@@ -1465,9 +1465,9 @@
   }
 
   // ── 9. Host IPC Listeners (Settings sync, Weather, Telemetry) ────────────
-  function applyNtpSettings(s) {
+  function applyNtpSettings(s, fromHost = true) {
     if (!s || typeof s !== 'object') return;
-    if (window.Settings && typeof window.Settings.syncFromHost === 'function') {
+    if (fromHost && window.Settings && typeof window.Settings.syncFromHost === 'function') {
       window.Settings.syncFromHost(s);
     }
     if (s.theme) {
@@ -1549,10 +1549,14 @@
   }
 
   if (window.Settings && window.Settings.data) {
-    applyNtpSettings(window.Settings.data);
+    applyNtpSettings(window.Settings.data, false);
   }
 
-  window.addEventListener('settings-changed', () => {
+  window.addEventListener('settings-changed', (e) => {
+    const s = (e && e.detail) || (window.Settings && window.Settings.data);
+    if (s) {
+      applyNtpSettings(s, false);
+    }
     renderEngineChips();
     renderWorldClocks();
   });

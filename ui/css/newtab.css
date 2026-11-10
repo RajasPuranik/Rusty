@@ -25,20 +25,26 @@ body.ntp-body {
 [data-skin="crazy"] body.ntp-body {
   background-color: var(--bg-canvas);
   background-image:
-    radial-gradient(ellipse 65% 50% at 15% 15%, var(--accent-highlight), transparent 70%),
-    radial-gradient(ellipse 55% 45% at 85% 85%, color-mix(in srgb, var(--accent-secondary) 16%, transparent), transparent 70%),
-    radial-gradient(circle at 50% 45%, var(--bg-primary) 0%, var(--bg-canvas) 100%);
+    radial-gradient(ellipse 75% 55% at 15% 15%, var(--accent-highlight), transparent 72%),
+    radial-gradient(ellipse 65% 50% at 85% 85%, color-mix(in srgb, var(--accent-secondary) 24%, transparent), transparent 70%),
+    radial-gradient(circle at 50% 40%, var(--bg-primary) 0%, var(--bg-canvas) 100%);
   background-attachment: fixed;
+  transition: background-color 0.25s ease;
 }
 
 [data-skin="minimal"] body.ntp-body {
   background: var(--bg-canvas);
+  transition: background-color 0.25s ease;
 }
 
 [data-skin="mayank"] body.ntp-body {
   background-color: var(--bg-primary) !important;
-  background-image: none !important;
+  background-image:
+    radial-gradient(ellipse 70% 50% at 15% 10%, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 65%),
+    radial-gradient(ellipse 60% 45% at 85% 90%, color-mix(in srgb, var(--accent-secondary) 10%, transparent), transparent 65%) !important;
+  background-attachment: fixed;
   color: var(--text-primary);
+  transition: background-color 0.25s ease;
 }
 
 [data-theme="amoled"] body.ntp-body {

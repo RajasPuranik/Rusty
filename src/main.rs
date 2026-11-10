@@ -3540,7 +3540,7 @@ fn main() -> Result<()> {
                                     "type": "ui_settings_sync",
                                     "settings": storage.settings().to_ui_json(),
                                 });
-                                eval_on_webview(&chrome_wv, &sync_msg);
+                                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &sync_msg);
                             } else {
                                 let sync_msg = json!({
                                     "type": "ui_settings_sync",

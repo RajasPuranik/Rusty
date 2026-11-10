@@ -220,9 +220,13 @@
       window.history.replaceState(null, '', nextUrl.toString());
     } catch (_) {}
 
-    if (window.Settings && typeof window.Settings.setMany === 'function') {
-      window.Settings.setMany({ accent_palette: newPalette, theme: newPalette, use_custom_accent: false });
-    } else if (window.bridge && typeof window.bridge.send === 'function') {
+    const payload = { accent_palette: newPalette, theme: newPalette, use_custom_accent: false };
+    if (window.Settings) {
+      Object.assign(window.Settings.data, payload);
+      window.Settings.notify();
+    }
+    if (window.bridge && typeof window.bridge.send === 'function') {
+      window.bridge.send('save_settings', { settings: payload });
       window.bridge.send('set_setting', { key: 'accent_palette', value: newPalette });
       window.bridge.send('set_setting', { key: 'theme', value: newPalette });
     }
@@ -252,9 +256,12 @@
     if (newTheme === 'graphite' || newTheme === 'slate' || newTheme === 'mocha' || newTheme === 'midnight_blue') {
       payload.accent_palette = newTheme;
     }
-    if (window.Settings && typeof window.Settings.setMany === 'function') {
-      window.Settings.setMany(payload);
-    } else if (window.bridge && typeof window.bridge.send === 'function') {
+    if (window.Settings) {
+      Object.assign(window.Settings.data, payload);
+      window.Settings.notify();
+    }
+    if (window.bridge && typeof window.bridge.send === 'function') {
+      window.bridge.send('save_settings', { settings: payload });
       window.bridge.send('set_setting', { key: 'theme', value: newTheme });
       if (payload.accent_palette) {
         window.bridge.send('set_setting', { key: 'accent_palette', value: payload.accent_palette });
