@@ -1478,7 +1478,7 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
     let focus_init = format!("window.__RUSTY_FOCUS_STATE__ = {focus_state_json};\n");
     let yt_focus_js = ui::app_protocol::get_youtube_focus_script();
     let userscripts_js = extensions::build_userscripts_injection_js(userscripts, is_vault);
-    let combined_script = format!("{init_core}\n{focus_init}\n{yt_focus_js}\n{scroll_restore}\n{userscripts_js}");
+    let combined_script = format!("{focus_init}\n{init_core}\n{yt_focus_js}\n{scroll_restore}\n{userscripts_js}");
 
     #[cfg(not(target_os = "windows"))]
     let _ = shared_webview;
@@ -4738,6 +4738,18 @@ fn run_browser() -> Result<()> {
                 }
                 if is_external {
                     emit_pet_event(&chrome_wv, &tabs, &content_webviews, &mut storage, "page_loading");
+                    if url.contains("youtube.com") {
+                        if let Ok(fm) = global_focus_manager().lock() {
+                            let focus_msg = json!({
+                                "type": "focus_state_changed",
+                                "state": fm.state()
+                            });
+                            if let Some(wv) = content_webviews.get(&tab_id) {
+                                let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                                let _ = wv.evaluate_script(&js);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -4761,7 +4773,7 @@ fn run_browser() -> Result<()> {
                                         storage.record_history(&clean_url, &tab.title);
                                     }
                                 } else if tab.url != clean_url {
-                                    tab.url = clean_url;
+                                    tab.url = clean_url.clone();
                                 }
                             }
                         }
@@ -4775,6 +4787,16 @@ fn run_browser() -> Result<()> {
                                 is_incognito,
                                 &split,
                             );
+                        }
+                        if clean_url.contains("youtube.com") {
+                            if let Ok(fm) = global_focus_manager().lock() {
+                                let focus_msg = json!({
+                                    "type": "focus_state_changed",
+                                    "state": fm.state()
+                                });
+                                let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                                let _ = wv.evaluate_script(&js);
+                            }
                         }
                     }
                 }

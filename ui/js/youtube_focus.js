@@ -78,15 +78,29 @@
   ];
 
   // 3. Classification Helper
+  function matchKeyword(text, keyword) {
+    if (keyword.length <= 4) {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(^|[^a-zA-Z0-9])${escaped}([^a-zA-Z0-9]|$)`, 'i');
+      return regex.test(text);
+    }
+    return text.toLowerCase().includes(keyword.toLowerCase());
+  }
+
   function evaluateVideo(text, links) {
     const t = (text || '').toLowerCase();
     const l = (links || '').toLowerCase();
+
+    // Check Shorts first
+    if (l.includes('/shorts/')) {
+      return { allowed: false, reason: 'shorts' };
+    }
 
     // Check Gaming first: any gaming reference -> block immediately
     let isGaming = l.includes('/gaming');
     if (!isGaming) {
       for (let i = 0; i < GAMING_KEYWORDS.length; i++) {
-        if (t.includes(GAMING_KEYWORDS[i])) {
+        if (matchKeyword(t, GAMING_KEYWORDS[i])) {
           isGaming = true;
           break;
         }
@@ -100,7 +114,7 @@
     // Check Educational
     let isEducational = false;
     for (let i = 0; i < EDUCATIONAL_KEYWORDS.length; i++) {
-      if (t.includes(EDUCATIONAL_KEYWORDS[i])) {
+      if (matchKeyword(t, EDUCATIONAL_KEYWORDS[i])) {
         isEducational = true;
         break;
       }
@@ -110,7 +124,7 @@
     let isFinance = false;
     if (!isEducational) {
       for (let i = 0; i < FINANCE_KEYWORDS.length; i++) {
-        if (t.includes(FINANCE_KEYWORDS[i])) {
+        if (matchKeyword(t, FINANCE_KEYWORDS[i])) {
           isFinance = true;
           break;
         }
@@ -132,17 +146,27 @@
     if (!style) {
       style = document.createElement('style');
       style.id = STYLE_ID;
-      (document.head || document.documentElement).appendChild(style);
+      const target = document.head || document.documentElement || document.body;
+      if (target) {
+        target.appendChild(style);
+      } else {
+        document.addEventListener('DOMContentLoaded', () => {
+          const t = document.head || document.documentElement || document.body;
+          if (t && !document.getElementById(STYLE_ID)) t.appendChild(style);
+        });
+        return;
+      }
     }
 
     if (isFocusActive()) {
       style.textContent = `
         /* Hide all YouTube Shorts shelves, carousels, cards & buttons */
-        ytd-rich-shelf-renderer[is-shorts],
-        ytd-reel-shelf-renderer,
         ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
         ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
         ytd-rich-section-renderer:has(a[href*="/shorts"]),
+        ytd-rich-shelf-renderer,
+        ytd-reel-shelf-renderer,
+        ytd-rich-shelf-renderer[is-shorts],
         ytd-rich-item-renderer:has(a[href*="/shorts"]),
         ytd-video-renderer:has(a[href*="/shorts"]),
         ytd-grid-video-renderer:has(a[href*="/shorts"]),
@@ -156,7 +180,8 @@
         ytd-mini-guide-entry-renderer[aria-label="Shorts"],
         ytd-mini-guide-entry-renderer a[href*="/shorts"],
         a#endpoint[title="Shorts"],
-        [data-rusty-shorts="true"] {
+        [data-rusty-shorts="true"],
+        [data-rusty-hidden] {
           display: none !important;
         }
 
@@ -175,8 +200,7 @@
         /* Hide gaming links, gaming chips and filtered items */
         ytd-guide-entry-renderer a[title="Gaming"],
         ytd-guide-entry-renderer a[href*="/gaming"],
-        ytd-mini-guide-entry-renderer[aria-label="Gaming"],
-        [data-rusty-hidden] {
+        ytd-mini-guide-entry-renderer[aria-label="Gaming"] {
           display: none !important;
         }
 
@@ -242,9 +266,18 @@
   function processCard(card) {
     if (!isFocusActive()) {
       if (card.dataset.rustyHidden) {
-        card.style.display = '';
+        card.style.removeProperty('display');
         delete card.dataset.rustyHidden;
       }
+      return;
+    }
+
+    // Check if this card is inside a Shorts shelf or contains a shorts link
+    const isShortsCard = card.querySelector('a[href*="/shorts"]') ||
+                         card.closest('ytd-rich-section-renderer:has(ytd-rich-shelf-renderer), ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, [is-shorts]');
+    if (isShortsCard) {
+      card.style.setProperty('display', 'none', 'important');
+      card.dataset.rustyHidden = 'shorts';
       return;
     }
 
@@ -293,17 +326,34 @@
   ].join(', ');
 
   function blockShortsElements() {
-    // Hide any section, shelf, or card that contains a /shorts/ link or header "Shorts"
-    document.querySelectorAll('ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, ytd-rich-item-renderer, yt-lockup-view-model').forEach((el) => {
-      const hasShorts = el.querySelector('a[href*="/shorts"]') ||
-                        el.querySelector('[is-shorts]') ||
-                        el.querySelector('ytm-shorts-lockup-view-model');
-      const headerEl = el.querySelector('#title, #rich-shelf-header-container, h2, #title-text');
-      const header = (headerEl ? headerEl.textContent : '').toLowerCase();
-      if (hasShorts || header.includes('shorts')) {
-        el.style.setProperty('display', 'none', 'important');
-        el.setAttribute('data-rusty-shorts', 'true');
+    const active = isFocusActive();
+    // Hide any section or shelf that contains a /shorts/ link or header "Shorts"
+    document.querySelectorAll('ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model').forEach((el) => {
+      if (active) {
+        const hasShorts = el.querySelector('a[href*="/shorts"]') ||
+                          el.querySelector('[is-shorts]') ||
+                          el.querySelector('ytm-shorts-lockup-view-model') ||
+                          (el.textContent || '').toLowerCase().includes('shorts');
+        if (hasShorts) {
+          el.style.setProperty('display', 'none', 'important');
+          el.setAttribute('data-rusty-shorts', 'true');
+        }
+      } else if (el.getAttribute('data-rusty-shorts') === 'true') {
+        el.style.removeProperty('display');
+        el.removeAttribute('data-rusty-shorts');
       }
+    });
+
+    // Hide sidebar and mini-guide shorts buttons
+    document.querySelectorAll('ytd-guide-entry-renderer a[href*="/shorts"], ytd-mini-guide-entry-renderer a[href*="/shorts"], a#endpoint[title="Shorts"]').forEach((a) => {
+      const entry = a.closest('ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer') || a;
+      if (active) {
+        entry.style.setProperty('display', 'none', 'important');
+      } else {
+        entry.style.removeProperty('display');
+      }
+    });
+  }
     });
 
     // Hide sidebar and mini-guide shorts buttons
