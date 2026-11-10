@@ -587,6 +587,8 @@ enum UserEvent {
     FocusTick,
     /// Toggle Focus Mode session (Study / Inactive).
     ToggleFocus,
+    /// Push current Focus Mode state to a specific content webview.
+    SyncFocusToTab(TabId),
 }
 
 /// Strongly-typed IPC command matching `ui/IPC_CONTRACT.md`.
@@ -966,7 +968,8 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           'split_view',
           'toggle_focus',
           'start_focus',
-          'stop_focus'
+          'stop_focus',
+          'get_focus_state'
       ]);
       window.addEventListener('message', (e) => {
           const data = e && e.data;
@@ -1123,22 +1126,41 @@ const CONTENT_INIT_SCRIPT: &str = r#"
       }, true);
 
       if (IS_TOP) {
-          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves
-          if (location.hostname.includes('youtube.com')) {
-              try {
-                  const s = document.createElement('style');
-                  s.id = 'rusty-early-shorts-hide';
-                  s.textContent = 'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),ytd-rich-section-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model),ytd-video-renderer:has(a[href*="/shorts"]),ytd-grid-video-renderer:has(a[href*="/shorts"]),ytd-compact-video-renderer:has(a[href*="/shorts"]),yt-lockup-view-model:has(a[href*="/shorts"]),ytm-shorts-lockup-view-model,#shorts-container,ytd-reel-video-renderer,ytd-guide-entry-renderer:has(a[href*="/shorts"]),ytd-guide-entry-renderer:has(a[title="Shorts"]),ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer:has(a[href*="/shorts"]),ytd-mini-guide-entry-renderer:has([aria-label="Shorts"]),ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],a#endpoint[title="Shorts"],a[title="Shorts"],[data-rusty-shorts="true"]{display:none!important;}';
-                  (document.head || document.documentElement).appendChild(s);
-              } catch (_) {}
-              const checkShorts = () => {
-                  if (location.pathname.startsWith('/shorts/')) {
-                      const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
-                      if (id) {
-                          location.replace('https://www.youtube.com/watch?v=' + id);
-                      }
+          const isFocusOnNow = () => Boolean(
+              window.__RUSTY_FOCUS_STATE__
+              && window.__RUSTY_FOCUS_STATE__.is_active
+              && !window.__RUSTY_FOCUS_STATE__.is_paused
+          );
+          const checkShorts = () => {
+              if (isFocusOnNow() && location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
+                  const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
+                  if (id) {
+                      location.replace('https://www.youtube.com/watch?v=' + id);
                   }
-              };
+              }
+          };
+
+          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves when Focus Mode is on
+          if (location.hostname.includes('youtube.com')) {
+              postRawIpc(JSON.stringify({ action: 'get_focus_state' }));
+              if (isFocusOnNow()) {
+                  try {
+                      const s = document.createElement('style');
+                      s.id = 'rusty-early-shorts-hide';
+                      s.textContent = [
+                          'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,#shorts-container,ytd-reel-video-renderer,a#endpoint[title="Shorts"],a[title="Shorts"],ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],[data-rusty-shorts="true"]{display:none!important;}',
+                          'ytd-rich-section-renderer:has(ytd-reel-shelf-renderer){display:none!important;}',
+                          'ytd-rich-section-renderer:has(a[href*="/shorts"]){display:none!important;}',
+                          'grid-shelf-view-model:has(a[href*="/shorts"]){display:none!important;}',
+                          'ytd-rich-item-renderer:has(a[href*="/shorts"]){display:none!important;}',
+                          'ytd-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
+                          'ytd-grid-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
+                          'ytd-compact-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
+                          'yt-lockup-view-model:has(a[href*="/shorts"]){display:none!important;}'
+                      ].join('\n');
+                      (document.head || document.documentElement).appendChild(s);
+                  } catch (_) {}
+              }
               checkShorts();
           }
 
@@ -1148,23 +1170,20 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           const origReplace = history.replaceState;
           history.pushState = function () {
               const r = origPush.apply(this, arguments);
-              if (location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
-                  const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
-                  if (id) location.replace('https://www.youtube.com/watch?v=' + id);
-              }
+              checkShorts();
               setTimeout(pingUrl, 0);
               return r;
           };
           history.replaceState = function () {
               const r = origReplace.apply(this, arguments);
-              if (location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
-                  const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
-                  if (id) location.replace('https://www.youtube.com/watch?v=' + id);
-              }
+              checkShorts();
               setTimeout(pingUrl, 0);
               return r;
           };
-          window.addEventListener('popstate', pingUrl);
+          window.addEventListener('popstate', () => {
+              checkShorts();
+              pingUrl();
+          });
           window.addEventListener('hashchange', pingUrl);
       }
   }
@@ -1300,6 +1319,46 @@ fn broadcast_focus_state_to_all(
     let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({msg}); }}");
     for wv in content_webviews.values() {
         let _ = wv.evaluate_script(&js);
+    }
+}
+
+fn enforce_focus_on_open_tabs(tabs: &TabManager, content_webviews: &HashMap<TabId, WebView>) {
+    let mut actions: Vec<(TabId, String)> = Vec::new();
+    if let Ok(fm) = global_focus_manager().lock() {
+        if !fm.state().is_active || fm.state().is_paused {
+            return;
+        }
+        for (tab_id, wv) in content_webviews {
+            let candidate_url = wv
+                .url()
+                .ok()
+                .filter(|u| !u.is_empty())
+                .or_else(|| tabs.get(*tab_id).map(|t| t.url.clone()))
+                .unwrap_or_default();
+            if candidate_url.is_empty() || is_trusted_origin(&candidate_url) || candidate_url.starts_with("about:") {
+                continue;
+            }
+            match fm.check_url(&candidate_url) {
+                focus::FocusDecision::Blocked { mode, domain: _, url: dest_url, remaining_secs } => {
+                    let interstitial_url = format!(
+                        "rusty://app/interstitial.html?url={}&mode={}&remaining={}",
+                        percent_encoding::percent_encode(dest_url.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                        percent_encoding::percent_encode(mode.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                        remaining_secs
+                    );
+                    actions.push((*tab_id, interstitial_url));
+                }
+                focus::FocusDecision::Redirect(redirect_url) => {
+                    actions.push((*tab_id, redirect_url));
+                }
+                focus::FocusDecision::Allowed => {}
+            }
+        }
+    }
+    for (tab_id, target_url) in actions {
+        if let Some(wv) = content_webviews.get(&tab_id) {
+            let _ = wv.load_url(&target_url);
+        }
     }
 }
 
@@ -1521,9 +1580,13 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
                 // Trusted internal page (e.g. newtab.html) - full IPC access
                 let _ = proxy.send_event(UserEvent::ChromeIpc(body));
             } else {
-                // Untrusted external web page: whitelist safe accelerator keys & link clicks only
+                // Untrusted external web page: whitelist safe accelerator keys, link clicks & read-only focus sync only
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
                     if let Some(action) = val.get("action").and_then(|a| a.as_str()) {
+                        if action == "get_focus_state" {
+                            let _ = proxy.send_event(UserEvent::SyncFocusToTab(tab_id));
+                            return;
+                        }
                         if action == "new_tab" {
                             let requested_url = val
                                 .get("url")
@@ -4288,14 +4351,19 @@ fn run_browser() -> Result<()> {
                             );
 
                             if let Some(target_ws) = workspaces.get(&workspace_id) {
-                                if let Ok(mut fm) = global_focus_manager().lock() {
-                                    if let Some(_suggested) = fm.on_workspace_switch(&target_ws.name) {
-                                        let focus_msg = json!({
+                                let focus_msg_opt = if let Ok(mut fm) = global_focus_manager().lock() {
+                                    fm.on_workspace_switch(&target_ws.name).map(|_suggested| {
+                                        json!({
                                             "type": "focus_state_changed",
                                             "state": fm.state()
-                                        });
-                                        broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &focus_msg);
-                                    }
+                                        })
+                                    })
+                                } else {
+                                    None
+                                };
+                                if let Some(focus_msg) = focus_msg_opt {
+                                    broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &focus_msg);
+                                    enforce_focus_on_open_tabs(&tabs, &content_webviews);
                                 }
                             }
                         }
@@ -4488,11 +4556,15 @@ fn run_browser() -> Result<()> {
                             None
                         };
                         if let Some(state) = state_opt {
+                            let active = state.is_active;
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            if active {
+                                enforce_focus_on_open_tabs(&tabs, &content_webviews);
+                            }
                             sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
@@ -4515,6 +4587,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            enforce_focus_on_open_tabs(&tabs, &content_webviews);
                             sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
@@ -4544,11 +4617,15 @@ fn run_browser() -> Result<()> {
                             None
                         };
                         if let Some(state) = state_opt {
+                            let active = state.is_active && !state.is_paused;
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            if active {
+                                enforce_focus_on_open_tabs(&tabs, &content_webviews);
+                            }
                             sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
@@ -4780,6 +4857,24 @@ fn run_browser() -> Result<()> {
                 );
                 if is_external_tab {
                     emit_pet_event(&chrome_wv, &tabs, &content_webviews, &mut storage, "page_loaded");
+                    let is_yt = tabs
+                        .get(tab_id)
+                        .map(|t| t.url.contains("youtube.com"))
+                        .unwrap_or(false);
+                    if is_yt {
+                        let focus_msg_opt = if let Ok(fm) = global_focus_manager().lock() {
+                            Some(json!({
+                                "type": "focus_state_changed",
+                                "state": fm.state()
+                            }))
+                        } else {
+                            None
+                        };
+                        if let (Some(focus_msg), Some(wv)) = (focus_msg_opt, content_webviews.get(&tab_id)) {
+                            let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                            let _ = wv.evaluate_script(&js);
+                        }
+                    }
                 }
             }
 
@@ -4807,15 +4902,17 @@ fn run_browser() -> Result<()> {
                 if is_external {
                     emit_pet_event(&chrome_wv, &tabs, &content_webviews, &mut storage, "page_loading");
                     if url.contains("youtube.com") {
-                        if let Ok(fm) = global_focus_manager().lock() {
-                            let focus_msg = json!({
+                        let focus_msg_opt = if let Ok(fm) = global_focus_manager().lock() {
+                            Some(json!({
                                 "type": "focus_state_changed",
                                 "state": fm.state()
-                            });
-                            if let Some(wv) = content_webviews.get(&tab_id) {
-                                let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
-                                let _ = wv.evaluate_script(&js);
-                            }
+                            }))
+                        } else {
+                            None
+                        };
+                        if let (Some(focus_msg), Some(wv)) = (focus_msg_opt, content_webviews.get(&tab_id)) {
+                            let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                            let _ = wv.evaluate_script(&js);
                         }
                     }
                 }
@@ -4830,6 +4927,49 @@ fn run_browser() -> Result<()> {
                         } else {
                             actual_url
                         };
+
+                        // Enforce Focus Mode rules on SPA transitions too (history.pushState / popstate)
+                        let focus_eval_opt = if is_safe_web_url(&clean_url) {
+                            if let Ok(fm) = global_focus_manager().lock() {
+                                Some((
+                                    fm.check_url(&clean_url),
+                                    json!({
+                                        "type": "focus_state_changed",
+                                        "state": fm.state()
+                                    }),
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some((decision, focus_msg)) = focus_eval_opt {
+                            match decision {
+                                focus::FocusDecision::Blocked { mode, domain: _, url: dest_url, remaining_secs } => {
+                                    let interstitial_url = format!(
+                                        "rusty://app/interstitial.html?url={}&mode={}&remaining={}",
+                                        percent_encoding::percent_encode(dest_url.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                                        percent_encoding::percent_encode(mode.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                                        remaining_secs
+                                    );
+                                    let _ = wv.load_url(&interstitial_url);
+                                    return;
+                                }
+                                focus::FocusDecision::Redirect(redirect_url) => {
+                                    let _ = wv.load_url(&redirect_url);
+                                    return;
+                                }
+                                focus::FocusDecision::Allowed => {
+                                    if clean_url.contains("youtube.com") {
+                                        let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                                        let _ = wv.evaluate_script(&js);
+                                    }
+                                }
+                            }
+                        }
+
                         let mut changed = false;
                         if let Some(tab) = tabs.get_mut(tab_id) {
                             if is_safe_web_url(&clean_url) || clean_url == "about:blank" {
@@ -4855,16 +4995,6 @@ fn run_browser() -> Result<()> {
                                 is_incognito,
                                 &split,
                             );
-                        }
-                        if clean_url.contains("youtube.com") {
-                            if let Ok(fm) = global_focus_manager().lock() {
-                                let focus_msg = json!({
-                                    "type": "focus_state_changed",
-                                    "state": fm.state()
-                                });
-                                let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
-                                let _ = wv.evaluate_script(&js);
-                            }
                         }
                     }
                 }
@@ -5053,12 +5183,31 @@ fn run_browser() -> Result<()> {
                 };
 
                 if let Some(state) = state_opt {
+                    let active = state.is_active;
                     let msg = json!({
                         "type": "focus_state_changed",
                         "state": state
                     });
                     broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                    if active {
+                        enforce_focus_on_open_tabs(&tabs, &content_webviews);
+                    }
                     sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
+                }
+            }
+
+            Event::UserEvent(UserEvent::SyncFocusToTab(tab_id)) => {
+                let focus_msg_opt = if let Ok(fm) = global_focus_manager().lock() {
+                    Some(json!({
+                        "type": "focus_state_changed",
+                        "state": fm.state()
+                    }))
+                } else {
+                    None
+                };
+                if let (Some(focus_msg), Some(wv)) = (focus_msg_opt, content_webviews.get(&tab_id)) {
+                    let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({focus_msg}); }}");
+                    let _ = wv.evaluate_script(&js);
                 }
             }
 

@@ -391,20 +391,7 @@ impl FocusManager {
             None => return FocusDecision::Allowed,
         };
 
-        // 1. YouTube Shorts redirection: always redirect /shorts/:id -> /watch?v=:id
-        if (host == "youtube.com" || host.ends_with(".youtube.com") || host == "youtu.be")
-            && self.youtube_rules.redirect_shorts_to_watch
-            && parsed.path().starts_with("/shorts/")
-        {
-            let id = parsed.path().trim_start_matches("/shorts/").trim_matches('/');
-            if !id.is_empty() {
-                let redirect_url = format!("https://www.youtube.com/watch?v={}", id);
-                tracing::info!("[focus] Redirecting YouTube Shorts to standard watch: {}", redirect_url);
-                return FocusDecision::Redirect(redirect_url);
-            }
-        }
-
-        if !self.is_active {
+        if !self.is_active || self.is_paused {
             return FocusDecision::Allowed;
         }
 
@@ -497,11 +484,8 @@ impl FocusManager {
                 }
             }
             FocusModeKind::Study => {
-                let query = parsed.query().unwrap_or_default().to_lowercase();
-
-                // If user searched for or clicked a gaming video on YouTube, block with interstitial
-                let is_gaming = self.youtube_rules.gaming_keywords.iter().any(|k| query.contains(k));
-                if is_gaming {
+                let path_lower = parsed.path().to_lowercase();
+                if path_lower.starts_with("/gaming") {
                     return FocusDecision::Blocked {
                         mode: self.mode.display_name().to_string(),
                         domain: "youtube.com (Gaming Blocked)".to_string(),
@@ -510,7 +494,35 @@ impl FocusManager {
                     };
                 }
 
-                // Educational and Finance queries or general search allowed
+                let query = parsed.query().unwrap_or_default().to_lowercase().replace('+', " ");
+
+                // If user searched for gaming or non-educational entertainment on YouTube, block with interstitial
+                let is_gaming = self.youtube_rules.gaming_keywords.iter().any(|k| query.contains(k));
+                let is_entertainment_query = path_lower.starts_with("/results")
+                    && [
+                        "movie trailer",
+                        "official trailer",
+                        "skit",
+                        "prank",
+                        "dance video",
+                        "music video",
+                        "comedy",
+                        "funny video",
+                        "roast",
+                        "mukbang",
+                    ]
+                    .iter()
+                    .any(|k| query.contains(k));
+                if is_gaming || is_entertainment_query {
+                    return FocusDecision::Blocked {
+                        mode: self.mode.display_name().to_string(),
+                        domain: "youtube.com (Distraction Blocked)".to_string(),
+                        url: raw_url.to_string(),
+                        remaining_secs: self.remaining_secs,
+                    };
+                }
+
+                // Educational and Finance queries or general browse/watch (filtered in-page by youtube_focus.js)
                 FocusDecision::Allowed
             }
         }
@@ -652,15 +664,13 @@ mod tests {
     fn test_youtube_shorts_redirect() {
         let mut fm = FocusManager::new();
 
-        // YouTube Shorts is redirected to normal watch URL even when focus is inactive
-        match fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") {
-            FocusDecision::Redirect(url) => {
-                assert_eq!(url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-            }
-            _ => panic!("Expected YouTube Shorts redirect when focus is inactive"),
-        }
+        // When Focus Mode is inactive, YouTube Shorts is allowed normally
+        assert_eq!(
+            fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ"),
+            FocusDecision::Allowed
+        );
 
-        // YouTube Shorts is redirected when focus is active
+        // YouTube Shorts is redirected to normal watch URL when Focus Mode is active
         fm.start(FocusModeKind::Study, None);
         match fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") {
             FocusDecision::Redirect(url) => {
@@ -668,6 +678,23 @@ mod tests {
             }
             _ => panic!("Expected YouTube Shorts redirect when focus is active"),
         }
+
+        // Entertainment and gaming search queries are blocked in Study mode
+        assert!(matches!(
+            fm.check_url("https://www.youtube.com/results?search_query=movie+trailer"),
+            FocusDecision::Blocked { .. }
+        ));
+        assert!(matches!(
+            fm.check_url("https://www.youtube.com/gaming"),
+            FocusDecision::Blocked { .. }
+        ));
+
+        // Pausing relaxes focus blocking until resumed
+        fm.pause();
+        assert_eq!(
+            fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ"),
+            FocusDecision::Allowed
+        );
     }
 
     #[test]
