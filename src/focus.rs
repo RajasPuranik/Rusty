@@ -376,10 +376,6 @@ impl FocusManager {
 
     /// Primary navigation gate: evaluates an outgoing URL against active focus rules.
     pub fn check_url(&self, raw_url: &str) -> FocusDecision {
-        if !self.is_active {
-            return FocusDecision::Allowed;
-        }
-
         let parsed = match Url::parse(raw_url) {
             Ok(u) => u,
             Err(_) => return FocusDecision::Allowed,
@@ -394,6 +390,23 @@ impl FocusManager {
             Some(h) => h.to_lowercase(),
             None => return FocusDecision::Allowed,
         };
+
+        // 1. YouTube Shorts redirection: always redirect /shorts/:id -> /watch?v=:id
+        if (host == "youtube.com" || host.ends_with(".youtube.com") || host == "youtu.be")
+            && self.youtube_rules.redirect_shorts_to_watch
+            && parsed.path().starts_with("/shorts/")
+        {
+            let id = parsed.path().trim_start_matches("/shorts/").trim_matches('/');
+            if !id.is_empty() {
+                let redirect_url = format!("https://www.youtube.com/watch?v={}", id);
+                tracing::info!("[focus] Redirecting YouTube Shorts to standard watch: {}", redirect_url);
+                return FocusDecision::Redirect(redirect_url);
+            }
+        }
+
+        if !self.is_active {
+            return FocusDecision::Allowed;
+        }
 
         // Check if domain was explicitly bypassed
         if self.is_domain_bypassed(&host) {
@@ -638,14 +651,22 @@ mod tests {
     #[test]
     fn test_youtube_shorts_redirect() {
         let mut fm = FocusManager::new();
-        fm.start(FocusModeKind::Study, None);
 
-        // YouTube Shorts is redirected to normal watch URL
+        // YouTube Shorts is redirected to normal watch URL even when focus is inactive
         match fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") {
             FocusDecision::Redirect(url) => {
                 assert_eq!(url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
             }
-            _ => panic!("Expected YouTube Shorts redirect"),
+            _ => panic!("Expected YouTube Shorts redirect when focus is inactive"),
+        }
+
+        // YouTube Shorts is redirected when focus is active
+        fm.start(FocusModeKind::Study, None);
+        match fm.check_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") {
+            FocusDecision::Redirect(url) => {
+                assert_eq!(url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+            }
+            _ => panic!("Expected YouTube Shorts redirect when focus is active"),
         }
     }
 

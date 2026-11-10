@@ -585,6 +585,8 @@ enum UserEvent {
     NavigateTab(TabId, String),
     /// 1-second timer tick for Focus Mode sessions.
     FocusTick,
+    /// Toggle Focus Mode session (Study / Inactive).
+    ToggleFocus,
 }
 
 /// Strongly-typed IPC command matching `ui/IPC_CONTRACT.md`.
@@ -844,6 +846,9 @@ enum UiMessage {
     #[serde(rename = "restore_recently_closed_tab")]
     RestoreRecentlyClosedTab { workspace_id: Option<String> },
 
+    #[serde(rename = "toggle_focus")]
+    ToggleFocus,
+
     #[serde(rename = "start_focus")]
     StartFocus {
         mode: String,
@@ -958,7 +963,10 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           'open_find_bar',
           'open_settings',
           'open_side_panel',
-          'split_view'
+          'split_view',
+          'toggle_focus',
+          'start_focus',
+          'stop_focus'
       ]);
       window.addEventListener('message', (e) => {
           const data = e && e.data;
@@ -1050,6 +1058,9 @@ const CONTENT_INIT_SCRIPT: &str = r#"
       } else if (ctrl && e.key === 'Tab') {
           e.preventDefault();
           postRawIpc(JSON.stringify({ action: e.shiftKey ? 'prev_tab' : 'next_tab' }));
+      } else if (ctrl && e.altKey && (key === 'f' || e.code === 'KeyF')) {
+          e.preventDefault();
+          postRawIpc(JSON.stringify({ action: 'toggle_focus' }));
       } else if (e.key === 'Escape') {
           postRawIpc(JSON.stringify({ action: 'stop' }));
       }
@@ -1112,17 +1123,14 @@ const CONTENT_INIT_SCRIPT: &str = r#"
       }, true);
 
       if (IS_TOP) {
-          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves during focus
+          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves
           if (location.hostname.includes('youtube.com')) {
-              const isFocusOn = Boolean(window.__RUSTY_FOCUS_STATE__ && window.__RUSTY_FOCUS_STATE__.is_active && !window.__RUSTY_FOCUS_STATE__.is_paused);
-              if (isFocusOn) {
-                  try {
-                      const s = document.createElement('style');
-                      s.id = 'rusty-early-shorts-hide';
-                      s.textContent = 'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),ytd-rich-section-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(a[href*="/shorts"]),ytd-video-renderer:has(a[href*="/shorts"]),ytd-grid-video-renderer:has(a[href*="/shorts"]),ytd-compact-video-renderer:has(a[href*="/shorts"]),yt-lockup-view-model:has(a[href*="/shorts"]),ytm-shorts-lockup-view-model,#shorts-container,ytd-reel-video-renderer,ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],a#endpoint[title="Shorts"],[data-rusty-shorts="true"]{display:none!important;}';
-                      (document.head || document.documentElement).appendChild(s);
-                  } catch (_) {}
-              }
+              try {
+                  const s = document.createElement('style');
+                  s.id = 'rusty-early-shorts-hide';
+                  s.textContent = 'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),ytd-rich-section-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model),ytd-video-renderer:has(a[href*="/shorts"]),ytd-grid-video-renderer:has(a[href*="/shorts"]),ytd-compact-video-renderer:has(a[href*="/shorts"]),yt-lockup-view-model:has(a[href*="/shorts"]),ytm-shorts-lockup-view-model,#shorts-container,ytd-reel-video-renderer,ytd-guide-entry-renderer:has(a[href*="/shorts"]),ytd-guide-entry-renderer:has(a[title="Shorts"]),ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer:has(a[href*="/shorts"]),ytd-mini-guide-entry-renderer:has([aria-label="Shorts"]),ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],a#endpoint[title="Shorts"],a[title="Shorts"],[data-rusty-shorts="true"]{display:none!important;}';
+                  (document.head || document.documentElement).appendChild(s);
+              } catch (_) {}
               const checkShorts = () => {
                   if (location.pathname.startsWith('/shorts/')) {
                       const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
@@ -1503,6 +1511,10 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
                         let _ = proxy.send_event(UserEvent::CheckTabUrl(tab_id));
                         return;
                     }
+                    if action == "toggle_focus" {
+                        let _ = proxy.send_event(UserEvent::ToggleFocus);
+                        return;
+                    }
                 }
             }
             if is_trusted_origin(&uri) {
@@ -1559,6 +1571,9 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
                                     | "open_find_bar"
                                     | "open_settings"
                                     | "split_view"
+                                    | "toggle_focus"
+                                    | "start_focus"
+                                    | "stop_focus"
                             )
                         {
                             let _ = proxy.send_event(UserEvent::ChromeIpc(body));
@@ -1868,6 +1883,12 @@ fn sync_chrome_ui(
         })
     };
 
+    let focus_payload = if let Ok(fm) = global_focus_manager().lock() {
+        serde_json::to_value(&fm.state()).unwrap_or(serde_json::Value::Null)
+    } else {
+        serde_json::Value::Null
+    };
+
     let state = json!({
         "type": "state_update",
         "tabs": tab_infos,
@@ -1885,6 +1906,7 @@ fn sync_chrome_ui(
         "downloads": downloads,
         "memory": mem_payload,
         "split_view": split_payload,
+        "focus": focus_payload,
     });
 
     eval_on_webview(chrome_wv, &state);
@@ -4454,6 +4476,23 @@ fn run_browser() -> Result<()> {
                         }
                     }
 
+                    UiMessage::ToggleFocus => {
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            if fm.state().is_active {
+                                fm.stop();
+                            } else {
+                                fm.start(focus::FocusModeKind::Study, None);
+                            }
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
+                        }
+                    }
+
                     UiMessage::StartFocus { mode, duration_secs } => {
                         let kind = match mode.to_lowercase().as_str() {
                             "work" => focus::FocusModeKind::Work,
@@ -4468,6 +4507,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
 
@@ -4480,6 +4520,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
 
@@ -4492,6 +4533,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
 
@@ -4504,6 +4546,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
 
@@ -4515,6 +4558,7 @@ fn run_browser() -> Result<()> {
                                 "state": state
                             });
                             broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                         }
                     }
 
@@ -4961,7 +5005,25 @@ fn run_browser() -> Result<()> {
                             "state": state
                         });
                         broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                        sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                     }
+                }
+            }
+
+            Event::UserEvent(UserEvent::ToggleFocus) => {
+                if let Ok(mut fm) = global_focus_manager().lock() {
+                    if fm.state().is_active {
+                        fm.stop();
+                    } else {
+                        fm.start(focus::FocusModeKind::Study, None);
+                    }
+                    let state = fm.state();
+                    let msg = json!({
+                        "type": "focus_state_changed",
+                        "state": state
+                    });
+                    broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
+                    sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
                 }
             }
 

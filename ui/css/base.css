@@ -293,6 +293,44 @@ html, body {
   background-color: #10b981;
 }
 
+.btn-focus-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 28px;
+  box-sizing: border-box;
+}
+.btn-focus-toolbar:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.btn-focus-toolbar.active {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-soft);
+  font-weight: 600;
+}
+.btn-focus-toolbar .focus-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+.btn-focus-toolbar .focus-timer-text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
 /* ── Horizontal Tabs Strip ──────────────────────────────────────────────── */
 #tabs-horizontal {
   display: flex;

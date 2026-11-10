@@ -57,6 +57,8 @@
   const btnReader = document.getElementById('btn-reader');
   const btnSplitView = document.getElementById('btn-split-view');
   const btnZen = document.getElementById('btn-zen');
+  const btnFocusToolbar = document.getElementById('btn-focus-toolbar');
+  const focusToolbarTimer = document.getElementById('focus-toolbar-timer');
   const btnSettings = document.getElementById('btn-settings');
   const btnFind = document.getElementById('btn-find');
   const btnPanelBookmarks = document.getElementById('btn-sidepanel-bookmarks');
@@ -1939,6 +1941,7 @@
 
   // ── 13. State Update Listener from Bridge ─────────────────────────────────
   window.bridge.on('state_update', (data) => {
+    if (data.focus) updateFocusToolbar(data.focus);
     if (data.groups) currentGroups = data.groups;
     if (data.bookmarks) currentBookmarks = data.bookmarks;
     if (data.history) currentHistory = data.history;
@@ -2186,6 +2189,39 @@
   window.bridge.on('telemetry_stats', (snap) => {
     lastTelemetryInfo = snap;
     refreshMemoryBadgeDisplay();
+  });
+
+  function updateFocusToolbar(state) {
+    if (!btnFocusToolbar) return;
+    const isActive = Boolean(state && state.is_active && !state.is_paused);
+    if (isActive) {
+      btnFocusToolbar.classList.add('active');
+      if (focusToolbarTimer) {
+        focusToolbarTimer.style.display = 'inline';
+        const formatted = state.formatted_time || `${Math.floor((state.remaining_secs || 0) / 60)}:${String((state.remaining_secs || 0) % 60).padStart(2, '0')}`;
+        focusToolbarTimer.textContent = formatted;
+      }
+      btnFocusToolbar.title = `Focus Mode Active: ${state.mode || 'Study'} (${state.formatted_time || ''}). Click to stop (Ctrl+Alt+F).`;
+    } else {
+      btnFocusToolbar.classList.remove('active');
+      if (focusToolbarTimer) {
+        focusToolbarTimer.style.display = 'none';
+      }
+      btnFocusToolbar.title = 'Start Focus Mode: Study (Ctrl+Alt+F)';
+    }
+  }
+
+  if (btnFocusToolbar) {
+    btnFocusToolbar.addEventListener('click', () => {
+      window.bridge.send('toggle_focus', {});
+    });
+  }
+
+  window.bridge.on('focus_state_changed', (data) => {
+    updateFocusToolbar(data && (data.state || data));
+  });
+  window.bridge.on('focus_session_completed', (data) => {
+    updateFocusToolbar(data && (data.state || data));
   });
 
   // ── 15. Mock Viewport Iframe for standalone browser preview ──────────────
@@ -2492,10 +2528,10 @@
         return;
       }
     }
-    // Ctrl+Alt+F -> Quick Start Focus Mode (Study 25m)
+    // Ctrl+Alt+F -> Toggle Focus Mode (Study 25m / Off)
     if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
-      window.bridge.send('start_focus', { mode: 'study', duration_secs: 1500 });
+      window.bridge.send('toggle_focus', {});
       return;
     }
     // Ctrl+K -> Command Palette
@@ -2571,7 +2607,10 @@
     }
   });
 
-  // Initial layout report
-  setTimeout(reportContentRect, 100);
+  // Initial layout and state requests
+  setTimeout(() => {
+    reportContentRect();
+    window.bridge.send('get_focus_state', {});
+  }, 100);
 })();
 

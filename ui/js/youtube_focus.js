@@ -139,7 +139,7 @@
     return { allowed: false, reason: 'unrelated' };
   }
 
-  // 4. Inject Dynamic Focus CSS Rules
+  // 4. Inject Dynamic Focus & Shorts CSS Rules
   const STYLE_ID = 'rusty-youtube-focus-style';
   function updateFocusStylesheet() {
     let style = document.getElementById(STYLE_ID);
@@ -158,33 +158,40 @@
       }
     }
 
-    if (isFocusActive()) {
-      style.textContent = `
-        /* Hide all YouTube Shorts shelves, carousels, cards & buttons */
-        ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
-        ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
-        ytd-rich-section-renderer:has(a[href*="/shorts"]),
-        ytd-rich-shelf-renderer,
-        ytd-reel-shelf-renderer,
-        ytd-rich-shelf-renderer[is-shorts],
-        ytd-rich-item-renderer:has(a[href*="/shorts"]),
-        ytd-video-renderer:has(a[href*="/shorts"]),
-        ytd-grid-video-renderer:has(a[href*="/shorts"]),
-        ytd-compact-video-renderer:has(a[href*="/shorts"]),
-        yt-lockup-view-model:has(a[href*="/shorts"]),
-        ytm-shorts-lockup-view-model,
-        #shorts-container,
-        ytd-reel-video-renderer,
-        ytd-guide-entry-renderer a[title="Shorts"],
-        ytd-guide-entry-renderer a[href*="/shorts"],
-        ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-        ytd-mini-guide-entry-renderer a[href*="/shorts"],
-        a#endpoint[title="Shorts"],
-        [data-rusty-shorts="true"],
-        [data-rusty-hidden] {
-          display: none !important;
-        }
+    const shortsCss = `
+      /* Always hide YouTube Shorts shelves, carousels, cards & buttons */
+      ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
+      ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
+      ytd-rich-section-renderer:has(a[href*="/shorts"]),
+      ytd-rich-shelf-renderer,
+      ytd-reel-shelf-renderer,
+      ytd-rich-shelf-renderer[is-shorts],
+      ytd-rich-item-renderer:has(a[href*="/shorts"]),
+      ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model),
+      ytd-video-renderer:has(a[href*="/shorts"]),
+      ytd-grid-video-renderer:has(a[href*="/shorts"]),
+      ytd-compact-video-renderer:has(a[href*="/shorts"]),
+      yt-lockup-view-model:has(a[href*="/shorts"]),
+      ytm-shorts-lockup-view-model,
+      #shorts-container,
+      ytd-reel-video-renderer,
+      ytd-guide-entry-renderer:has(a[href*="/shorts"]),
+      ytd-guide-entry-renderer:has(a[title="Shorts"]),
+      ytd-guide-entry-renderer a[title="Shorts"],
+      ytd-guide-entry-renderer a[href*="/shorts"],
+      ytd-mini-guide-entry-renderer:has(a[href*="/shorts"]),
+      ytd-mini-guide-entry-renderer:has([aria-label="Shorts"]),
+      ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+      ytd-mini-guide-entry-renderer a[href*="/shorts"],
+      a#endpoint[title="Shorts"],
+      a[title="Shorts"],
+      [data-rusty-shorts="true"] {
+        display: none !important;
+      }
+    `;
 
+    if (isFocusActive()) {
+      style.textContent = shortsCss + `
         /* Hide comments section during focus */
         ytd-comments,
         #comments.ytd-watch-flexy {
@@ -200,7 +207,8 @@
         /* Hide gaming links, gaming chips and filtered items */
         ytd-guide-entry-renderer a[title="Gaming"],
         ytd-guide-entry-renderer a[href*="/gaming"],
-        ytd-mini-guide-entry-renderer[aria-label="Gaming"] {
+        ytd-mini-guide-entry-renderer[aria-label="Gaming"],
+        [data-rusty-hidden] {
           display: none !important;
         }
 
@@ -245,7 +253,7 @@
         }
       `;
     } else {
-      style.textContent = '';
+      style.textContent = shortsCss;
     }
   }
 
@@ -264,31 +272,32 @@
 
   // 6. Process Individual Video Cards
   function processCard(card) {
-    if (!isFocusActive()) {
-      if (card.dataset.rustyHidden) {
-        card.style.removeProperty('display');
-        delete card.dataset.rustyHidden;
-      }
-      return;
-    }
-
-    // Check if this card is inside a Shorts shelf or contains a shorts link
+    // Check if this card is inside a Shorts shelf, or contains a shorts link or view model
     const isShortsCard = card.querySelector('a[href*="/shorts"]') ||
-                         card.closest('ytd-rich-section-renderer:has(ytd-rich-shelf-renderer), ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, [is-shorts]');
+                         card.querySelector('ytm-shorts-lockup-view-model') ||
+                         card.closest('ytd-rich-section-renderer:has(ytd-rich-shelf-renderer), ytd-rich-section-renderer:has(a[href*="/shorts"]), ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, [is-shorts]');
     if (isShortsCard) {
       card.style.setProperty('display', 'none', 'important');
       card.dataset.rustyHidden = 'shorts';
       return;
     }
 
-    const titleEl = card.querySelector('#video-title, #video-title-link, a#video-title, h3 a');
-    const channelEl = card.querySelector('#channel-name, #byline, ytd-channel-name a, .ytd-channel-name');
+    if (!isFocusActive()) {
+      if (card.dataset.rustyHidden && card.dataset.rustyHidden !== 'shorts') {
+        card.style.removeProperty('display');
+        delete card.dataset.rustyHidden;
+      }
+      return;
+    }
+
+    const titleEl = card.querySelector('#video-title, #video-title-link, a#video-title, h3 a, .yt-lockup-metadata-view-model-wiz__title, yt-formatted-string[title]');
+    const channelEl = card.querySelector('#channel-name, #byline, ytd-channel-name, .ytd-channel-name, .yt-lockup-metadata-view-model-wiz__byline');
     const descEl = card.querySelector('#description-text, .metadata-snippet-container, #metadata-line');
     const badgeEls = card.querySelectorAll('ytd-badge-supported-renderer, .badge, [aria-label]');
 
-    const title = titleEl ? titleEl.textContent : '';
-    const channel = channelEl ? channelEl.textContent : '';
-    const desc = descEl ? descEl.textContent : '';
+    let title = titleEl ? (titleEl.textContent || titleEl.getAttribute('title') || '') : '';
+    let channel = channelEl ? channelEl.textContent : '';
+    let desc = descEl ? descEl.textContent : '';
     let badges = '';
     badgeEls.forEach((b) => {
       badges += ' ' + b.textContent + ' ' + (b.getAttribute('aria-label') || '');
@@ -297,7 +306,10 @@
     const links = Array.from(card.querySelectorAll('a[href]'))
       .map((a) => a.getAttribute('href') || '')
       .join(' ');
-    const combinedText = `${title} ${channel} ${desc} ${badges}`.trim();
+    let combinedText = `${title} ${channel} ${desc} ${badges}`.trim();
+    if (!combinedText) {
+      combinedText = (card.textContent || '').trim();
+    }
 
     // If card title is not yet populated by YouTube's custom element, wait for child DOM mutation
     if (!combinedText) {
@@ -322,44 +334,36 @@
     'ytd-compact-video-renderer',
     'ytd-grid-video-renderer',
     'ytd-playlist-renderer',
-    'ytd-radio-renderer'
+    'ytd-radio-renderer',
+    'yt-lockup-view-model'
   ].join(', ');
 
   function blockShortsElements() {
-    const active = isFocusActive();
     // Hide any section or shelf that contains a /shorts/ link or header "Shorts"
-    document.querySelectorAll('ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model').forEach((el) => {
-      if (active) {
-        const hasShorts = el.querySelector('a[href*="/shorts"]') ||
-                          el.querySelector('[is-shorts]') ||
-                          el.querySelector('ytm-shorts-lockup-view-model') ||
-                          (el.textContent || '').toLowerCase().includes('shorts');
-        if (hasShorts) {
-          el.style.setProperty('display', 'none', 'important');
-          el.setAttribute('data-rusty-shorts', 'true');
-        }
-      } else if (el.getAttribute('data-rusty-shorts') === 'true') {
-        el.style.removeProperty('display');
-        el.removeAttribute('data-rusty-shorts');
+    document.querySelectorAll('ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model, ytd-reel-video-renderer').forEach((el) => {
+      const hasShorts = el.querySelector('a[href*="/shorts"]') ||
+                        el.querySelector('[is-shorts]') ||
+                        el.querySelector('ytm-shorts-lockup-view-model') ||
+                        el.matches('ytd-reel-shelf-renderer, [is-shorts], ytm-shorts-lockup-view-model') ||
+                        (el.textContent || '').toLowerCase().includes('shorts');
+      if (hasShorts) {
+        el.style.setProperty('display', 'none', 'important');
+        el.setAttribute('data-rusty-shorts', 'true');
       }
     });
 
     // Hide sidebar and mini-guide shorts buttons
-    document.querySelectorAll('ytd-guide-entry-renderer a[href*="/shorts"], ytd-mini-guide-entry-renderer a[href*="/shorts"], a#endpoint[title="Shorts"]').forEach((a) => {
-      const entry = a.closest('ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer') || a;
-      if (active) {
-        entry.style.setProperty('display', 'none', 'important');
-      } else {
-        entry.style.removeProperty('display');
-      }
-    });
-  }
-    });
-
-    // Hide sidebar and mini-guide shorts buttons
-    document.querySelectorAll('ytd-guide-entry-renderer a[href*="/shorts"], ytd-mini-guide-entry-renderer a[href*="/shorts"], a#endpoint[title="Shorts"]').forEach((a) => {
+    document.querySelectorAll('ytd-guide-entry-renderer a[href*="/shorts"], ytd-guide-entry-renderer:has(a[title="Shorts"]), ytd-mini-guide-entry-renderer a[href*="/shorts"], ytd-mini-guide-entry-renderer:has([aria-label="Shorts"]), a#endpoint[title="Shorts"], a[title="Shorts"]').forEach((a) => {
       const entry = a.closest('ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer') || a;
       entry.style.setProperty('display', 'none', 'important');
+    });
+
+    // Hide standalone cards that link to /shorts/
+    document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model').forEach((card) => {
+      if (card.querySelector('a[href*="/shorts"]') || card.querySelector('ytm-shorts-lockup-view-model')) {
+        card.style.setProperty('display', 'none', 'important');
+        card.setAttribute('data-rusty-shorts', 'true');
+      }
     });
   }
 
