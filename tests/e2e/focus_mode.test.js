@@ -40,36 +40,68 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
     });
   });
 
-  describe('Feature 24: YouTube Study Filter & Shorts Redirection', () => {
-    it('Verifies YouTube Shorts redirection in src/focus.rs and src/main.rs', () => {
+  describe('Feature 24: YouTube Study Filter, Thumbnail Blur & Leave-Focus Warning', () => {
+    it('Verifies YouTube Shorts & early thumbnail blur in src/focus.rs and src/main.rs', () => {
       const focusRs = fs.readFileSync(path.join(ROOT_DIR, 'src', 'focus.rs'), 'utf8');
       assert.ok(focusRs.includes('redirect_shorts_to_watch'), 'Configures Shorts redirection flag');
       assert.ok(focusRs.includes('/shorts/'), 'Parses /shorts/ URL path');
 
       const mainRs = fs.readFileSync(path.join(ROOT_DIR, 'src', 'main.rs'), 'utf8');
       assert.ok(mainRs.includes("location.pathname.startsWith('/shorts/')"), 'Injected script checks /shorts/');
-      assert.ok(mainRs.includes("https://www.youtube.com/watch?v="), 'Redirects to standard watch view');
+      assert.ok(mainRs.includes('rusty-early-shorts-blur'), 'Injects early Shorts thumbnail blur style without hiding tiles');
+      assert.ok(mainRs.includes('__rustyShouldInterceptFocusClick'), 'Hooks middle/Ctrl clicks into Focus warning modal');
     });
 
-    it('Verifies YouTube distraction-free element hiding in ui/js/youtube_focus.js', () => {
+    it('Verifies thumbnail blur CSS, comments hiding & leave-focus modal in ui/js/youtube_focus.js', () => {
       const ytScriptPath = path.join(ROOT_DIR, 'ui', 'js', 'youtube_focus.js');
       assert.ok(fs.existsSync(ytScriptPath), 'ui/js/youtube_focus.js exists');
       const ytJs = fs.readFileSync(ytScriptPath, 'utf8');
-      assert.ok(ytJs.includes('ytd-rich-shelf-renderer[is-shorts]'), 'Hides Shorts shelves');
+      assert.ok(ytJs.includes('filter: blur(22px)'), 'Blurs thumbnails for Shorts and distracting videos');
+      assert.ok(ytJs.includes('data-rusty-blurred'), 'Marks non-educational and Shorts cards as blurred');
+      assert.ok(ytJs.includes('You are leaving Focus Mode'), 'Includes leave-focus warning modal heading');
       assert.ok(ytJs.includes('ytd-comments'), 'Hides comments during focus');
-      assert.ok(ytJs.includes('#related'), 'Hides sidebar recommendation distractions');
+      assert.ok(ytJs.includes('#related'), 'Handles sidebar recommendations');
       assert.ok(ytJs.includes('history.pushState'), 'Hooks SPA history state transitions');
     });
 
-    it('Verifies YouTube gaming videos hiding and educational/finance filtering', () => {
+    it('Verifies YouTube gaming/entertainment blurring and educational/finance filtering', () => {
       const ytScriptPath = path.join(ROOT_DIR, 'ui', 'js', 'youtube_focus.js');
       const ytJs = fs.readFileSync(ytScriptPath, 'utf8');
       assert.ok(ytJs.includes('GAMING_KEYWORDS'), 'Contains gaming keywords dictionary');
       assert.ok(ytJs.includes('EDUCATIONAL_KEYWORDS'), 'Contains educational keywords dictionary');
       assert.ok(ytJs.includes('FINANCE_KEYWORDS'), 'Contains finance keywords dictionary');
       assert.ok(ytJs.includes('evaluateVideo'), 'Implements video classification evaluator');
-      assert.ok(ytJs.includes('processCard'), 'Hides non-educational/gaming cards');
-      assert.ok(ytJs.includes('checkWatchPageGate'), 'Protects watch page playback');
+      assert.ok(ytJs.includes('applyBlurToCard'), 'Blurs distracting thumbnails while keeping Edu/Finance clear');
+      assert.ok(ytJs.includes('checkWatchPageGate'), 'Protects direct watch and Shorts pages');
+    });
+
+    it('Verifies all injected JS scripts (CONTENT_INIT_SCRIPT & youtube_focus.js) are syntactically valid', () => {
+      const ytJs = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'js', 'youtube_focus.js'), 'utf8');
+      assert.doesNotThrow(() => new vm.Script(ytJs), 'youtube_focus.js must parse cleanly');
+
+      const mainRs = fs.readFileSync(path.join(ROOT_DIR, 'src', 'main.rs'), 'utf8');
+      const startMarker = 'const CONTENT_INIT_SCRIPT: &str = r#"';
+      const startIdx = mainRs.indexOf(startMarker);
+      assert.ok(startIdx >= 0, 'Located CONTENT_INIT_SCRIPT in src/main.rs');
+      const bodyStart = startIdx + startMarker.length;
+      const bodyEnd = mainRs.indexOf('"#;', bodyStart);
+      assert.ok(bodyEnd > bodyStart, 'Found end of CONTENT_INIT_SCRIPT');
+      const contentInitJs = mainRs.slice(bodyStart, bodyEnd);
+      assert.doesNotThrow(() => new vm.Script(contentInitJs), 'CONTENT_INIT_SCRIPT must parse cleanly');
+
+      const extRs = fs.readFileSync(path.join(ROOT_DIR, 'src', 'extensions.rs'), 'utf8');
+      const usMarker = 'r#"\n(() => {{';
+      const usStart = extRs.indexOf(usMarker);
+      assert.ok(usStart >= 0, 'Located build_userscripts_injection_js template in src/extensions.rs');
+      const usEnd = extRs.indexOf('\n"#', usStart);
+      assert.ok(usEnd > usStart, 'Found end of userscripts template');
+      const renderedUserscriptsJs = extRs
+        .slice(usStart + 4, usEnd)
+        .replace(/\{serialized\}/g, '[]')
+        .replace(/\{\{/g, '{')
+        .replace(/\}\}/g, '}');
+      assert.doesNotThrow(() => new vm.Script(renderedUserscriptsJs), 'build_userscripts_injection_js rendered JS must parse cleanly');
+      assert.ok(!extRs.includes('{{{{'), 'extensions.rs must not contain quadruple braces');
     });
   });
 
@@ -132,15 +164,42 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
       assert.ok(mainRs.includes('enforce_focus_on_open_tabs'), 'Enforces focus rules immediately on open tabs');
     });
 
-    it('Accurately classifies entertainment, gaming, skits, dance, trailers, shorts vs educational/finance and builds red warning gate under strict Trusted Types', () => {
+    it('Blurs Shorts & distracting thumbnails, intercepts clicks with "You are leaving Focus Mode" modal under Trusted Types, and protects watch pages', () => {
       const ytJs = fs.readFileSync(path.join(ROOT_DIR, 'ui', 'js', 'youtube_focus.js'), 'utf8');
       const timers = [];
       const ipcSent = [];
-      const createdElements = [];
+      const winListeners = [];
+      const docListeners = [];
+
+      function findById(root, id) {
+        if (!root) return null;
+        if (root.id === id) return root;
+        for (const c of root.children || []) {
+          const hit = findById(c, id);
+          if (hit) return hit;
+        }
+        return null;
+      }
+
+      function findByClass(root, cls) {
+        const res = [];
+        if (!root) return res;
+        if (root.className && root.className.split(/\s+/).includes(cls)) res.push(root);
+        for (const c of root.children || []) res.push(...findByClass(c, cls));
+        return res;
+      }
+
+      function collectByTagOrAttr(root, pred, out = []) {
+        if (!root) return out;
+        if (pred(root)) out.push(root);
+        for (const c of root.children || []) collectByTagOrAttr(c, pred, out);
+        return out;
+      }
 
       function makeEl(tag, initialProps = {}) {
         const children = [];
         const attrs = new Map();
+        if (initialProps.href) attrs.set('href', initialProps.href);
         const styleMap = new Map();
         const styleObj = {
           cssText: '',
@@ -153,6 +212,8 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
         const el = {
           tagName: tag.toUpperCase(),
           id: initialProps.id || '',
+          className: initialProps.className || '',
+          href: initialProps.href || '',
           textContent: initialProps.textContent || '',
           dataset: {},
           style: styleObj,
@@ -162,6 +223,7 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
           paused: false,
           pauseCalled: 0,
           pause() { el.paused = true; el.pauseCalled++; },
+          focus() {},
           appendChild(child) {
             child.parentNode = el;
             children.push(child);
@@ -184,33 +246,63 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
           getAttribute(k) { return attrs.get(k) ?? null; },
           removeAttribute(k) { attrs.delete(k); },
           addEventListener(evt, fn) { el.listeners.set(evt, fn); },
-          matches(sel) { return sel.split(',').some((s) => s.trim().toLowerCase() === tag.toLowerCase()); },
-          closest() { return null; },
-          querySelector(sel) {
-            if (sel.includes('#above-the-fold') && el.__watchTitleEl) return el.__watchTitleEl;
-            if (sel.includes('#channel-name') && el.__watchChannelEl) return el.__watchChannelEl;
-            if (sel === '#rusty-yt-focus-banner-text') {
-              return findById(el, 'rusty-yt-focus-banner-text');
+          matches(sel) {
+            return sel.split(',').some((s) => s.trim().toLowerCase() === el.tagName.toLowerCase());
+          },
+          closest(sel) {
+            let cur = el;
+            while (cur) {
+              if (sel === '[data-rusty-blurred]' && cur.dataset && cur.dataset.rustyBlurred) return cur;
+              if (sel === '[data-rusty-shorts-nav="true"]' && cur.getAttribute && cur.getAttribute('data-rusty-shorts-nav') === 'true') return cur;
+              if (sel === 'a[href]' && cur.tagName === 'A' && cur.getAttribute && cur.getAttribute('href')) return cur;
+              if (sel.startsWith('#') && cur.id === sel.slice(1)) return cur;
+              if (cur.matches(sel)) return cur;
+              cur = cur.parentNode;
             }
             return null;
           },
-          querySelectorAll() { return []; }
+          querySelector(sel) {
+            const parts = sel.split(',').map((s) => s.trim()).filter(Boolean);
+            for (const part of parts) {
+              if (part === '#rusty-yt-focus-banner-text') {
+                const hit = findById(el, 'rusty-yt-focus-banner-text');
+                if (hit) return hit;
+              } else if (part.includes('.rusty-blur-badge')) {
+                const hit = findByClass(el, 'rusty-blur-badge')[0];
+                if (hit) return hit;
+              } else if (part === 'yt-thumbnail-view-model') {
+                const hit = collectByTagOrAttr(el, (n) => n.tagName === 'YT-THUMBNAIL-VIEW-MODEL')[0];
+                if (hit) return hit;
+              } else if (part === '#video-title' || part === 'h3') {
+                const hit = findById(el, 'video-title') || collectByTagOrAttr(el, (n) => n.tagName === 'H3')[0];
+                if (hit) return hit;
+              } else if (part === '#channel-name') {
+                const hit = findById(el, 'channel-name');
+                if (hit) return hit;
+              } else if (part === 'a[href*="/shorts"]') {
+                const hit = collectByTagOrAttr(el, (n) => n.tagName === 'A' && (n.getAttribute('href') || '').includes('/shorts'))[0];
+                if (hit) return hit;
+              } else if (part === 'a[href*="/watch"]') {
+                const hit = collectByTagOrAttr(el, (n) => n.tagName === 'A' && (n.getAttribute('href') || '').includes('/watch'))[0];
+                if (hit) return hit;
+              } else if (part === 'a[href]') {
+                const hit = collectByTagOrAttr(el, (n) => n.tagName === 'A' && Boolean(n.getAttribute('href')))[0];
+                if (hit) return hit;
+              }
+            }
+            return null;
+          },
+          querySelectorAll(sel) {
+            if (sel.includes('.rusty-blur-badge')) return findByClass(el, 'rusty-blur-badge');
+            if (sel.includes('a[href]')) return collectByTagOrAttr(el, (n) => n.tagName === 'A' && Boolean(n.getAttribute('href')));
+            return [];
+          }
         };
         Object.defineProperty(el, 'innerHTML', {
           get() { return ''; },
           set() { throw new TypeError("This document requires 'TrustedHTML' assignment."); }
         });
-        createdElements.push(el);
         return el;
-      }
-
-      function findById(root, id) {
-        if (root.id === id) return root;
-        for (const c of root.children || []) {
-          const hit = findById(c, id);
-          if (hit) return hit;
-        }
-        return null;
       }
 
       const head = makeEl('head');
@@ -224,7 +316,25 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
       const videoEl = makeEl('video');
       const watchTitle = makeEl('yt-formatted-string', { textContent: 'Angry Birds 3 Official Trailer 2' });
       const watchChannel = makeEl('div', { textContent: 'Movies & Trailers' });
+
+      // Home feed sample cards: 1 Short, 1 Educational video, 1 Gaming video
+      const shortCard = makeEl('ytm-shorts-lockup-view-model-v2');
+      const shortThumb = makeEl('yt-thumbnail-view-model');
+      const shortLink = makeEl('a', { href: 'https://www.youtube.com/shorts/short123', textContent: 'Viral Dance Clip' });
+      shortThumb.appendChild(shortLink);
+      shortCard.appendChild(shortThumb);
+
+      const eduCard = makeEl('ytd-rich-item-renderer');
+      const eduThumb = makeEl('yt-thumbnail-view-model');
+      const eduTitle = makeEl('h3', { id: 'video-title', textContent: 'MIT 18.06 Linear Algebra Lecture 1' });
+      const eduLink = makeEl('a', { href: 'https://www.youtube.com/watch?v=edu123', textContent: 'MIT Linear Algebra' });
+      eduCard.appendChild(eduThumb);
+      eduCard.appendChild(eduTitle);
+      eduCard.appendChild(eduLink);
+
       body.appendChild(masthead);
+      body.appendChild(shortCard);
+      body.appendChild(eduCard);
       body.appendChild(player);
       body.appendChild(videoEl);
 
@@ -235,7 +345,7 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
         title: 'Angry Birds 3 Official Trailer 2 - YouTube',
         createElement: (t) => makeEl(t),
         getElementById(id) { return findById(documentElement, id); },
-        addEventListener() {},
+        addEventListener(evt, fn) { docListeners.push({ evt, fn }); },
         querySelector(sel) {
           if (sel.includes('#above-the-fold')) return watchTitle;
           if (sel.includes('#channel-name')) return watchChannel;
@@ -245,6 +355,8 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
         },
         querySelectorAll(sel) {
           if (sel === 'video') return [videoEl];
+          if (sel.includes('ytm-shorts-lockup-view-model-v2')) return [shortCard, eduCard];
+          if (sel.includes('[data-rusty-shorts-nav')) return [];
           return [];
         }
       };
@@ -260,7 +372,7 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
         history: { pushState() {}, replaceState() {} },
         ipc: { postMessage(msg) { ipcSent.push(JSON.parse(msg)); } },
         __RUSTY_FOCUS_STATE__: { is_active: true, is_paused: false, mode: 'Study' },
-        addEventListener() {}
+        addEventListener(evt, fn) { winListeners.push({ evt, fn }); }
       };
       fakeWin.window = fakeWin;
       fakeWin.top = fakeWin;
@@ -275,6 +387,7 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
         Map,
         Array,
         Boolean,
+        Object,
         JSON,
         console,
         MutationObserver: class { observe() {} },
@@ -288,18 +401,64 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
       // 1) Verify IPC requested live focus state immediately on init
       assert.ok(ipcSent.some((m) => m.action === 'get_focus_state'), 'Sent live get_focus_state pull IPC');
 
-      // 2) Verify Red Warning watch gate rendered without innerHTML error and paused video
-      const gate = findById(documentElement, 'rusty-yt-watch-gate');
-      assert.ok(gate, 'Created #rusty-yt-watch-gate without throwing TrustedHTML error');
-      assert.ok(videoEl.paused && videoEl.pauseCalled > 0, 'Paused blocked video playback');
+      // 2) Verify Short card is NOT display:none hidden, HAS data-rusty-blurred='shorts' & crisp .rusty-blur-badge; Edu card stays unblurred
+      assert.equal(shortCard.dataset.rustyBlurred, 'shorts', 'Blurred Short card instead of hiding');
+      assert.notEqual(shortCard.style.display, 'none', 'Short card remains visible in layout with blurred thumbnail');
+      assert.equal(findByClass(shortCard, 'rusty-blur-badge').length, 1, 'Rendered overlay pill badge on blurred Short');
+      assert.equal(eduCard.dataset.rustyBlurred, undefined, 'Educational card remains sharp and unblurred');
+      assert.equal(eduCard.dataset.rustyCategory, 'educational', 'Educational card classified as educational');
+
+      // 3) Verify clicking the blurred Short intercepts navigation & opens "You are leaving Focus Mode" warning modal
+      const clickHandler = winListeners.find((l) => l.evt === 'click');
+      assert.ok(clickHandler, 'Registered window capture click handler');
+      let prevented = false;
+      let stopped = false;
+      clickHandler.fn({
+        target: shortLink,
+        preventDefault() { prevented = true; },
+        stopPropagation() { stopped = true; },
+        stopImmediatePropagation() {}
+      });
+      assert.ok(prevented && stopped, 'Prevented direct navigation when clicking blurred Short');
+      const modal = findById(documentElement, 'rusty-yt-leave-warning');
+      assert.ok(modal, 'Rendered #rusty-yt-leave-warning modal');
+
       function collectText(node) {
         if (!node) return '';
         return (node.textContent || '') + ' ' + (node.children || []).map(collectText).join(' ');
       }
-      const gateText = collectText(gate);
-      assert.ok(gateText.includes('Focus on Your Studies & Work!'), 'Shows focus on studies/work warning message');
+      assert.ok(collectText(modal).includes('You are leaving Focus Mode'), 'Warning modal says "You are leaving Focus Mode"');
 
-      // 3) Verify video classification evaluator on all reported distraction cases vs educational/finance
+      // 4) Clicking "Stay in Focus Mode" closes modal and keeps Focus Mode ON
+      const stayBtn = findById(modal, 'btn-rusty-stay-focus');
+      assert.ok(stayBtn, 'Stay button exists');
+      stayBtn.listeners.get('click')({ preventDefault() {}, stopPropagation() {} });
+      assert.equal(findById(documentElement, 'rusty-yt-leave-warning'), null, 'Stay button closes warning modal');
+      assert.equal(fakeWin.__RUSTY_FOCUS_STATE__.is_active, true, 'Focus Mode stays active');
+
+      // 5) Re-open via middle/Ctrl hook & check untrusted vs trusted Leave click
+      const intercepted = fakeWin.__rustyShouldInterceptFocusClick({ target: shortLink }, shortLink);
+      assert.equal(intercepted, true, '__rustyShouldInterceptFocusClick blocks Ctrl/middle-click too');
+      const leaveModal = findById(documentElement, 'rusty-yt-leave-warning');
+      const leaveBtn = findById(leaveModal, 'btn-rusty-leave-focus');
+      // Untrusted click MUST NOT send stop_focus
+      leaveBtn.listeners.get('click')({ isTrusted: false, preventDefault() {}, stopPropagation() {} });
+      assert.equal(ipcSent.some((m) => m.action === 'stop_focus'), false, 'Rejects untrusted Leave click');
+
+      // Trusted click closes modal, clears blurs, and sends stop_focus IPC
+      leaveBtn.listeners.get('click')({ isTrusted: true, preventDefault() {}, stopPropagation() {} });
+      assert.ok(ipcSent.some((m) => m.action === 'stop_focus'), 'Trusted Leave click sends stop_focus IPC');
+      assert.equal(shortCard.dataset.rustyBlurred, undefined, 'Unblurs cards when leaving Focus Mode');
+
+      // 6) Re-enable Focus Mode and verify Watch Red Warning Gate & evaluator
+      fakeWin.__rustyOnFocusState({ state: { is_active: true, is_paused: false, mode: 'Study' } });
+      const gate = findById(documentElement, 'rusty-yt-watch-gate');
+      assert.ok(gate, 'Created #rusty-yt-watch-gate without throwing TrustedHTML error');
+      assert.ok(videoEl.paused && videoEl.pauseCalled > 0, 'Paused blocked video playback');
+      const gateText = collectText(gate);
+      assert.ok(gateText.includes('You are leaving Focus Mode!'), 'Shows leaving focus warning');
+      assert.ok(gateText.includes('Focus on Your Studies & Work!'), 'Shows focus on studies/work message');
+
       const evalFn = fakeWin.__rustyFocusEvaluate;
       assert.equal(evalFn('Bairan - Animated Love Story | Banjaare (Official Video)', '/watch?v=1', 'Banjaare').allowed, false);
       assert.equal(evalFn('Hansika 4K 60FPS | UHD HUNTER', '/watch?v=2', 'UHD HUNTERYT').allowed, false);
@@ -310,17 +469,17 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
       assert.equal(evalFn('Minecraft Survival Gameplay Walkthrough', '/watch?v=7', 'Gamer').allowed, false);
       assert.equal(evalFn('Any Short Clip', '/shorts/xyz999', 'Creator').allowed, false);
 
-      // Allowed educational & finance content
       assert.equal(evalFn('MIT OpenCourseWare Calculus Lecture 1', '/watch?v=10', 'MIT OpenCourseWare').allowed, true);
       assert.equal(evalFn('Rust Programming Tutorial: Ownership and Borrowing', '/watch?v=11', 'DevChannel').allowed, true);
       assert.equal(evalFn('Stock Market & Personal Finance Investing Basics', '/watch?v=12', 'FinanceEd').allowed, true);
       assert.equal(evalFn('Essence of Linear Algebra', '/watch?v=13', '3Blue1Brown').allowed, true);
       assert.equal(evalFn('10th Physics Chapter 1 One Shot Revision', '/watch?v=14', 'Disha Online Classes').allowed, true);
 
-      // 4) Turning Focus Mode OFF removes red warning gate & banner immediately
+      // 7) Turning Focus Mode OFF removes red warning gate, banner, and blurred badges cleanly
       fakeWin.__rustyOnFocusState({ state: { is_active: false, is_paused: false, mode: 'Study' } });
       assert.equal(findById(documentElement, 'rusty-yt-watch-gate'), null, 'Removes watch gate when Focus Mode stops');
       assert.equal(findById(documentElement, 'rusty-yt-focus-banner'), null, 'Removes focus banner when Focus Mode stops');
+      assert.equal(findByClass(shortCard, 'rusty-blur-badge').length, 0, 'Removes blur badges when Focus Mode stops');
     });
   });
 

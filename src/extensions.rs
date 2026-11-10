@@ -251,15 +251,15 @@ pub fn build_userscripts_injection_js(userscripts: &[UserScript], is_vault_works
     const matchFound = Array.isArray(s.matches) && s.matches.some(p => urlMatches(currentUrl, p));
     if (!matchFound) return;
 
-    if (s.run_at === 'document_start') {{{{
+    if (s.run_at === 'document_start') {{
       runScript(s);
-    }}}} else {{{{
-      if (document.readyState === 'loading') {{{{
-        document.addEventListener('DOMContentLoaded', () => runScript(s), {{{{ once: true }}}});
-      }}}} else {{{{
+    }} else {{
+      if (document.readyState === 'loading') {{
+        document.addEventListener('DOMContentLoaded', () => runScript(s), {{ once: true }});
+      }} else {{
         runScript(s);
-      }}}}
-    }}}}
+      }}
+    }}
   }});
 }})();
 "#
@@ -338,5 +338,9 @@ mod tests {
         let normal_js = build_userscripts_injection_js(&scripts, false);
         assert!(normal_js.contains("test_s1"));
         assert!(normal_js.contains("urlMatches"));
+        // Verify brace escaping in format! does not emit literal {{ or }} JS syntax errors
+        assert!(!normal_js.contains("{{"));
+        assert!(!normal_js.contains("}}"));
+        assert!(normal_js.contains("{ once: true }"));
     }
 }

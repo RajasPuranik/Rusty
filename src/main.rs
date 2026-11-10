@@ -1085,6 +1085,15 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           return a;
       }
 
+      function isBlockedByFocusHook(e, a) {
+          try {
+              return typeof window.__rustyShouldInterceptFocusClick === 'function'
+                  && window.__rustyShouldInterceptFocusClick(e, a) === true;
+          } catch (_) {
+              return false;
+          }
+      }
+
       // Suppress middle-click autoscroll ONLY on actual links; keep WebView2 native autoscroll everywhere else
       window.addEventListener('mousedown', (e) => {
           if (e.button === 1 && findNavigableAnchor(e.target)) {
@@ -1098,6 +1107,12 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           if (!a) return;
           e.preventDefault();
           e.stopPropagation();
+          if (isBlockedByFocusHook(e, a)) {
+              if (typeof e.stopImmediatePropagation === 'function') {
+                  e.stopImmediatePropagation();
+              }
+              return;
+          }
           const title = (a.innerText || a.title || '').trim().slice(0, 120);
           postRawIpc(JSON.stringify({
               action: 'new_tab',
@@ -1115,6 +1130,12 @@ const CONTENT_INIT_SCRIPT: &str = r#"
           if (!a) return;
           e.preventDefault();
           e.stopPropagation();
+          if (isBlockedByFocusHook(e, a)) {
+              if (typeof e.stopImmediatePropagation === 'function') {
+                  e.stopImmediatePropagation();
+              }
+              return;
+          }
           const forceForeground = e.shiftKey; // Ctrl+Shift+click or Shift+click -> foreground
           const title = (a.innerText || a.title || '').trim().slice(0, 120);
           postRawIpc(JSON.stringify({
@@ -1135,28 +1156,21 @@ const CONTENT_INIT_SCRIPT: &str = r#"
               if (isFocusOnNow() && location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
                   const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
                   if (id) {
-                      location.replace('https://www.youtube.com/watch?v=' + id);
+                      location.replace('https://www.youtube.com/watch?v=' + id + '&rusty_short=1');
                   }
               }
           };
 
-          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves when Focus Mode is on
+          // YouTube Shorts & Distraction Blur: early thumbnail blur before paint (cards remain visible and warn on click)
           if (location.hostname.includes('youtube.com')) {
               postRawIpc(JSON.stringify({ action: 'get_focus_state' }));
               if (isFocusOnNow()) {
                   try {
                       const s = document.createElement('style');
-                      s.id = 'rusty-early-shorts-hide';
+                      s.id = 'rusty-early-shorts-blur';
                       s.textContent = [
-                          'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,#shorts-container,ytd-reel-video-renderer,a#endpoint[title="Shorts"],a[title="Shorts"],ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],[data-rusty-shorts="true"]{display:none!important;}',
-                          'ytd-rich-section-renderer:has(ytd-reel-shelf-renderer){display:none!important;}',
-                          'ytd-rich-section-renderer:has(a[href*="/shorts"]){display:none!important;}',
-                          'grid-shelf-view-model:has(a[href*="/shorts"]){display:none!important;}',
-                          'ytd-rich-item-renderer:has(a[href*="/shorts"]){display:none!important;}',
-                          'ytd-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
-                          'ytd-grid-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
-                          'ytd-compact-video-renderer:has(a[href*="/shorts"]){display:none!important;}',
-                          'yt-lockup-view-model:has(a[href*="/shorts"]){display:none!important;}'
+                          'ytm-shorts-lockup-view-model img,ytm-shorts-lockup-view-model-v2 img,ytd-reel-item-renderer img,ytd-rich-shelf-renderer[is-shorts] img,ytd-reel-shelf-renderer img{filter:blur(22px) brightness(0.32) saturate(0.22)!important;-webkit-filter:blur(22px) brightness(0.32) saturate(0.22)!important;transform:scale(1.1)!important;}',
+                          'ytm-shorts-lockup-view-model .shortsLockupViewModelHostThumbnailContainer,ytm-shorts-lockup-view-model-v2 .shortsLockupViewModelHostThumbnailContainer{overflow:hidden!important;}'
                       ].join('\n');
                       (document.head || document.documentElement).appendChild(s);
                   } catch (_) {}
@@ -1545,7 +1559,7 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
     let focus_init = format!("window.__RUSTY_FOCUS_STATE__ = {focus_state_json};\n");
     let yt_focus_js = ui::app_protocol::get_youtube_focus_script();
     let userscripts_js = extensions::build_userscripts_injection_js(userscripts, is_vault);
-    let combined_script = format!("{focus_init}\n{init_core}\n{yt_focus_js}\n{scroll_restore}\n{userscripts_js}");
+    let core_script = format!("{focus_init}\n{init_core}\n{scroll_restore}");
 
     #[cfg(not(target_os = "windows"))]
     let _ = shared_webview;
@@ -1556,7 +1570,9 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
         .with_url(url)
         .with_incognito(is_incognito)
         .with_devtools(cfg!(debug_assertions))
-        .with_initialization_script(&combined_script)
+        .with_initialization_script(&core_script)
+        .with_initialization_script(yt_focus_js)
+        .with_initialization_script(&userscripts_js)
         .with_ipc_handler(move |req| {
             let uri = req.uri().to_string();
             let body = req.body().to_string();
