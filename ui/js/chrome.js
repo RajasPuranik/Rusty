@@ -2272,6 +2272,10 @@
     { title: 'Toggle Vertical Tabs', action: () => window.toggleTabsLayout(), badge: 'Layout' },
     { title: 'Toggle Compact Sidebar', action: () => btnCollapseSidebar && btnCollapseSidebar.click(), badge: 'Layout' },
     { title: 'Toggle Zen Focus Mode', action: toggleZenMode, badge: 'View' },
+    { title: 'Start Focus Mode: Study (25m - Filter YouTube)', action: () => window.bridge.send('start_focus', { mode: 'study', duration_secs: 1500 }), badge: 'Focus' },
+    { title: 'Start Focus Mode: Work (50m)', action: () => window.bridge.send('start_focus', { mode: 'work', duration_secs: 3000 }), badge: 'Focus' },
+    { title: 'Start Focus Mode: Deep Work (90m)', action: () => window.bridge.send('start_focus', { mode: 'deep', duration_secs: 5400 }), badge: 'Focus' },
+    { title: 'Stop Focus Mode', action: () => window.bridge.send('stop_focus'), badge: 'Focus' },
     { title: 'Find in Page', action: openFindBar, badge: 'Find' },
     { title: 'Open Bookmarks Panel', action: () => openSidePanel('bookmarks'), badge: 'Panel' },
     { title: 'Open History Panel', action: () => openSidePanel('history'), badge: 'Panel' },
@@ -2487,6 +2491,12 @@
         window.bridge.send('switch_workspace', { workspace_id: currentWorkspaces[targetIdx].id });
         return;
       }
+    }
+    // Ctrl+Alt+F -> Quick Start Focus Mode (Study 25m)
+    if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      window.bridge.send('start_focus', { mode: 'study', duration_secs: 1500 });
+      return;
     }
     // Ctrl+K -> Command Palette
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {

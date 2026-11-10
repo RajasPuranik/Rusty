@@ -161,6 +161,14 @@
           display: none !important;
         }
 
+        /* Hide gaming links, gaming chips and filtered items */
+        ytd-guide-entry-renderer a[title="Gaming"],
+        ytd-guide-entry-renderer a[href*="/gaming"],
+        ytd-mini-guide-entry-renderer[aria-label="Gaming"],
+        [data-rusty-hidden] {
+          display: none !important;
+        }
+
         /* Filter banner styling */
         #rusty-yt-focus-banner {
           display: flex;
@@ -254,11 +262,11 @@
 
     const evaluation = evaluateVideo(combinedText, links);
     if (evaluation.allowed) {
-      card.style.display = '';
+      card.style.removeProperty('display');
       delete card.dataset.rustyHidden;
       card.dataset.rustyCategory = evaluation.category;
     } else {
-      card.style.display = 'none';
+      card.style.setProperty('display', 'none', 'important');
       card.dataset.rustyHidden = evaluation.reason;
     }
   }
@@ -276,6 +284,17 @@
   function applyFocusFilters() {
     updateFocusStylesheet();
     checkShortsRedirect();
+
+    const active = isFocusActive();
+    // Filter chip cloud
+    document.querySelectorAll('yt-chip-cloud-chip-renderer').forEach((chip) => {
+      const text = (chip.textContent || '').toLowerCase().trim();
+      if (active && (text.includes('gaming') || text.includes('game') || text.includes('games'))) {
+        chip.style.setProperty('display', 'none', 'important');
+      } else if (!active && chip.style.display === 'none') {
+        chip.style.removeProperty('display');
+      }
+    });
 
     const cards = document.querySelectorAll(VIDEO_CARD_SELECTORS);
     for (let i = 0; i < cards.length; i++) {
