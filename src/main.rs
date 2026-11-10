@@ -1883,7 +1883,7 @@ fn sync_chrome_ui(
         })
     };
 
-    let focus_payload = if let Ok(fm) = global_focus_manager().lock() {
+    let focus_payload = if let Ok(fm) = global_focus_manager().try_lock() {
         serde_json::to_value(&fm.state()).unwrap_or(serde_json::Value::Null)
     } else {
         serde_json::Value::Null
@@ -4477,13 +4477,17 @@ fn run_browser() -> Result<()> {
                     }
 
                     UiMessage::ToggleFocus => {
-                        if let Ok(mut fm) = global_focus_manager().lock() {
+                        let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                             if fm.state().is_active {
                                 fm.stop();
                             } else {
                                 fm.start(focus::FocusModeKind::Study, None);
                             }
-                            let state = fm.state();
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4499,9 +4503,13 @@ fn run_browser() -> Result<()> {
                             "deep" | "deep work" => focus::FocusModeKind::Deep,
                             _ => focus::FocusModeKind::Study,
                         };
-                        if let Ok(mut fm) = global_focus_manager().lock() {
+                        let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                             fm.start(kind, duration_secs);
-                            let state = fm.state();
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4512,9 +4520,13 @@ fn run_browser() -> Result<()> {
                     }
 
                     UiMessage::PauseFocus => {
-                        if let Ok(mut fm) = global_focus_manager().lock() {
+                        let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                             fm.pause();
-                            let state = fm.state();
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4525,9 +4537,13 @@ fn run_browser() -> Result<()> {
                     }
 
                     UiMessage::ResumeFocus => {
-                        if let Ok(mut fm) = global_focus_manager().lock() {
+                        let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                             fm.resume();
-                            let state = fm.state();
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4538,9 +4554,13 @@ fn run_browser() -> Result<()> {
                     }
 
                     UiMessage::StopFocus => {
-                        if let Ok(mut fm) = global_focus_manager().lock() {
+                        let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                             fm.stop();
-                            let state = fm.state();
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4551,8 +4571,12 @@ fn run_browser() -> Result<()> {
                     }
 
                     UiMessage::GetFocusState => {
-                        if let Ok(fm) = global_focus_manager().lock() {
-                            let state = fm.state();
+                        let state_opt = if let Ok(fm) = global_focus_manager().lock() {
+                            Some(fm.state())
+                        } else {
+                            None
+                        };
+                        if let Some(state) = state_opt {
                             let msg = json!({
                                 "type": "focus_state_changed",
                                 "state": state
@@ -4989,17 +5013,23 @@ fn run_browser() -> Result<()> {
             }
 
             Event::UserEvent(UserEvent::FocusTick) => {
-                if let Ok(mut fm) = global_focus_manager().lock() {
+                let tick_res = if let Ok(mut fm) = global_focus_manager().lock() {
                     let completed = fm.tick();
-                    if fm.state().is_active {
-                        let state = fm.state();
+                    let is_active = fm.state().is_active;
+                    let state = fm.state();
+                    Some((is_active, completed, state))
+                } else {
+                    None
+                };
+
+                if let Some((is_active, completed, state)) = tick_res {
+                    if is_active {
                         let msg = json!({
                             "type": "focus_state_changed",
                             "state": state
                         });
                         broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                     } else if completed {
-                        let state = fm.state();
                         let msg = json!({
                             "type": "focus_session_completed",
                             "state": state
@@ -5011,13 +5041,18 @@ fn run_browser() -> Result<()> {
             }
 
             Event::UserEvent(UserEvent::ToggleFocus) => {
-                if let Ok(mut fm) = global_focus_manager().lock() {
+                let state_opt = if let Ok(mut fm) = global_focus_manager().lock() {
                     if fm.state().is_active {
                         fm.stop();
                     } else {
                         fm.start(focus::FocusModeKind::Study, None);
                     }
-                    let state = fm.state();
+                    Some(fm.state())
+                } else {
+                    None
+                };
+
+                if let Some(state) = state_opt {
                     let msg = json!({
                         "type": "focus_state_changed",
                         "state": state
