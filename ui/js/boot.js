@@ -17,7 +17,7 @@
 
   const DEFAULT_BOOT_SETTINGS = {
     skin: 'crazy',
-    accent_palette: 'slate',
+    accent_palette: '',
     bg_style: 'match_theme',
     theme: 'sunset',
     tabs_layout: 'horizontal',

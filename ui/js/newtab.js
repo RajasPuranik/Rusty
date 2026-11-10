@@ -940,7 +940,11 @@
         <input type="text" id="notes-inline-input" class="notes-inline-input" placeholder="Add task & press Enter..." />
         <button type="button" id="notes-inline-btn" class="btn-icon-xs" title="Add">+</button>
       `;
-      notesChecklist.parentNode.insertBefore(addRow, scratchpad);
+      if (scratchpad && scratchpad.parentNode) {
+        scratchpad.parentNode.insertBefore(addRow, scratchpad);
+      } else if (notesChecklist) {
+        notesChecklist.appendChild(addRow);
+      }
 
       const inlineInput = addRow.querySelector('#notes-inline-input');
       const inlineBtn = addRow.querySelector('#notes-inline-btn');
@@ -1698,6 +1702,13 @@
     if (s.world_clocks !== undefined) {
       renderWorldClocks();
     }
+  }
+
+  const ntpCanvas = document.getElementById('ntp-canvas');
+  if (ntpCanvas && window.BackgroundRegistry && typeof window.BackgroundRegistry.mount === 'function') {
+    const curSkin = document.documentElement.getAttribute('data-skin') || 'crazy';
+    const curTheme = document.documentElement.getAttribute('data-theme') || 'sunset';
+    window.BackgroundRegistry.mount(ntpCanvas, window.BackgroundRegistry.resolveThemeStyle(curTheme, curSkin));
   }
 
   if (window.Settings && window.Settings.data) {

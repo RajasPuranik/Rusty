@@ -58,7 +58,7 @@ fn default_skin() -> String {
     "crazy".to_owned()
 }
 fn default_accent_palette() -> String {
-    "slate".to_owned()
+    String::new()
 }
 fn default_bg_style() -> String {
     "match_theme".to_owned()
@@ -474,6 +474,9 @@ impl Settings {
                 if let Some(s) = value.as_str() {
                     if s == "graphite" || s == "slate" || s == "mocha" || s == "midnight_blue" {
                         self.accent_palette = s.to_owned();
+                        return true;
+                    } else if s.is_empty() || s == "default" || s == "none" {
+                        self.accent_palette = String::new();
                         return true;
                     }
                 }

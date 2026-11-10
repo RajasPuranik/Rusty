@@ -1244,7 +1244,9 @@ fn resolve_content_url_with_settings(url: &str, settings: &storage::Settings) ->
 
 fn eval_on_webview(wv: &WebView, msg: &serde_json::Value) {
     let js = format!("if (window.__onRustMessage) {{ window.__onRustMessage({msg}); }}");
-    let _ = wv.evaluate_script(&js);
+    if let Err(err) = wv.evaluate_script(&js) {
+        tracing::debug!(error = %err, "[ipc] eval_on_webview evaluation error");
+    }
 }
 
 fn broadcast_to_newtab_views(
@@ -2073,6 +2075,13 @@ fn apply_layout_and_visibility(
                 if want_visible {
                     let _ = wv.resume();
                     let _ = wv.set_memory_target_normal();
+                    if tabs.get(tid).map(|t| is_newtab_url(&t.url)).unwrap_or(false) {
+                        let sync_msg = json!({
+                            "type": "ui_settings_sync",
+                            "settings": storage.settings().to_ui_json(),
+                        });
+                        eval_on_webview(wv, &sync_msg);
+                    }
                 }
                 split.applied_visible.insert(tid, want_visible);
             }

@@ -564,7 +564,7 @@
 /* ==========================================================================
    ACCENT PALETTES
    Independent accent color ramps and styling applicable over any base theme.
-   Customizes both accent color and card/surface aesthetic styling.
+   Customizes accent color ramps, glow effects, borders, and card styling.
    ========================================================================== */
 [data-palette="graphite"] {
   --accent: #00d2ff;
@@ -578,12 +578,8 @@
   --accent-contrast: #000000;
   --bg-particle: #00d2ff;
   --border-active: #00d2ff;
-  --surface: rgba(22, 26, 36, 0.90);
-  --surface-2: rgba(16, 20, 28, 0.95);
-  --border: rgba(0, 210, 255, 0.20);
-  --shadow-dark: rgba(0, 0, 0, 0.60);
-  --bg-glass: rgba(22, 26, 36, 0.90);
-  --border-glass: rgba(0, 210, 255, 0.20);
+  --border: rgba(0, 210, 255, 0.25);
+  --border-glass: rgba(0, 210, 255, 0.25);
 }
 
 [data-palette="slate"] {
@@ -598,12 +594,8 @@
   --accent-contrast: #000000;
   --bg-particle: #38bdf8;
   --border-active: #38bdf8;
-  --surface: rgba(18, 34, 54, 0.84);
-  --surface-2: rgba(13, 25, 42, 0.92);
-  --border: rgba(56, 189, 248, 0.22);
-  --shadow-dark: rgba(3, 12, 24, 0.55);
-  --bg-glass: rgba(18, 34, 54, 0.84);
-  --border-glass: rgba(56, 189, 248, 0.22);
+  --border: rgba(56, 189, 248, 0.25);
+  --border-glass: rgba(56, 189, 248, 0.25);
 }
 
 [data-palette="mocha"] {
@@ -618,12 +610,8 @@
   --accent-contrast: #000000;
   --bg-particle: #f59e0b;
   --border-active: #f59e0b;
-  --surface: rgba(46, 26, 16, 0.88);
-  --surface-2: rgba(34, 18, 11, 0.94);
-  --border: rgba(245, 158, 11, 0.26);
-  --shadow-dark: rgba(20, 8, 3, 0.60);
-  --bg-glass: rgba(46, 26, 16, 0.88);
-  --border-glass: rgba(245, 158, 11, 0.26);
+  --border: rgba(245, 158, 11, 0.28);
+  --border-glass: rgba(245, 158, 11, 0.28);
 }
 
 [data-palette="midnight_blue"] {
@@ -638,10 +626,6 @@
   --accent-contrast: #ffffff;
   --bg-particle: #3b82f6;
   --border-active: #3b82f6;
-  --surface: rgba(14, 30, 72, 0.88);
-  --surface-2: rgba(10, 22, 54, 0.94);
-  --border: rgba(59, 130, 246, 0.26);
-  --shadow-dark: rgba(3, 8, 28, 0.60);
-  --bg-glass: rgba(14, 30, 72, 0.88);
-  --border-glass: rgba(59, 130, 246, 0.26);
+  --border: rgba(59, 130, 246, 0.28);
+  --border-glass: rgba(59, 130, 246, 0.28);
 }
