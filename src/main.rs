@@ -107,6 +107,7 @@ mod win32_platform {
         fn EmptyClipboard() -> i32;
         fn GetClipboardData(uFormat: u32) -> isize;
         fn SetClipboardData(uFormat: u32, hMem: isize) -> isize;
+        fn MessageBoxW(hWnd: isize, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
     }
 
     extern "system" {
@@ -252,6 +253,14 @@ mod win32_platform {
             }
             CloseClipboard();
             true
+        }
+    }
+
+    pub fn show_error_box(message: &str, title: &str) {
+        unsafe {
+            let wide_msg: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+            let wide_title: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+            MessageBoxW(0, wide_msg.as_ptr(), wide_title.as_ptr(), 0x00000010 /* MB_ICONERROR */ | 0x00000000 /* MB_OK */);
         }
     }
 }
@@ -2226,6 +2235,19 @@ fn main() -> Result<()> {
         .with_target(false)
         .try_init();
 
+    if let Err(err) = run_browser() {
+        eprintln!("[fatal] Rusty Browser terminated with error: {err:?}");
+        #[cfg(target_os = "windows")]
+        {
+            let err_str = format!("Rusty Browser failed to start:\n\n{err:?}\n\nPlease ensure WebView2 Runtime is installed.");
+            win32_platform::show_error_box(&err_str, "Rusty Browser Error");
+        }
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn run_browser() -> Result<()> {
     // ── Windows Job Object so all WebView2 child processes stay tracked & die with host ─
     #[cfg(target_os = "windows")]
     let _job_guard = win32_platform::init_job_object();
@@ -2332,14 +2354,34 @@ fn main() -> Result<()> {
     };
 
     // ── Build Chrome UI WebView (owns shared WebContext/Environment) ───
-    let chrome_wv = build_chrome_webview(
+    let chrome_wv = match build_chrome_webview(
         &window,
         &mut web_context,
         proxy.clone(),
         DEFAULT_WIDTH,
         DEFAULT_HEIGHT,
         &initial_settings,
-    )?;
+    ) {
+        Ok(wv) => wv,
+        Err(err) => {
+            eprintln!("[webview2] Primary user-data directory failed ({err:?}); retrying with isolated instance profile...");
+            let fallback_dir = storage
+                .data_dir()
+                .join(format!("WebView2_inst_{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&fallback_dir);
+            telemetry::set_webview_data_dir(&fallback_dir);
+            let mut fallback_context = WebContext::new(Some(fallback_dir));
+            build_chrome_webview(
+                &window,
+                &mut fallback_context,
+                proxy.clone(),
+                DEFAULT_WIDTH,
+                DEFAULT_HEIGHT,
+                &initial_settings,
+            )
+            .context("Failed to create chrome WebView (even with fallback profile)")?
+        }
+    };
 
     // ── Background Real OS Telemetry & Live Weather ────────────────────
     let tel_proxy = proxy.clone();
