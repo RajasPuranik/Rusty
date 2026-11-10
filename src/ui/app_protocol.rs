@@ -34,6 +34,11 @@ static JS_PET_CRAZY: &[u8] = include_bytes!("../../ui/js/pet-crazy.js");
 static JS_GLOBE: &[u8] = include_bytes!("../../ui/js/globe.js");
 static JS_YOUTUBE_FOCUS: &[u8] = include_bytes!("../../ui/js/youtube_focus.js");
 
+/// Returns the embedded YouTube focus filter script content for webview injection.
+pub fn get_youtube_focus_script() -> &'static str {
+    std::str::from_utf8(JS_YOUTUBE_FOCUS).unwrap_or("")
+}
+
 static ASSET_LOGO: &[u8] = include_bytes!("../../ui/assets/logo.svg");
 // PLACEHOLDER: self-generated procedural WebP Earth maps; verify license if replacing with NASA/Natural Earth assets.
 static ASSET_EARTH_DAY: &[u8] = include_bytes!("../../ui/assets/earth-day.webp");

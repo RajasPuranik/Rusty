@@ -59,6 +59,17 @@ describe('Milestone R4: Focus Mode & YouTube Restrictor Suite', () => {
       assert.ok(ytJs.includes('#related'), 'Hides sidebar recommendation distractions');
       assert.ok(ytJs.includes('history.pushState'), 'Hooks SPA history state transitions');
     });
+
+    it('Verifies YouTube gaming videos hiding and educational/finance filtering', () => {
+      const ytScriptPath = path.join(ROOT_DIR, 'ui', 'js', 'youtube_focus.js');
+      const ytJs = fs.readFileSync(ytScriptPath, 'utf8');
+      assert.ok(ytJs.includes('GAMING_KEYWORDS'), 'Contains gaming keywords dictionary');
+      assert.ok(ytJs.includes('EDUCATIONAL_KEYWORDS'), 'Contains educational keywords dictionary');
+      assert.ok(ytJs.includes('FINANCE_KEYWORDS'), 'Contains finance keywords dictionary');
+      assert.ok(ytJs.includes('evaluateVideo'), 'Implements video classification evaluator');
+      assert.ok(ytJs.includes('processCard'), 'Hides non-educational/gaming cards');
+      assert.ok(ytJs.includes('checkWatchPageGate'), 'Protects watch page playback');
+    });
   });
 
   describe('Feature 25: Calm Interstitial Page & 10s Confirmation Bypass Guard', () => {

@@ -1271,6 +1271,19 @@ fn broadcast_to_internal_views(
     broadcast_to_newtab_views(tabs, content_webviews, msg);
 }
 
+fn broadcast_focus_state_to_all(
+    chrome_wv: &WebView,
+    tabs: &TabManager,
+    content_webviews: &HashMap<TabId, WebView>,
+    msg: &serde_json::Value,
+) {
+    broadcast_to_internal_views(chrome_wv, tabs, content_webviews, msg);
+    let js = format!("if (window.__rustyOnFocusState) {{ window.__rustyOnFocusState({msg}); }}");
+    for wv in content_webviews.values() {
+        let _ = wv.evaluate_script(&js);
+    }
+}
+
 fn emit_pet_event(
     chrome_wv: &WebView,
     tabs: &TabManager,
@@ -1446,8 +1459,15 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
     };
     let frame_token = generate_frame_token(tab_id);
     let init_core = CONTENT_INIT_SCRIPT.replace("__RUSTY_FRAME_TOKEN__", &frame_token);
+    let focus_state_json = if let Ok(fm) = global_focus_manager().lock() {
+        serde_json::to_string(&fm.state()).unwrap_or_else(|_| "{}".to_string())
+    } else {
+        "{}".to_string()
+    };
+    let focus_init = format!("window.__RUSTY_FOCUS_STATE__ = {focus_state_json};\n");
+    let yt_focus_js = ui::app_protocol::get_youtube_focus_script();
     let userscripts_js = extensions::build_userscripts_injection_js(userscripts, is_vault);
-    let combined_script = format!("{init_core}\n{scroll_restore}\n{userscripts_js}");
+    let combined_script = format!("{init_core}\n{focus_init}\n{yt_focus_js}\n{scroll_restore}\n{userscripts_js}");
 
     #[cfg(not(target_os = "windows"))]
     let _ = shared_webview;
@@ -4234,7 +4254,7 @@ fn run_browser() -> Result<()> {
                                             "type": "focus_state_changed",
                                             "state": fm.state()
                                         });
-                                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &focus_msg);
+                                        broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &focus_msg);
                                     }
                                 }
                             }
@@ -4429,7 +4449,7 @@ fn run_browser() -> Result<()> {
                                 "type": "focus_state_changed",
                                 "state": state
                             });
-                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
                     }
 
@@ -4441,7 +4461,7 @@ fn run_browser() -> Result<()> {
                                 "type": "focus_state_changed",
                                 "state": state
                             });
-                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
                     }
 
@@ -4453,7 +4473,7 @@ fn run_browser() -> Result<()> {
                                 "type": "focus_state_changed",
                                 "state": state
                             });
-                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
                     }
 
@@ -4465,7 +4485,7 @@ fn run_browser() -> Result<()> {
                                 "type": "focus_state_changed",
                                 "state": state
                             });
-                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
                     }
 
@@ -4476,7 +4496,7 @@ fn run_browser() -> Result<()> {
                                 "type": "focus_state_changed",
                                 "state": state
                             });
-                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                            broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
                     }
 
@@ -4893,14 +4913,14 @@ fn run_browser() -> Result<()> {
                             "type": "focus_state_changed",
                             "state": state
                         });
-                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                     } else if completed {
                         let state = fm.state();
                         let msg = json!({
                             "type": "focus_session_completed",
                             "state": state
                         });
-                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        broadcast_focus_state_to_all(&chrome_wv, &tabs, &content_webviews, &msg);
                     }
                 }
             }

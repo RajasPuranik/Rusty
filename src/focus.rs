@@ -66,6 +66,8 @@ pub struct YouTubeRules {
     pub hide_home_feed: bool,
     pub hide_sidebar_recommendations: bool,
     pub study_keywords: Vec<String>,
+    pub finance_keywords: Vec<String>,
+    pub gaming_keywords: Vec<String>,
     pub channel_whitelist: Vec<String>,
 }
 
@@ -104,6 +106,59 @@ impl Default for YouTubeRules {
                 "programming".into(),
                 "coding".into(),
                 "deep learning".into(),
+            ],
+            finance_keywords: vec![
+                "finance".into(),
+                "financial".into(),
+                "money".into(),
+                "invest".into(),
+                "investing".into(),
+                "investment".into(),
+                "stock market".into(),
+                "stocks".into(),
+                "economy".into(),
+                "economics".into(),
+                "accounting".into(),
+                "tax".into(),
+                "taxes".into(),
+                "budget".into(),
+                "valuation".into(),
+                "mutual funds".into(),
+                "etf".into(),
+                "dividend".into(),
+                "portfolio".into(),
+                "warren buffett".into(),
+                "macroeconomics".into(),
+                "inflation".into(),
+                "interest rate".into(),
+                "capital".into(),
+            ],
+            gaming_keywords: vec![
+                "gaming".into(),
+                "gameplay".into(),
+                "walkthrough".into(),
+                "playthrough".into(),
+                "let's play".into(),
+                "lets play".into(),
+                "speedrun".into(),
+                "roblox".into(),
+                "minecraft".into(),
+                "gta".into(),
+                "fortnite".into(),
+                "valorant".into(),
+                "warzone".into(),
+                "pubg".into(),
+                "apex legends".into(),
+                "league of legends".into(),
+                "dota".into(),
+                "csgo".into(),
+                "cs2".into(),
+                "overwatch".into(),
+                "pokemon".into(),
+                "zelda".into(),
+                "elden ring".into(),
+                "genshin".into(),
+                "brawl stars".into(),
             ],
             channel_whitelist: vec![
                 "3blue1brown".into(),
@@ -431,30 +486,21 @@ impl FocusManager {
                 }
             }
             FocusModeKind::Study => {
-                // In Study mode, check if search query or watch URL contains educational keywords
-                if path == "/watch" {
-                    // Check search query parameters if available
-                    let query = parsed.query().unwrap_or_default().to_lowercase();
-                    // If video query contains educational keywords or user search has educational intent
-                    let is_educational = self.youtube_rules.study_keywords.iter().any(|k| query.contains(k));
-                    if is_educational || query.is_empty() {
-                        FocusDecision::Allowed
-                    } else {
-                        // In study mode without educational markers, prompt interstitial
-                        FocusDecision::Allowed
-                    }
-                } else if path == "/results" {
-                    // Check search query: if query has educational keywords, allow
-                    let query = parsed.query().unwrap_or_default().to_lowercase();
-                    let is_edu = self.youtube_rules.study_keywords.iter().any(|k| query.contains(k));
-                    if is_edu || query.contains("q=") {
-                        FocusDecision::Allowed
-                    } else {
-                        FocusDecision::Allowed
-                    }
-                } else {
-                    FocusDecision::Allowed
+                let query = parsed.query().unwrap_or_default().to_lowercase();
+
+                // If user searched for or clicked a gaming video on YouTube, block with interstitial
+                let is_gaming = self.youtube_rules.gaming_keywords.iter().any(|k| query.contains(k));
+                if is_gaming {
+                    return FocusDecision::Blocked {
+                        mode: self.mode.display_name().to_string(),
+                        domain: "youtube.com (Gaming Blocked)".to_string(),
+                        url: raw_url.to_string(),
+                        remaining_secs: self.remaining_secs,
+                    };
                 }
+
+                // Educational and Finance queries or general search allowed
+                FocusDecision::Allowed
             }
         }
     }
@@ -565,6 +611,30 @@ mod tests {
             }
             _ => panic!("Expected non-whitelisted site blocked in Deep Work"),
         }
+    }
+
+    #[test]
+    fn test_youtube_focus_filter() {
+        let mut fm = FocusManager::new();
+        fm.start(FocusModeKind::Study, None);
+
+        // Gaming search on YouTube is blocked
+        assert!(matches!(
+            fm.check_url("https://www.youtube.com/results?search_query=minecraft+gameplay"),
+            FocusDecision::Blocked { .. }
+        ));
+
+        // Educational query allowed
+        assert_eq!(
+            fm.check_url("https://www.youtube.com/results?search_query=calculus+lecture"),
+            FocusDecision::Allowed
+        );
+
+        // Finance query allowed
+        assert_eq!(
+            fm.check_url("https://www.youtube.com/results?search_query=stock+market+investing"),
+            FocusDecision::Allowed
+        );
     }
 
     #[test]
