@@ -60,6 +60,7 @@ struct RawManifest {
     pub manifest_version: Option<u32>,
     pub permissions: Option<Vec<String>>,
     pub host_permissions: Option<Vec<String>>,
+    #[allow(dead_code)]
     pub optional_permissions: Option<Vec<String>>,
     pub background: Option<serde_json::Value>,
     pub content_scripts: Option<serde_json::Value>,

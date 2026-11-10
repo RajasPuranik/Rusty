@@ -18,6 +18,7 @@ static WEBVIEW_DATA_DIR_NORM: OnceLock<String> = OnceLock::new();
 pub static UI_WEBVIEW_RENDERER_PID: AtomicU32 = AtomicU32::new(0);
 
 /// Explicitly register the initial shell / chrome UI WebView renderer PID.
+#[allow(dead_code)]
 pub fn register_ui_webview_renderer_pid(pid: u32) {
     UI_WEBVIEW_RENDERER_PID.store(pid, Ordering::SeqCst);
 }

@@ -260,7 +260,7 @@ mod win32_platform {
         unsafe {
             let wide_msg: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
             let wide_title: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
-            MessageBoxW(0, wide_msg.as_ptr(), wide_title.as_ptr(), 0x00000010 /* MB_ICONERROR */ | 0x00000000 /* MB_OK */);
+            MessageBoxW(0, wide_msg.as_ptr(), wide_title.as_ptr(), 0x00000010 /* MB_ICONERROR */);
         }
     }
 }

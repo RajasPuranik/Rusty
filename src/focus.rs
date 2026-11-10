@@ -419,33 +419,31 @@ impl FocusManager {
         }
 
         // Study Mode: Blocks social media and entertainment/gaming
-        if self.mode == FocusModeKind::Study {
-            if self.matches_any_domain(&host, &self.social_domains)
+        if self.mode == FocusModeKind::Study
+            && (self.matches_any_domain(&host, &self.social_domains)
                 || self.matches_any_domain(&host, &self.entertainment_domains)
-                || self.matches_any_domain(&host, &self.gaming_domains)
-            {
-                return FocusDecision::Blocked {
-                    mode: self.mode.display_name().to_string(),
-                    domain: host,
-                    url: raw_url.to_string(),
-                    remaining_secs: self.remaining_secs,
-                };
-            }
+                || self.matches_any_domain(&host, &self.gaming_domains))
+        {
+            return FocusDecision::Blocked {
+                mode: self.mode.display_name().to_string(),
+                domain: host,
+                url: raw_url.to_string(),
+                remaining_secs: self.remaining_secs,
+            };
         }
 
         // Work Mode: Blocks games, streaming, social media
-        if self.mode == FocusModeKind::Work {
-            if self.matches_any_domain(&host, &self.social_domains)
+        if self.mode == FocusModeKind::Work
+            && (self.matches_any_domain(&host, &self.social_domains)
                 || self.matches_any_domain(&host, &self.gaming_domains)
-                || self.matches_any_domain(&host, &self.entertainment_domains)
-            {
-                return FocusDecision::Blocked {
-                    mode: self.mode.display_name().to_string(),
-                    domain: host,
-                    url: raw_url.to_string(),
-                    remaining_secs: self.remaining_secs,
-                };
-            }
+                || self.matches_any_domain(&host, &self.entertainment_domains))
+        {
+            return FocusDecision::Blocked {
+                mode: self.mode.display_name().to_string(),
+                domain: host,
+                url: raw_url.to_string(),
+                remaining_secs: self.remaining_secs,
+            };
         }
 
         FocusDecision::Allowed

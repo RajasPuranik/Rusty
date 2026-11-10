@@ -1181,6 +1181,7 @@ impl Storage {
         self.data.workspaces.iter().any(|w| &w.id == active_id && (w.is_isolated || w.name.eq_ignore_ascii_case("vault")))
     }
 
+    #[allow(dead_code)]
     pub fn settings_mut(&mut self) -> &mut Settings {
         self.ensure_loaded();
         &mut self.data.settings
