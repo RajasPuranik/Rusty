@@ -135,33 +135,31 @@
       (document.head || document.documentElement).appendChild(style);
     }
 
-    const baseShortsBlock = `
-      /* Always block all YouTube Shorts shelves, carousels, cards & buttons */
-      ytd-rich-shelf-renderer[is-shorts],
-      ytd-reel-shelf-renderer,
-      ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
-      ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
-      ytd-rich-section-renderer:has(a[href*="/shorts"]),
-      ytd-rich-item-renderer:has(a[href*="/shorts"]),
-      ytd-video-renderer:has(a[href*="/shorts"]),
-      ytd-grid-video-renderer:has(a[href*="/shorts"]),
-      ytd-compact-video-renderer:has(a[href*="/shorts"]),
-      yt-lockup-view-model:has(a[href*="/shorts"]),
-      ytm-shorts-lockup-view-model,
-      #shorts-container,
-      ytd-reel-video-renderer,
-      ytd-guide-entry-renderer a[title="Shorts"],
-      ytd-guide-entry-renderer a[href*="/shorts"],
-      ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-      ytd-mini-guide-entry-renderer a[href*="/shorts"],
-      a#endpoint[title="Shorts"],
-      [data-rusty-shorts="true"] {
-        display: none !important;
-      }
-    `;
-
     if (isFocusActive()) {
-      style.textContent = baseShortsBlock + `
+      style.textContent = `
+        /* Hide all YouTube Shorts shelves, carousels, cards & buttons */
+        ytd-rich-shelf-renderer[is-shorts],
+        ytd-reel-shelf-renderer,
+        ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
+        ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
+        ytd-rich-section-renderer:has(a[href*="/shorts"]),
+        ytd-rich-item-renderer:has(a[href*="/shorts"]),
+        ytd-video-renderer:has(a[href*="/shorts"]),
+        ytd-grid-video-renderer:has(a[href*="/shorts"]),
+        ytd-compact-video-renderer:has(a[href*="/shorts"]),
+        yt-lockup-view-model:has(a[href*="/shorts"]),
+        ytm-shorts-lockup-view-model,
+        #shorts-container,
+        ytd-reel-video-renderer,
+        ytd-guide-entry-renderer a[title="Shorts"],
+        ytd-guide-entry-renderer a[href*="/shorts"],
+        ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+        ytd-mini-guide-entry-renderer a[href*="/shorts"],
+        a#endpoint[title="Shorts"],
+        [data-rusty-shorts="true"] {
+          display: none !important;
+        }
+
         /* Hide comments section during focus */
         ytd-comments,
         #comments.ytd-watch-flexy {
@@ -223,7 +221,7 @@
         }
       `;
     } else {
-      style.textContent = baseShortsBlock;
+      style.textContent = '';
     }
   }
 
