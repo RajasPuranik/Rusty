@@ -1172,32 +1172,41 @@
   if (settingsCloseBtn) settingsCloseBtn.addEventListener('click', closeSettings);
 
   const THEMES_LIST = [
-    { id: 'midnight', name: 'Midnight', dot: '#8ab4f8' },
+    { id: 'midnight', name: 'Midnight', dot: '#6366f1' },
     { id: 'light', name: 'Light', dot: '#1a73e8' },
-    { id: 'amoled', name: 'AMOLED', dot: '#3b82f6' },
-    { id: 'aurora', name: 'Aurora', dot: '#2dd4bf' },
+    { id: 'amoled', name: 'AMOLED', dot: '#f43f5e' },
+    { id: 'aurora', name: 'Aurora', dot: '#10b981' },
     { id: 'cyberpunk', name: 'Cyberpunk', dot: '#facc15' },
     { id: 'sunset', name: 'Sunset', dot: '#f97316' },
-    { id: 'matcha', name: 'Matcha', dot: '#4ade80' },
-    { id: 'sakura', name: 'Sakura', dot: '#f472b6' }
+    { id: 'matcha', name: 'Matcha', dot: '#22c55e' },
+    { id: 'sakura', name: 'Sakura', dot: '#ec4899' },
+    { id: 'graphite', name: 'Graphite', dot: '#00d2ff' },
+    { id: 'slate', name: 'Slate', dot: '#38bdf8' },
+    { id: 'mocha', name: 'Mocha', dot: '#f59e0b' },
+    { id: 'midnight_blue', name: 'Midnight Blue', dot: '#3b82f6' }
   ];
 
   function populateSettingsUI() {
     const root = document.documentElement;
     const currentSkin = root.getAttribute('data-skin') || 'minimal';
     const currentTheme = root.getAttribute('data-theme') || 'midnight';
+    const currentPalette = root.getAttribute('data-palette') || 'slate';
 
     // Skin Cards
     const cardMin = document.getElementById('skin-card-minimal');
     const cardCrz = document.getElementById('skin-card-crazy');
+    const cardMayank = document.getElementById('skin-card-mayank');
     const badgeMin = document.getElementById('badge-minimal');
     const badgeCrz = document.getElementById('badge-crazy');
+    const badgeMayank = document.getElementById('badge-mayank');
 
     if (cardMin && cardCrz) {
       cardMin.classList.toggle('active', currentSkin === 'minimal');
       cardCrz.classList.toggle('active', currentSkin === 'crazy');
+      if (cardMayank) cardMayank.classList.toggle('active', currentSkin === 'mayank');
       if (badgeMin) badgeMin.style.display = currentSkin === 'minimal' ? 'inline-block' : 'none';
       if (badgeCrz) badgeCrz.style.display = currentSkin === 'crazy' ? 'inline-block' : 'none';
+      if (badgeMayank) badgeMayank.style.display = currentSkin === 'mayank' ? 'inline-block' : 'none';
 
       cardMin.onclick = () => {
         closeSettings();
@@ -1206,6 +1215,24 @@
       cardCrz.onclick = () => {
         closeSettings();
         window.switchSkin('crazy');
+      };
+      if (cardMayank) {
+        cardMayank.onclick = () => {
+          closeSettings();
+          window.switchSkin('mayank');
+        };
+      }
+    }
+
+    // Accent Palette Dropdown
+    const selPalette = document.getElementById('setting-accent-palette');
+    if (selPalette) {
+      selPalette.value = currentPalette;
+      selPalette.onchange = () => {
+        if (typeof window.switchPalette === 'function') {
+          window.switchPalette(selPalette.value);
+          populateSettingsUI();
+        }
       };
     }
 
@@ -1257,6 +1284,19 @@
         if (window.Settings) window.Settings.set('density', selDensity.value);
         root.setAttribute('data-density', selDensity.value);
         setTimeout(reportContentRect, 50);
+      };
+    }
+
+    // Background Style Dropdown
+    const selBgStyle = document.getElementById('setting-bg-style');
+    if (selBgStyle) {
+      const savedBg = window.Settings ? window.Settings.get('bg_style') : 'match_theme';
+      selBgStyle.value = savedBg || 'match_theme';
+      selBgStyle.onchange = () => {
+        if (window.Settings) window.Settings.set('bg_style', selBgStyle.value);
+        if (window.BackgroundRegistry) {
+          window.BackgroundRegistry.switchTo(selBgStyle.value);
+        }
       };
     }
 
@@ -1521,6 +1561,33 @@
       };
     }
 
+    // Lite Mode Toggle
+    const chkLiteMode = document.getElementById('setting-lite-mode');
+    if (chkLiteMode) {
+      chkLiteMode.checked = Boolean(window.Settings && window.Settings.get('lite_mode'));
+      chkLiteMode.onchange = () => {
+        const enabled = chkLiteMode.checked;
+        if (window.Settings) {
+          window.Settings.set('lite_mode', enabled);
+          if (enabled) {
+            window.Settings.set('skin', 'minimal');
+            window.Settings.set('fx_canvas_bg', false);
+            window.Settings.set('fx_glow', false);
+            window.Settings.set('fx_tilt', false);
+            window.Settings.set('fx_magnetic', false);
+            window.Settings.set('fx_ripple', false);
+            window.Settings.set('fx_trail', false);
+            window.Settings.set('fx_confetti', false);
+            window.Settings.set('memory_saver_timeout_secs', 60);
+            const selMem = document.getElementById('setting-memory-timeout');
+            if (selMem) selMem.value = '60';
+            updateSkinCards('minimal');
+            document.documentElement.dataset.skin = 'minimal';
+          }
+        }
+      };
+    }
+
     // Memory Discard Timeout
     const selMemTimeout = document.getElementById('setting-memory-timeout');
     if (selMemTimeout) {
@@ -1555,7 +1622,235 @@
         });
       };
     }
+
+    renderExtensionsAndScriptsSection();
   }
+
+  // ── Milestone R8: Extensions & Userscripts Logic ────────────────────────────
+  function renderExtensionsAndScriptsSection() {
+    const btnLoadExt = document.getElementById('btn-load-unpacked-ext');
+    const btnAddUs = document.getElementById('btn-add-userscript');
+
+    if (btnLoadExt) {
+      btnLoadExt.onclick = () => {
+        const path = prompt('Enter absolute folder path to unpacked extension (containing manifest.json):');
+        if (path && path.trim()) {
+          window.bridge.send('load_unpacked_extension', { path: path.trim() });
+        }
+      };
+    }
+
+    if (btnAddUs) {
+      btnAddUs.onclick = () => {
+        openUserscriptEditor({
+          id: 'us_' + Date.now(),
+          name: 'New Custom Script',
+          version: '1.0.0',
+          description: '',
+          matches: ['<all_urls>'],
+          run_at: 'document_end',
+          enabled: true,
+          code: '// Write JavaScript to execute on matched pages\n(function() {\n  console.log("Rusty Userscript active on: " + window.location.href);\n})();'
+        });
+      };
+    }
+
+    // Request fresh state from Rust backend
+    window.bridge.send('get_extensions_and_scripts', {});
+  }
+
+  function renderExtensionsList(extensions, isWindows, vaultActive) {
+    const listEl = document.getElementById('extensions-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (vaultActive) {
+      const vNote = document.createElement('div');
+      vNote.style.cssText = 'padding: 8px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 11px;';
+      vNote.textContent = '🔒 Extensions and userscripts are strictly inhibited in Vault workspace to prevent credential leakage.';
+      listEl.appendChild(vNote);
+      return;
+    }
+
+    if (!isWindows) {
+      const linNote = document.createElement('div');
+      linNote.style.cssText = 'padding: 8px 12px; border-radius: 6px; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 11px;';
+      linNote.textContent = 'ℹ️ WebKitGTK 4.1 engine does not implement Chrome Manifest V3 APIs. Use the Userscripts Manager below for user script customizations.';
+      listEl.appendChild(linNote);
+      return;
+    }
+
+    if (!extensions || extensions.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px; border: 1px dashed var(--border-subtle); border-radius: 6px;';
+      empty.textContent = 'No unpacked extensions loaded. Click "+ Load Unpacked Folder" to inspect and mount a Manifest V2/V3 extension.';
+      listEl.appendChild(empty);
+      return;
+    }
+
+    extensions.forEach((ext) => {
+      const card = document.createElement('div');
+      card.className = 'extension-card';
+
+      const hasAllUrls = ext.permissions && ext.permissions.some(p => p === '<all_urls>' || p === '*://*/*');
+      const hasWebRequest = ext.permissions && ext.permissions.some(p => p.includes('webRequest'));
+      const riskClass = (hasAllUrls || hasWebRequest) ? 'high' : (ext.permissions && ext.permissions.length > 4 ? 'medium' : 'low');
+      const riskLabel = (hasAllUrls || hasWebRequest) ? 'Broad Host Access' : (ext.permissions && ext.permissions.length > 4 ? 'Moderate' : 'Low Risk');
+
+      const permsHtml = (ext.permissions || []).map(p => `<span class="perm-chip">${escapeHtml(p)}</span>`).join('');
+
+      card.innerHTML = `
+        <div class="ext-info">
+          <div class="ext-title-row">
+            <span class="ext-name">${escapeHtml(ext.name)}</span>
+            <span class="ext-version">v${escapeHtml(ext.version)}</span>
+            <span class="risk-badge ${riskClass}">${riskLabel}</span>
+          </div>
+          <div class="ext-desc">${escapeHtml(ext.description || ext.path)}</div>
+          <div class="ext-perms-row">${permsHtml}</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <input type="checkbox" class="ext-toggle" ${ext.enabled ? 'checked' : ''} title="Enable/Disable extension" style="accent-color: var(--accent-primary); width: 16px; height: 16px; cursor: pointer;">
+          <button type="button" class="btn-icon ext-remove-btn" title="Remove extension" style="color: #ef4444; width: 24px; height: 24px;">×</button>
+        </div>
+      `;
+
+      card.querySelector('.ext-toggle').onchange = (e) => {
+        window.bridge.send('toggle_extension', { id: ext.id, enabled: e.target.checked });
+      };
+
+      card.querySelector('.ext-remove-btn').onclick = () => {
+        if (confirm(`Remove extension "${ext.name}"?`)) {
+          window.bridge.send('remove_extension', { id: ext.id });
+        }
+      };
+
+      listEl.appendChild(card);
+    });
+  }
+
+  function renderUserscriptsList(scripts, vaultActive) {
+    const listEl = document.getElementById('userscripts-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (vaultActive) {
+      const vNote = document.createElement('div');
+      vNote.style.cssText = 'padding: 8px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 11px;';
+      vNote.textContent = '🔒 Userscripts are strictly inhibited in Vault workspace.';
+      listEl.appendChild(vNote);
+      return;
+    }
+
+    if (!scripts || scripts.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px; border: 1px dashed var(--border-subtle); border-radius: 6px;';
+      empty.textContent = 'No userscripts installed. Click "+ Add Userscript" to create one.';
+      listEl.appendChild(empty);
+      return;
+    }
+
+    scripts.forEach((us) => {
+      const card = document.createElement('div');
+      card.className = 'userscript-card';
+
+      const matchesHtml = (us.matches || []).map(m => `<span class="match-chip">${escapeHtml(m)}</span>`).join('');
+      const timingLabel = us.run_at === 'document_start' ? 'document_start' : 'document_end';
+
+      card.innerHTML = `
+        <div class="us-info">
+          <div class="us-title-row">
+            <span class="us-name">${escapeHtml(us.name)}</span>
+            <span class="us-version">v${escapeHtml(us.version || '1.0.0')}</span>
+            <span class="timing-badge">${timingLabel}</span>
+          </div>
+          <div class="us-desc">${escapeHtml(us.description || '')}</div>
+          <div class="us-matches-row">${matchesHtml}</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button type="button" class="btn-secondary-xs us-edit-btn" title="Edit userscript code">Edit</button>
+          <input type="checkbox" class="us-toggle" ${us.enabled ? 'checked' : ''} title="Enable/Disable userscript" style="accent-color: var(--accent-primary); width: 16px; height: 16px; cursor: pointer;">
+          <button type="button" class="btn-icon us-delete-btn" title="Delete userscript" style="color: #ef4444; width: 24px; height: 24px;">×</button>
+        </div>
+      `;
+
+      card.querySelector('.us-edit-btn').onclick = () => openUserscriptEditor(us);
+      card.querySelector('.us-toggle').onchange = (e) => {
+        window.bridge.send('toggle_userscript', { id: us.id, enabled: e.target.checked });
+      };
+      card.querySelector('.us-delete-btn').onclick = () => {
+        if (confirm(`Delete userscript "${us.name}"?`)) {
+          window.bridge.send('delete_userscript', { id: us.id });
+        }
+      };
+
+      listEl.appendChild(card);
+    });
+  }
+
+  function openUserscriptEditor(script) {
+    const backdrop = document.getElementById('userscript-editor-modal-backdrop');
+    if (!backdrop) return;
+    document.getElementById('edit-us-id').value = script.id || ('us_' + Date.now());
+    document.getElementById('edit-us-name').value = script.name || '';
+    document.getElementById('edit-us-version').value = script.version || '1.0.0';
+    document.getElementById('edit-us-desc').value = script.description || '';
+    document.getElementById('edit-us-matches').value = (script.matches || ['<all_urls>']).join(', ');
+    document.getElementById('edit-us-run-at').value = script.run_at || 'document_end';
+    document.getElementById('edit-us-code').value = script.code || '';
+    backdrop.style.display = 'flex';
+  }
+
+  function closeUserscriptEditor() {
+    const backdrop = document.getElementById('userscript-editor-modal-backdrop');
+    if (backdrop) backdrop.style.display = 'none';
+  }
+
+  const closeUsBtn = document.getElementById('btn-close-userscript-modal');
+  const cancelUsBtn = document.getElementById('btn-cancel-userscript');
+  if (closeUsBtn) closeUsBtn.onclick = closeUserscriptEditor;
+  if (cancelUsBtn) cancelUsBtn.onclick = closeUserscriptEditor;
+
+  const usForm = document.getElementById('userscript-editor-form');
+  if (usForm) {
+    usForm.onsubmit = (e) => {
+      e.preventDefault();
+      const rawMatches = document.getElementById('edit-us-matches').value || '<all_urls>';
+      const matches = rawMatches.split(',').map(m => m.trim()).filter(Boolean);
+      const script = {
+        id: document.getElementById('edit-us-id').value,
+        name: document.getElementById('edit-us-name').value.trim() || 'Custom Script',
+        version: document.getElementById('edit-us-version').value.trim() || '1.0.0',
+        description: document.getElementById('edit-us-desc').value.trim(),
+        matches: matches.length > 0 ? matches : ['<all_urls>'],
+        run_at: document.getElementById('edit-us-run-at').value,
+        enabled: true,
+        code: document.getElementById('edit-us-code').value
+      };
+      window.bridge.send('save_userscript', { script });
+      closeUserscriptEditor();
+    };
+  }
+
+  window.bridge.on('extensions_and_scripts', (data) => {
+    if (!data) return;
+    renderExtensionsList(data.extensions || [], data.is_windows !== false, data.vault_active === true);
+    renderUserscriptsList(data.userscripts || [], data.vault_active === true);
+  });
+
+  window.bridge.on('extension_loaded', (data) => {
+    if (data && data.success) {
+      window.bridge.send('get_extensions_and_scripts', {});
+    } else if (data && data.error) {
+      alert('Extension load failed: ' + data.error);
+    }
+  });
+
+  window.bridge.on('extension_toggled', () => window.bridge.send('get_extensions_and_scripts', {}));
+  window.bridge.on('extension_removed', () => window.bridge.send('get_extensions_and_scripts', {}));
+  window.bridge.on('userscript_saved', () => window.bridge.send('get_extensions_and_scripts', {}));
+  window.bridge.on('userscript_toggled', () => window.bridge.send('get_extensions_and_scripts', {}));
+  window.bridge.on('userscript_deleted', () => window.bridge.send('get_extensions_and_scripts', {}));
 
   function updateOmniboxPlaceholder(engineId) {
     if (!omniboxInput) return;
@@ -1579,6 +1874,13 @@
     if (!s || typeof s !== 'object') return;
     const root = document.documentElement;
     if (s.theme) root.setAttribute('data-theme', s.theme);
+    if (s.accent_palette) {
+      root.setAttribute('data-palette', s.accent_palette);
+      const selPalette = document.getElementById('setting-accent-palette');
+      if (selPalette && selPalette.value !== s.accent_palette) {
+        selPalette.value = s.accent_palette;
+      }
+    }
     if (s.tabs_layout) root.setAttribute('data-tabs', s.tabs_layout === 'vertical' ? 'vertical' : 'horizontal');
     if (s.vertical_collapsed !== undefined) {
       if (s.vertical_collapsed) root.setAttribute('data-sidebar-collapsed', 'true');
@@ -1887,9 +2189,10 @@
   let mockSplitLeftIframe = null;
   let mockSplitRightIframe = null;
 
-  function resolveMockSrc(url, skin, theme) {
+  function resolveMockSrc(url, skin, theme, palette) {
+    const pal = palette || (document.documentElement.getAttribute('data-palette') || 'slate');
     return (!url || url === 'about:blank' || url.startsWith('about:') || url.includes('newtab.html'))
-      ? `newtab.html?skin=${encodeURIComponent(skin)}&theme=${encodeURIComponent(theme)}`
+      ? `newtab.html?skin=${encodeURIComponent(skin)}&theme=${encodeURIComponent(theme)}&palette=${encodeURIComponent(pal)}`
       : url;
   }
 
@@ -1898,6 +2201,7 @@
     const root = document.documentElement;
     const skin = root.getAttribute('data-skin') || 'crazy';
     const theme = root.getAttribute('data-theme') || 'sunset';
+    const palette = root.getAttribute('data-palette') || 'slate';
 
     if (splitState.enabled && splitPaneLeft && splitPaneRight) {
       if (mockIframe) mockIframe.style.display = 'none';
@@ -1914,8 +2218,8 @@
       mockSplitLeftIframe.style.display = 'block';
       mockSplitRightIframe.style.display = 'block';
 
-      const leftSrc = resolveMockSrc(splitState.left_url || 'about:blank', skin, theme);
-      const rightSrc = resolveMockSrc(splitState.right_url || 'about:blank', skin, theme);
+      const leftSrc = resolveMockSrc(splitState.left_url || 'about:blank', skin, theme, palette);
+      const rightSrc = resolveMockSrc(splitState.right_url || 'about:blank', skin, theme, palette);
       if (mockSplitLeftIframe.src !== leftSrc && !mockSplitLeftIframe.src.endsWith(leftSrc)) {
         mockSplitLeftIframe.src = leftSrc;
       }
@@ -1935,7 +2239,7 @@
       viewport.appendChild(mockIframe);
     }
     mockIframe.style.display = 'block';
-    const targetSrc = resolveMockSrc(url, skin, theme);
+    const targetSrc = resolveMockSrc(url, skin, theme, palette);
     if (mockIframe.src !== targetSrc && !mockIframe.src.endsWith(targetSrc)) {
       mockIframe.src = targetSrc;
     }
@@ -2156,7 +2460,26 @@
   }
 
   // ── 17. Global Keyboard Accelerators ─────────────────────────────────────
+  let currentWorkspaces = [];
+  let currentActiveWorkspaceId = 'main';
+
+  window.bridge.on('workspaces_update', (data) => {
+    if (data && data.workspaces) {
+      currentWorkspaces = data.workspaces;
+      if (data.active_workspace_id) currentActiveWorkspaceId = data.active_workspace_id;
+    }
+  });
+
   window.addEventListener('keydown', (e) => {
+    // Ctrl+Alt+1..9 -> Switch Workspace
+    if ((e.ctrlKey || e.metaKey) && e.altKey && e.key >= '1' && e.key <= '9') {
+      const targetIdx = parseInt(e.key, 10) - 1;
+      if (currentWorkspaces[targetIdx]) {
+        e.preventDefault();
+        window.bridge.send('switch_workspace', { workspace_id: currentWorkspaces[targetIdx].id });
+        return;
+      }
+    }
     // Ctrl+K -> Command Palette
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();

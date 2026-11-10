@@ -7,6 +7,7 @@
 //! incurs zero disk I/O.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -56,6 +57,12 @@ fn default_zoom() -> f64 {
 fn default_skin() -> String {
     "crazy".to_owned()
 }
+fn default_accent_palette() -> String {
+    "slate".to_owned()
+}
+fn default_bg_style() -> String {
+    "match_theme".to_owned()
+}
 fn default_theme() -> String {
     "sunset".to_owned()
 }
@@ -85,6 +92,12 @@ fn default_pet_accessory() -> String {
 }
 fn default_pet_mood() -> String {
     "content".to_owned()
+}
+fn default_run_at() -> String {
+    "document_end".to_owned()
+}
+fn default_active_workspace() -> String {
+    "main".to_owned()
 }
 
 fn is_valid_hex_color(s: &str) -> bool {
@@ -146,8 +159,14 @@ pub struct Settings {
     pub block_geolocation: bool,
 
     // UI & Skin state
+    #[serde(default)]
+    pub lite_mode: bool,
     #[serde(default = "default_skin")]
     pub skin: String,
+    #[serde(default = "default_accent_palette")]
+    pub accent_palette: String,
+    #[serde(default = "default_bg_style")]
+    pub bg_style: String,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_accent")]
@@ -216,6 +235,173 @@ pub struct Settings {
     pub pet_mood: String,
     #[serde(default)]
     pub pet_roam: bool,
+
+    // Milestone R7: Customizable Launch Cards (3 to 6 cards)
+    #[serde(default = "default_launch_cards")]
+    pub launch_cards: Vec<LaunchCard>,
+
+    // Milestone R8: Extensions & Userscripts
+    #[serde(default = "default_true")]
+    pub extensions_enabled: bool,
+    #[serde(default)]
+    pub extensions: Vec<BrowserExtension>,
+    #[serde(default = "default_userscripts")]
+    pub userscripts: Vec<UserScript>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BrowserExtension {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub path: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default = "default_true")]
+    pub is_unpacked: bool,
+    #[serde(default)]
+    pub icons: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UserScript {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    #[serde(default)]
+    pub matches: Vec<String>,
+    #[serde(default = "default_run_at")]
+    pub run_at: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub code: String,
+}
+
+pub fn default_userscripts() -> Vec<UserScript> {
+    vec![
+        UserScript {
+            id: "us_dark_reader".to_string(),
+            name: "Dark Reader Lite".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Applies dark mode contrast to bright webpages".to_string(),
+            matches: vec!["<all_urls>".to_string()],
+            run_at: "document_start".to_string(),
+            enabled: false,
+            code: r#"
+(function() {
+  if (document.getElementById('rusty-dark-reader-style')) return;
+  const style = document.createElement('style');
+  style.id = 'rusty-dark-reader-style';
+  style.textContent = `
+    html { filter: invert(0.9) hue-rotate(180deg) !important; background: #121212 !important; }
+    img, video, canvas, svg, [style*="background-image"] { filter: invert(1.1) hue-rotate(180deg) !important; }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+})();
+"#.trim().to_string(),
+        },
+        UserScript {
+            id: "us_clean_links".to_string(),
+            name: "Clean Tracking Links".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Strips UTM, FBCLID, and tracking tokens from URLs".to_string(),
+            matches: vec!["<all_urls>".to_string()],
+            run_at: "document_start".to_string(),
+            enabled: true,
+            code: r#"
+(function() {
+  const stripTrackers = (urlStr) => {
+    try {
+      const u = new URL(urlStr);
+      const trackers = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid','si','igshid'];
+      let changed = false;
+      trackers.forEach(t => { if (u.searchParams.has(t)) { u.searchParams.delete(t); changed = true; } });
+      return changed ? u.toString() : null;
+    } catch { return null; }
+  };
+  const cleaned = stripTrackers(window.location.href);
+  if (cleaned && window.history && window.history.replaceState) {
+    window.history.replaceState(null, '', cleaned);
+  }
+})();
+"#.trim().to_string(),
+        },
+        UserScript {
+            id: "us_yt_ad_skip".to_string(),
+            name: "YouTube Ad Auto-Dismiss".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Automatically clicks skip ad buttons and dismisses overlays".to_string(),
+            matches: vec!["*://*.youtube.com/*".to_string()],
+            run_at: "document_end".to_string(),
+            enabled: true,
+            code: r#"
+(function() {
+  setInterval(() => {
+    const skipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern');
+    if (skipBtn) skipBtn.click();
+    const overlayClose = document.querySelector('.ytp-ad-overlay-close-button');
+    if (overlayClose) overlayClose.click();
+  }, 500);
+})();
+"#.trim().to_string(),
+        },
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LaunchCard {
+    pub id: String,
+    pub card_type: String, // "app", "web", "action", "widget"
+    pub title: String,
+    pub subtitle: String,
+    pub icon: String,
+    pub target: String,
+    #[serde(default = "default_accent")]
+    pub accent_color: String,
+}
+
+pub fn default_launch_cards() -> Vec<LaunchCard> {
+    vec![
+        LaunchCard {
+            id: "card_search".to_string(),
+            card_type: "action".to_string(),
+            title: "Quick Search".to_string(),
+            subtitle: "Jump to search or @shortcuts".to_string(),
+            icon: "search".to_string(),
+            target: "focus_search".to_string(),
+            accent_color: "#f97316".to_string(),
+        },
+        LaunchCard {
+            id: "card_terminal".to_string(),
+            card_type: "app".to_string(),
+            title: "Terminal".to_string(),
+            subtitle: "Open system terminal".to_string(),
+            icon: "command".to_string(),
+            target: "terminal".to_string(),
+            accent_color: "#38bdf8".to_string(),
+        },
+        LaunchCard {
+            id: "card_focus".to_string(),
+            card_type: "action".to_string(),
+            title: "Focus Mode".to_string(),
+            subtitle: "Study & Deep Work timers".to_string(),
+            icon: "target".to_string(),
+            target: "focus_mode".to_string(),
+            accent_color: "#4ade80".to_string(),
+        },
+        LaunchCard {
+            id: "card_tabs".to_string(),
+            card_type: "widget".to_string(),
+            title: "Active Tabs".to_string(),
+            subtitle: "Live tab counter".to_string(),
+            icon: "layers".to_string(),
+            target: "tabs_count".to_string(),
+            accent_color: "#a855f7".to_string(),
+        },
+    ]
 }
 
 impl Default for Settings {
@@ -227,7 +413,10 @@ impl Default for Settings {
             block_camera: true,
             block_microphone: true,
             block_geolocation: true,
+            lite_mode: false,
             skin: default_skin(),
+            accent_palette: default_accent_palette(),
+            bg_style: default_bg_style(),
             theme: default_theme(),
             custom_accent: default_accent(),
             use_custom_accent: false,
@@ -261,6 +450,10 @@ impl Default for Settings {
             pet_accessory: default_pet_accessory(),
             pet_mood: default_pet_mood(),
             pet_roam: false,
+            launch_cards: default_launch_cards(),
+            extensions_enabled: default_true(),
+            extensions: Vec::new(),
+            userscripts: default_userscripts(),
         }
     }
 }
@@ -271,10 +464,24 @@ impl Settings {
         match key {
             "skin" => {
                 if let Some(s) = value.as_str() {
-                    if s == "minimal" || s == "crazy" {
+                    if s == "minimal" || s == "crazy" || s == "mayank" {
                         self.skin = s.to_owned();
                         return true;
                     }
+                }
+            }
+            "accent_palette" => {
+                if let Some(s) = value.as_str() {
+                    if s == "graphite" || s == "slate" || s == "mocha" || s == "midnight_blue" {
+                        self.accent_palette = s.to_owned();
+                        return true;
+                    }
+                }
+            }
+            "bg_style" => {
+                if let Some(s) = value.as_str() {
+                    self.bg_style = s.to_owned();
+                    return true;
                 }
             }
             "theme" => {
@@ -488,6 +695,23 @@ impl Settings {
                     return true;
                 }
             }
+            "lite_mode" => {
+                if let Some(b) = value.as_bool() {
+                    self.lite_mode = b;
+                    if b {
+                        self.skin = "minimal".to_owned();
+                        self.fx_canvas_bg = false;
+                        self.fx_glow = false;
+                        self.fx_tilt = false;
+                        self.fx_magnetic = false;
+                        self.fx_ripple = false;
+                        self.fx_trail = false;
+                        self.fx_confetti = false;
+                        self.discard_timeout_secs = 60;
+                    }
+                    return true;
+                }
+            }
             "pet_type" => {
                 if let Some(s) = value.as_str() {
                     if matches!(s, "" | "dog" | "cat" | "robot" | "fox" | "slime") {
@@ -538,6 +762,32 @@ impl Settings {
                     return true;
                 }
             }
+            "launch_cards" => {
+                if let Ok(list) = serde_json::from_value::<Vec<LaunchCard>>(value.clone()) {
+                    if list.len() >= 3 && list.len() <= 6 {
+                        self.launch_cards = list;
+                        return true;
+                    }
+                }
+            }
+            "extensions_enabled" => {
+                if let Some(b) = value.as_bool() {
+                    self.extensions_enabled = b;
+                    return true;
+                }
+            }
+            "extensions" => {
+                if let Ok(exts) = serde_json::from_value::<Vec<BrowserExtension>>(value.clone()) {
+                    self.extensions = exts;
+                    return true;
+                }
+            }
+            "userscripts" => {
+                if let Ok(scripts) = serde_json::from_value::<Vec<UserScript>>(value.clone()) {
+                    self.userscripts = scripts;
+                    return true;
+                }
+            }
             _ => {}
         }
         false
@@ -568,7 +818,10 @@ impl Settings {
     /// Serialize to a JSON value compatible with the UI `SettingsStore` schema.
     pub fn to_ui_json(&self) -> serde_json::Value {
         serde_json::json!({
+            "lite_mode": self.lite_mode,
             "skin": self.skin,
+            "accent_palette": self.accent_palette,
+            "bg_style": self.bg_style,
             "theme": self.theme,
             "custom_accent": self.custom_accent,
             "use_custom_accent": self.use_custom_accent,
@@ -603,6 +856,7 @@ impl Settings {
             "pet_accessory": self.pet_accessory,
             "pet_mood": self.pet_mood,
             "pet_roam": self.pet_roam,
+            "launch_cards": self.launch_cards,
         })
     }
 }
@@ -614,6 +868,10 @@ pub struct StorageData {
     pub bookmarks: Vec<Bookmark>,
     pub downloads: Vec<DownloadRecord>,
     pub settings: Settings,
+    #[serde(default)]
+    pub workspaces: Vec<crate::workspace::Workspace>,
+    #[serde(default = "default_active_workspace")]
+    pub active_workspace_id: String,
 }
 
 /// Manages lazy persistent storage.
@@ -636,9 +894,39 @@ impl Storage {
         }
     }
 
+    /// Resolve platform config directory:
+    /// Windows: `%APPDATA%\rusty_browser`
+    /// Linux/Unix: `$XDG_CONFIG_HOME/rusty_browser` or `~/.config/rusty_browser`
+    #[allow(dead_code)]
+    pub fn resolve_config_dir() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(appdata) = env::var("APPDATA") {
+                return PathBuf::from(appdata).join("rusty_browser");
+            }
+            if let Ok(userprofile) = env::var("USERPROFILE") {
+                return PathBuf::from(userprofile).join(".rusty_browser");
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
+                if !xdg_config.trim().is_empty() {
+                    return PathBuf::from(xdg_config).join("rusty_browser");
+                }
+            }
+            if let Ok(home) = env::var("HOME") {
+                return PathBuf::from(home).join(".config").join("rusty_browser");
+            }
+        }
+
+        PathBuf::from(".rusty_browser")
+    }
+
     /// Resolve platform data directory:
     /// Windows: `%APPDATA%\rusty_browser`
-    /// Unix: `~/.config/rusty_browser`
+    /// Linux/Unix: `$XDG_DATA_HOME/rusty_browser` or `~/.local/share/rusty_browser`
     pub fn resolve_data_dir() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
@@ -652,17 +940,52 @@ impl Storage {
 
         #[cfg(not(target_os = "windows"))]
         {
+            if let Ok(xdg_data) = env::var("XDG_DATA_HOME") {
+                if !xdg_data.trim().is_empty() {
+                    return PathBuf::from(xdg_data).join("rusty_browser");
+                }
+            }
             if let Ok(home) = env::var("HOME") {
-                return PathBuf::from(home).join(".config").join("rusty_browser");
+                return PathBuf::from(home).join(".local").join("share").join("rusty_browser");
             }
         }
 
         PathBuf::from(".rusty_browser")
     }
 
+    /// Resolve platform cache directory:
+    /// Windows: `%LOCALAPPDATA%\rusty_browser\cache`
+    /// Linux/Unix: `$XDG_CACHE_HOME/rusty_browser` or `~/.cache/rusty_browser`
+    #[allow(dead_code)]
+    pub fn resolve_cache_dir() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
+                return PathBuf::from(local_appdata).join("rusty_browser").join("cache");
+            }
+            if let Ok(appdata) = env::var("APPDATA") {
+                return PathBuf::from(appdata).join("rusty_browser").join("cache");
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(xdg_cache) = env::var("XDG_CACHE_HOME") {
+                if !xdg_cache.trim().is_empty() {
+                    return PathBuf::from(xdg_cache).join("rusty_browser");
+                }
+            }
+            if let Ok(home) = env::var("HOME") {
+                return PathBuf::from(home).join(".cache").join("rusty_browser");
+            }
+        }
+
+        PathBuf::from(".cache")
+    }
+
     /// Resolve platform downloads directory:
     /// Windows: `%USERPROFILE%\Downloads`
-    /// Unix: `~/Downloads`
+    /// Linux/Unix: `$XDG_DOWNLOAD_DIR` or `~/Downloads`
     pub fn resolve_downloads_dir() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
@@ -676,6 +999,11 @@ impl Storage {
 
         #[cfg(not(target_os = "windows"))]
         {
+            if let Ok(xdg_dl) = env::var("XDG_DOWNLOAD_DIR") {
+                if !xdg_dl.trim().is_empty() {
+                    return PathBuf::from(xdg_dl);
+                }
+            }
             if let Ok(home) = env::var("HOME") {
                 let dl = PathBuf::from(home).join("Downloads");
                 if dl.exists() {
@@ -825,6 +1153,31 @@ impl Storage {
 
     /// Get mutable reference to settings.
     #[allow(dead_code)]
+    /// Get workspaces and active workspace ID from storage.
+    pub fn get_workspaces(&mut self) -> (Vec<crate::workspace::Workspace>, String) {
+        self.ensure_loaded();
+        (self.data.workspaces.clone(), self.data.active_workspace_id.clone())
+    }
+
+    /// Update workspaces and active workspace ID, saving to disk atomically.
+    pub fn save_workspaces(
+        &mut self,
+        workspaces: Vec<crate::workspace::Workspace>,
+        active_id: String,
+    ) {
+        self.ensure_loaded();
+        self.data.workspaces = workspaces;
+        self.data.active_workspace_id = active_id;
+        self.save();
+    }
+
+    /// Check if the currently active workspace is isolated / vault.
+    pub fn is_active_workspace_vault(&mut self) -> bool {
+        self.ensure_loaded();
+        let active_id = &self.data.active_workspace_id;
+        self.data.workspaces.iter().any(|w| &w.id == active_id && (w.is_isolated || w.name.eq_ignore_ascii_case("vault")))
+    }
+
     pub fn settings_mut(&mut self) -> &mut Settings {
         self.ensure_loaded();
         &mut self.data.settings
@@ -842,6 +1195,62 @@ impl Storage {
         self.ensure_loaded();
         self.data.settings = settings;
         self.save();
+    }
+
+    pub fn add_extension(&mut self, ext: BrowserExtension) {
+        self.ensure_loaded();
+        self.data.settings.extensions.retain(|e| e.id != ext.id);
+        self.data.settings.extensions.push(ext);
+        self.save();
+    }
+
+    pub fn toggle_extension(&mut self, id: &str, enabled: bool) -> bool {
+        self.ensure_loaded();
+        if let Some(ext) = self.data.settings.extensions.iter_mut().find(|e| e.id == id) {
+            ext.enabled = enabled;
+            self.save();
+            return true;
+        }
+        false
+    }
+
+    pub fn remove_extension(&mut self, id: &str) -> bool {
+        self.ensure_loaded();
+        let initial_len = self.data.settings.extensions.len();
+        self.data.settings.extensions.retain(|e| e.id != id);
+        let changed = self.data.settings.extensions.len() != initial_len;
+        if changed {
+            self.save();
+        }
+        changed
+    }
+
+    pub fn save_userscript(&mut self, script: UserScript) {
+        self.ensure_loaded();
+        self.data.settings.userscripts.retain(|s| s.id != script.id);
+        self.data.settings.userscripts.push(script);
+        self.save();
+    }
+
+    pub fn toggle_userscript(&mut self, id: &str, enabled: bool) -> bool {
+        self.ensure_loaded();
+        if let Some(s) = self.data.settings.userscripts.iter_mut().find(|s| s.id == id) {
+            s.enabled = enabled;
+            self.save();
+            return true;
+        }
+        false
+    }
+
+    pub fn delete_userscript(&mut self, id: &str) -> bool {
+        self.ensure_loaded();
+        let initial_len = self.data.settings.userscripts.len();
+        self.data.settings.userscripts.retain(|s| s.id != id);
+        let changed = self.data.settings.userscripts.len() != initial_len;
+        if changed {
+            self.save();
+        }
+        changed
     }
 
     /// Update a single setting key/value and save to disk if valid/changed.
@@ -969,6 +1378,12 @@ mod tests {
         let data_dir = Storage::resolve_data_dir();
         assert!(!data_dir.as_os_str().is_empty());
 
+        let config_dir = Storage::resolve_config_dir();
+        assert!(!config_dir.as_os_str().is_empty());
+
+        let cache_dir = Storage::resolve_cache_dir();
+        assert!(!cache_dir.as_os_str().is_empty());
+
         let dl_dir = Storage::resolve_downloads_dir();
         assert!(!dl_dir.as_os_str().is_empty());
     }
@@ -995,7 +1410,13 @@ mod tests {
 
         assert!(parsed.settings.apply_setting("skin", &serde_json::json!("minimal")));
         assert_eq!(parsed.settings.skin, "minimal");
+        assert!(parsed.settings.apply_setting("skin", &serde_json::json!("mayank")));
+        assert_eq!(parsed.settings.skin, "mayank");
         assert!(!parsed.settings.apply_setting("skin", &serde_json::json!("invalid")));
+        assert!(parsed.settings.apply_setting("accent_palette", &serde_json::json!("graphite")));
+        assert_eq!(parsed.settings.accent_palette, "graphite");
+        assert!(parsed.settings.apply_setting("bg_style", &serde_json::json!("wind_lines")));
+        assert_eq!(parsed.settings.bg_style, "wind_lines");
         assert!(parsed.settings.apply_setting("default_search", &serde_json::json!("github")));
         assert_eq!(parsed.settings.default_search_template, "https://github.com/search?q=%s");
         assert!(parsed.settings.open_tabs_in_background);

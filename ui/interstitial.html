@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stay Focused — Rusty Browser</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/themes.css">
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --card-bg: rgba(22, 27, 34, 0.75);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent-primary: #ff7b00;
+      --text-primary: #f0f6fc;
+      --text-secondary: #8b949e;
+      --text-muted: #484f58;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 35%, #1f2430 0%, #0d1117 75%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-primary);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .zen-container {
+      width: 90%;
+      max-width: 520px;
+      padding: 40px;
+      border-radius: 20px;
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(255, 123, 0, 0.08);
+      text-align: center;
+      animation: fadeInZen 0.8s ease-out;
+    }
+
+    @keyframes fadeInZen {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .zen-icon-ring {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(255, 123, 0, 0.12);
+      border: 1px solid rgba(255, 123, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-primary);
+      box-shadow: 0 0 25px rgba(255, 123, 0, 0.2);
+    }
+
+    .zen-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin: 0 0 8px;
+    }
+
+    .zen-mode-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      background: rgba(255, 123, 0, 0.15);
+      color: var(--accent-primary);
+      border: 1px solid rgba(255, 123, 0, 0.25);
+      margin-bottom: 18px;
+    }
+
+    .zen-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin: 0 0 24px;
+    }
+
+    .destination-chip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-family: monospace;
+      color: #79c0ff;
+      margin-bottom: 24px;
+      word-break: break-all;
+    }
+
+    .timer-wrap {
+      margin-bottom: 28px;
+    }
+
+    .timer-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .timer-digits {
+      font-size: 44px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    }
+
+    .actions-row {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .btn-zen {
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .btn-zen-primary {
+      background: var(--accent-primary);
+      color: #fff;
+      border-color: var(--accent-primary);
+    }
+    .btn-zen-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-zen-subtle {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-secondary);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .btn-zen-subtle:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
+    .btn-zen-subtle:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Bypass Modal */
+    .bypass-dialog {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 123, 0, 0.3);
+      text-align: left;
+    }
+    .bypass-instruction {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .bypass-target-phrase {
+      font-family: monospace;
+      font-size: 13px;
+      color: #ffaa44;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      display: block;
+      user-select: all;
+    }
+    .bypass-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    .bypass-input:focus {
+      border-color: var(--accent-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="zen-container">
+    <div class="zen-icon-ring">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <circle cx="12" cy="12" r="6"></circle>
+        <circle cx="12" cy="12" r="2"></circle>
+      </svg>
+    </div>
+
+    <h1 class="zen-title">Stay focused</h1>
+    <div class="zen-mode-badge" id="zen-mode-badge">Study Mode Active</div>
+    <p class="zen-desc" id="zen-desc">This site is restricted during your current focus session to help you accomplish your goals.</p>
+
+    <div class="destination-chip" id="destination-chip">https://example.com</div>
+
+    <div class="timer-wrap">
+      <div class="timer-label">Session Remaining</div>
+      <div class="timer-digits" id="timer-digits">25:00</div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn-zen btn-zen-primary" id="btn-return-home">Return to New Tab</button>
+      <button class="btn-zen btn-zen-subtle" id="btn-bypass-gate" disabled>Wait 10s...</button>
+    </div>
+
+    <!-- Confirmation Modal (Revealed when bypass button is clicked) -->
+    <div class="bypass-dialog" id="bypass-dialog" style="display: none;">
+      <div class="bypass-instruction">To proceed, please type this confirmation phrase exactly:</div>
+      <code class="bypass-target-phrase" id="target-phrase">I choose to break my focus</code>
+      <input type="text" class="bypass-input" id="bypass-input" placeholder="Type confirmation phrase here..." autocomplete="off" spellcheck="false">
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button class="btn-zen btn-zen-subtle" id="btn-cancel-bypass">Cancel</button>
+        <button class="btn-zen btn-zen-primary" id="btn-confirm-bypass" disabled>Confirm & Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/bridge.js"></script>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const targetUrl = params.get('url') || 'https://blocked-site.com';
+      const mode = params.get('mode') || 'Study';
+      let remaining = parseInt(params.get('remaining') || '1500', 10);
+
+      const REQUIRED_PHRASE = "I choose to break my focus";
+
+      const badge = document.getElementById('zen-mode-badge');
+      const destChip = document.getElementById('destination-chip');
+      const timerDigits = document.getElementById('timer-digits');
+      const btnHome = document.getElementById('btn-return-home');
+      const btnBypass = document.getElementById('btn-bypass-gate');
+      const bypassDialog = document.getElementById('bypass-dialog');
+      const bypassInput = document.getElementById('bypass-input');
+      const btnConfirmBypass = document.getElementById('btn-confirm-bypass');
+      const btnCancelBypass = document.getElementById('btn-cancel-bypass');
+
+      if (badge) badge.textContent = `${mode} Mode Active`;
+      if (destChip) destChip.textContent = targetUrl;
+
+      function formatTime(sec) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+
+      timerDigits.textContent = formatTime(remaining);
+      const timerInterval = setInterval(() => {
+        if (remaining > 0) {
+          remaining--;
+          timerDigits.textContent = formatTime(remaining);
+        } else {
+          clearInterval(timerInterval);
+          timerDigits.textContent = "00:00";
+        }
+      }, 1000);
+
+      // 10-Second Wait Guard
+      let waitSeconds = 10;
+      const waitInterval = setInterval(() => {
+        waitSeconds--;
+        if (waitSeconds > 0) {
+          btnBypass.textContent = `Wait ${waitSeconds}s...`;
+        } else {
+          clearInterval(waitInterval);
+          btnBypass.disabled = false;
+          btnBypass.textContent = "I really need this";
+        }
+      }, 1000);
+
+      btnHome.addEventListener('click', () => {
+        if (window.bridge) {
+          window.bridge.send('navigate_to', { url: 'about:blank' });
+        } else {
+          window.location.href = 'index.html';
+        }
+      });
+
+      btnBypass.addEventListener('click', () => {
+        bypassDialog.style.display = 'block';
+        bypassInput.value = '';
+        bypassInput.focus();
+      });
+
+      btnCancelBypass.addEventListener('click', () => {
+        bypassDialog.style.display = 'none';
+      });
+
+      bypassInput.addEventListener('input', () => {
+        const matches = (bypassInput.value.trim() === REQUIRED_PHRASE);
+        btnConfirmBypass.disabled = !matches;
+      });
+
+      btnConfirmBypass.addEventListener('click', () => {
+        if (bypassInput.value.trim() === REQUIRED_PHRASE) {
+          let host = targetUrl;
+          try { host = new URL(targetUrl).hostname; } catch (_) {}
+          if (window.bridge) {
+            window.bridge.send('bypass_focus_domain', {
+              domain: host,
+              confirmation: REQUIRED_PHRASE
+            });
+            window.bridge.send('navigate_to', { url: targetUrl });
+          } else {
+            window.location.href = targetUrl;
+          }
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

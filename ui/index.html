@@ -267,18 +267,37 @@
               </div>
               <div id="skin-card-crazy" class="skin-card">
                 <div class="skin-card-header">
-                  <span class="skin-card-title">Crazy</span>
+                  <span class="skin-card-title">Softer Dark</span>
                   <span class="skin-card-badge" id="badge-crazy">ACTIVE</span>
                 </div>
-                <div class="settings-desc">3D pop buttons, reactive glows, magnetic drift, glassmorphism blur, particles.</div>
+                <div class="settings-desc">Refined navy, 1.5px glass outlines, muted palettes, 3D pop &amp; pet.</div>
+              </div>
+              <div id="skin-card-mayank" class="skin-card">
+                <div class="skin-card-header">
+                  <span class="skin-card-title">Mayank White</span>
+                  <span class="skin-card-badge" id="badge-mayank">ACTIVE</span>
+                </div>
+                <div class="settings-desc">Airy neumorphic white, dual soft shadows, wind lines &amp; glowing weather orb.</div>
               </div>
             </div>
           </div>
 
           <!-- Themes Section -->
           <div class="settings-section">
-            <div class="settings-section-title">Color Themes</div>
+            <div class="settings-section-title">Color Themes &amp; Accent Palette</div>
             <div id="themes-grid" class="themes-grid"></div>
+            <div class="settings-row" style="margin-top: 8px;">
+              <div>
+                <div class="settings-label">Accent Palette (Softer Dark)</div>
+                <div class="settings-desc">Select one of 4 muted palettes: Graphite, Slate, Mocha, Midnight Blue</div>
+              </div>
+              <select id="setting-accent-palette" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="graphite">Graphite (Electric Blue)</option>
+                <option value="slate">Slate (Icy Blue)</option>
+                <option value="mocha">Mocha (Amber)</option>
+                <option value="midnight_blue">Midnight Blue (Cobalt)</option>
+              </select>
+            </div>
             <div class="settings-row" style="margin-top: 8px;">
               <div>
                 <div class="settings-label">Custom Accent Color</div>
@@ -323,7 +342,34 @@
 
           <!-- Effects Intensity Slider & Individual Toggles (For Crazy Skin) -->
           <div class="settings-section">
-            <div class="settings-section-title">Effects & Motion (Crazy Skin)</div>
+            <div class="settings-section-title">Effects &amp; Motion (Crazy &amp; Mayank Skins)</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Background Effect</div>
+                <div class="settings-desc">Choose from 18 dynamic background styles or Match Theme</div>
+              </div>
+              <select id="setting-bg-style" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="match_theme" selected>Match Theme (Automatic)</option>
+                <option value="aurora">Aurora (Northern Lights)</option>
+                <option value="deep_space">Deep Space (Twinkling Nebulae)</option>
+                <option value="constellation">Constellation (Connected Nodes)</option>
+                <option value="matrix_rain">Matrix Rain (Digital Glyphs)</option>
+                <option value="waves">Waves (Flowing Mesh)</option>
+                <option value="fireflies">Fireflies (Warm Pulsing Floaters)</option>
+                <option value="minimal_grid">Minimal Grid (Cursor Glow)</option>
+                <option value="geometric_drift">Geometric Drift (Floating Polyhedra)</option>
+                <option value="sunset_horizon">Sunset Horizon (Warm Layers)</option>
+                <option value="bioluminescence">Bioluminescence (Luminous Pulses)</option>
+                <option value="cyber_mesh">Cyber Mesh (Wireframe Plane)</option>
+                <option value="wind_lines">Wind Lines (Airy Breeze Curves)</option>
+                <option value="fog">Fog (Rolling Mist)</option>
+                <option value="bokeh">Bokeh (Focal Light Circles)</option>
+                <option value="warp_speed">Warp Speed (Hyperspace Streaks)</option>
+                <option value="starfield">Starfield (3D Ambient Depth)</option>
+                <option value="solar_flare">Solar Flare (Corona Pulses)</option>
+                <option value="ripple_pond">Ripple Pond (Concentric Ripples)</option>
+              </select>
+            </div>
             <div class="settings-row">
               <div>
                 <div class="settings-label">Effects Intensity</div>
@@ -512,13 +558,21 @@
 
           <!-- Memory Saver Section -->
           <div class="settings-section">
-            <div class="settings-section-title">Performance & Memory</div>
+            <div class="settings-section-title">Performance & Memory Optimization</div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-label">Lite Mode (Low-RAM Optimization)</div>
+                <div class="settings-desc">Forces Minimal skin, pauses background WebGL, disables companion pet, auto-discards background tabs after 60s</div>
+              </div>
+              <input type="checkbox" id="setting-lite-mode" style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
             <div class="settings-row">
               <div>
                 <div class="settings-label">Automatic Background Tab Discarding</div>
                 <div class="settings-desc">Reclaims RAM by freeing WebViews for inactive background tabs</div>
               </div>
               <select id="setting-memory-timeout" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                <option value="60">1 minute (Lite)</option>
                 <option value="300">5 minutes</option>
                 <option value="600" selected>10 minutes</option>
                 <option value="900">15 minutes</option>
@@ -532,6 +586,40 @@
                 <div class="settings-desc">Real-time total browser process RAM counter</div>
               </div>
               <input type="checkbox" id="setting-show-memory" checked style="accent-color: var(--accent-primary); width: 16px; height: 16px;">
+            </div>
+            <div class="settings-row" style="flex-direction: column; align-items: stretch; margin-top: 10px;">
+              <div class="settings-label" style="margin-bottom: 6px;">Feature RAM Budget Table</div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px; color: var(--text-secondary); background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden;">
+                <thead>
+                  <tr style="background: rgba(255,255,255,0.04); text-align: left;">
+                    <th style="padding: 6px 8px;">Subsystem</th>
+                    <th style="padding: 6px 8px;">Crazy Skin</th>
+                    <th style="padding: 6px 8px;">Minimal / Lite</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                    <td style="padding: 5px 8px;">UI Webview Shell</td>
+                    <td style="padding: 5px 8px;">&lt; 120 MB (Obs: 39.6 MB)</td>
+                    <td style="padding: 5px 8px; color: var(--accent-primary); font-weight: 600;">&lt; 60 MB (Obs: 14.1 MB)</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                    <td style="padding: 5px 8px;">3D Earth Globe</td>
+                    <td style="padding: 5px 8px;">~25 MB VRAM (30 FPS cap)</td>
+                    <td style="padding: 5px 8px; color: var(--accent-primary); font-weight: 600;">0 MB (Static image fallback)</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                    <td style="padding: 5px 8px;">Inactive Workspaces</td>
+                    <td style="padding: 5px 8px;">0 MB (Webviews destroyed)</td>
+                    <td style="padding: 5px 8px; color: var(--accent-primary); font-weight: 600;">0 MB (Webviews destroyed)</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 5px 8px;">Background Tabs</td>
+                    <td style="padding: 5px 8px;">TrySuspend + Target Low</td>
+                    <td style="padding: 5px 8px; color: var(--accent-primary); font-weight: 600;">Discarded after 60s</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -554,11 +642,98 @@
             </div>
           </div>
 
+          <!-- Milestone R8: Extensions & Userscripts Section -->
+          <div class="settings-section" id="settings-extensions-section">
+            <div class="settings-section-title">Extensions &amp; Userscripts</div>
+            
+            <div id="ext-platform-notice" class="settings-desc" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 6px; background: var(--bg-surface-alt); border: 1px solid var(--border-subtle); line-height: 1.5;">
+              <span id="ext-platform-pill" style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 10px; background: var(--accent-highlight); color: var(--accent-primary); margin-right: 6px;">CROSS-PLATFORM</span>
+              <span id="ext-platform-text">On Windows (WebView2), unpacked Chromium extensions can be loaded with permission risk inspection. On Linux (WebKitGTK 4.1), use the built-in Tampermonkey-compatible Userscripts engine. Extensions and userscripts are automatically inhibited in the Vault workspace.</span>
+            </div>
+
+            <!-- Extensions Subsection (Chromium / WebView2) -->
+            <div style="margin-bottom: 18px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <div class="settings-label" style="font-weight: 600;">Browser Extensions (Unpacked)</div>
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" id="btn-load-unpacked-ext" class="btn-primary-sm">+ Load Unpacked Folder</button>
+                </div>
+              </div>
+              <div id="extensions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- Userscripts Subsection (Tampermonkey-Style) -->
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <div>
+                  <div class="settings-label" style="font-weight: 600;">Userscripts Manager (Tampermonkey-Style)</div>
+                  <div class="settings-desc">Custom user scripts injected into matching pages at document start or end</div>
+                </div>
+                <button type="button" id="btn-add-userscript" class="btn-primary-sm">+ Add Userscript</button>
+              </div>
+              <div id="userscripts-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+
           <!-- About -->
           <div class="settings-section">
             <div class="settings-section-title">About Rusty Browser</div>
             <div class="settings-desc">Version 0.2.0 • Built with Rust, Tao, and Wry WebView2 • Zero Telemetry.</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Userscript Code Editor Modal -->
+      <div id="userscript-editor-modal-backdrop" class="modal-backdrop" style="display: none;">
+        <div class="card-edit-modal" style="max-width: 680px; width: 90vw;">
+          <div class="modal-header">
+            <span id="userscript-modal-title" class="modal-title">Edit Userscript</span>
+            <button type="button" id="btn-close-userscript-modal" class="btn-icon">
+              <script>document.write(window.Icons.get('close', '', 14));</script>
+            </button>
+          </div>
+          <form id="userscript-editor-form" class="card-edit-form">
+            <input type="hidden" id="edit-us-id">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+              <div class="edit-field-group">
+                <label class="edit-field-label">Script Name</label>
+                <input type="text" id="edit-us-name" class="weather-city-input" required placeholder="e.g. Dark Mode Fixer">
+              </div>
+              <div class="edit-field-group">
+                <label class="edit-field-label">Version</label>
+                <input type="text" id="edit-us-version" class="weather-city-input" placeholder="1.0.0">
+              </div>
+            </div>
+            <div class="edit-field-group">
+              <label class="edit-field-label">Description</label>
+              <input type="text" id="edit-us-desc" class="weather-city-input" placeholder="What does this script do?">
+            </div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+              <div class="edit-field-group">
+                <label class="edit-field-label">URL Matches (comma-separated, e.g. &lt;all_urls&gt;, *://*.youtube.com/*)</label>
+                <input type="text" id="edit-us-matches" class="weather-city-input" required placeholder="<all_urls>">
+              </div>
+              <div class="edit-field-group">
+                <label class="edit-field-label">Run Timing</label>
+                <select id="edit-us-run-at" class="weather-city-input">
+                  <option value="document_start">document_start</option>
+                  <option value="document_end" selected>document_end</option>
+                </select>
+              </div>
+            </div>
+            <div class="edit-field-group">
+              <label class="edit-field-label">JavaScript Code Body</label>
+              <textarea id="edit-us-code" class="scratchpad-area" style="height: 180px; font-family: var(--font-mono); font-size: 11px; white-space: pre; line-height: 1.4;" required placeholder="// Write vanilla JavaScript here...&#10;(function() {&#10;  console.log('Hello from Userscript!');&#10;})();"></textarea>
+            </div>
+            <div class="modal-actions" style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" id="btn-cancel-userscript" class="btn-secondary-sm">Cancel</button>
+              <button type="submit" id="btn-save-userscript" class="btn-primary-sm">Save Userscript</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

@@ -69,6 +69,14 @@ Dispatched from JavaScript via `window.ipc.postMessage(JSON.stringify(msg))`.
 | `find_in_page` / `find_close` | `{"action": "find_in_page", "query": string, "forward"?: boolean, "match_case"?: boolean}` / `{"action": "find_close"}` | Highlight/step or clear find-in-page matches. |
 | `toggle_reader` | `{"action": "toggle_reader", "active"?: boolean}` | Reader mode toggle signal. |
 | `clear_browsing_data` / `clear_history` / `clear_bookmarks` / `clear_downloads` | `{"action": ...}` | Clear persisted history, cache, bookmarks, or download list. |
+| `load_unpacked_extension` | `{"action": "load_unpacked_extension", "path": string}` | Inspect and mount an unpacked extension folder from disk. |
+| `toggle_extension` | `{"action": "toggle_extension", "id": string, "enabled": boolean}` | Enable or disable an installed extension. |
+| `remove_extension` | `{"action": "remove_extension", "id": string}` | Uninstall an extension. |
+| `inspect_extension` | `{"action": "inspect_extension", "path": string}` | Parse manifest without mounting and evaluate permission risk level. |
+| `save_userscript` | `{"action": "save_userscript", "script": UserScript}` | Add or update a custom userscript with match patterns, timing, and code. |
+| `toggle_userscript` | `{"action": "toggle_userscript", "id": string, "enabled": boolean}` | Enable or disable a userscript. |
+| `delete_userscript` | `{"action": "delete_userscript", "id": string}` | Delete a userscript. |
+| `get_extensions_and_scripts` | `{"action": "get_extensions_and_scripts"}` | Request active extensions and userscripts state with platform capability flags. |
 
 ---
 

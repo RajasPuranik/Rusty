@@ -401,7 +401,7 @@
       vec3 viewDir = normalize(vec3(0.0, 0.0, uCamDist) - vViewPos);
 
       vec3 dayCol = texture2D(uDayTex, vUv).rgb;
-      vec3 nightCol = texture2D(uNightTex, vUv).rgb;
+      vec4 nightRaw = texture2D(uNightTex, vUv);
 
       float sunDot = dot(nLocal, normalize(uSunDir));
       float dayWeight = smoothstep(-0.12, 0.15, sunDot);
@@ -412,8 +412,10 @@
       float terminator = exp(-pow((sunDot - 0.01) * 9.0, 2.0));
       litDay += vec3(0.55, 0.24, 0.07) * terminator * 0.35;
 
-      // Boost night city glow slightly on night hemisphere
-      vec3 litNight = nightCol * 1.25;
+      // Single-channel R8 (4096x2048) night lights texture tinted warm amber (~11 MB GPU VRAM instead of 32+ MB)
+      vec3 litNight = (nightRaw.g < 0.05 && nightRaw.b < 0.05 && nightRaw.r > 0.0)
+        ? vec3(nightRaw.r * 1.18, nightRaw.r * 0.84, nightRaw.r * 0.44) * 1.35
+        : nightRaw.rgb * 1.25;
       vec3 earthCol = mix(litNight, litDay, dayWeight);
 
       // Optional procedural cloud layer toggle
@@ -477,7 +479,21 @@
       gl.bindTexture(gl.TEXTURE_2D, targetTex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+      // Enable Mipmaps and Anisotropic Filtering for high-detail 4096x2048 textures
+      const isPowerOfTwo = (img.width & (img.width - 1)) === 0 && (img.height & (img.height - 1)) === 0;
+      if (isPowerOfTwo) {
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        const anisoExt = gl.getExtension('EXT_texture_filter_anisotropic') ||
+                         gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+        if (anisoExt) {
+          const maxAniso = gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 4;
+          gl.texParameterf(gl.TEXTURE_2D, anisoExt.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(4, maxAniso));
+        }
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      }
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

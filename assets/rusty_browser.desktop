@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Rusty Browser
+Comment=Fast, memory-efficient desktop web browser
+Exec=rusty_browser %U
+Terminal=false
+Type=Application
+Icon=rusty_browser
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true

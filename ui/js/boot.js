@@ -6,6 +6,8 @@
 
   const DEFAULT_BOOT_SETTINGS = {
     skin: 'crazy',
+    accent_palette: 'slate',
+    bg_style: 'match_theme',
     theme: 'sunset',
     tabs_layout: 'horizontal',
     vertical_collapsed: false,
@@ -80,20 +82,25 @@
     style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.48)`);
   };
 
-  // 1. Parse URL overrides (passed from Rust host or ?skin=crazy&theme=aurora&tabs=side)
+  // 1. Parse URL overrides (passed from Rust host or ?skin=crazy&theme=aurora&tabs=side&palette=slate)
   const urlParams = new URLSearchParams(window.location.search);
   const paramSkin = urlParams.get('skin');
   const paramTheme = urlParams.get('theme');
   const paramTabs = urlParams.get('tabs');
+  const paramPalette = urlParams.get('palette') || urlParams.get('accent_palette');
 
   const settings = readLatestSettings();
   let mutatedFromUrl = false;
-  if (paramSkin === 'crazy' || paramSkin === 'minimal') {
+  if (paramSkin === 'crazy' || paramSkin === 'minimal' || paramSkin === 'mayank') {
     settings.skin = paramSkin;
     mutatedFromUrl = true;
   }
   if (paramTheme) {
     settings.theme = paramTheme;
+    mutatedFromUrl = true;
+  }
+  if (paramPalette === 'graphite' || paramPalette === 'slate' || paramPalette === 'mocha' || paramPalette === 'midnight_blue') {
+    settings.accent_palette = paramPalette;
     mutatedFromUrl = true;
   }
   if (paramTabs === 'side' || paramTabs === 'vertical' || paramTabs === 'horizontal') {
@@ -104,13 +111,15 @@
     writeLatestSettings(settings);
   }
 
-  const activeSkin = (settings.skin === 'minimal' || settings.skin === 'crazy') ? settings.skin : 'crazy';
+  const activeSkin = (settings.skin === 'minimal' || settings.skin === 'mayank') ? settings.skin : 'crazy';
   const activeTheme = settings.theme || 'sunset';
   const activeTabs = settings.tabs_layout === 'vertical' ? 'vertical' : 'horizontal';
+  const activePalette = settings.accent_palette || 'slate';
 
   // 2. Set data attributes on <html> before body renders (zero FOUC)
   const root = document.documentElement;
   root.setAttribute('data-skin', activeSkin);
+  root.setAttribute('data-palette', activePalette);
   root.setAttribute('data-theme', activeTheme);
   root.setAttribute('data-tabs', activeTabs);
   if (settings.density) {
@@ -127,27 +136,37 @@
   const head = document.head || document.getElementsByTagName('head')[0];
   const skinCssLink = document.createElement('link');
   skinCssLink.rel = 'stylesheet';
+  skinCssLink.id = 'active-skin-stylesheet';
   skinCssLink.href = `css/skin-${activeSkin}.css`;
   head.appendChild(skinCssLink);
 
-  // 4. Inject crazy effects & companion pet scripts ONLY if Crazy skin is active
+  // 4. Inject effects scripts ONLY for the active skin
   if (activeSkin === 'crazy') {
     const fxScript = document.createElement('script');
+    fxScript.id = 'active-skin-fx-script';
     fxScript.src = 'js/fx-crazy.js';
     fxScript.defer = true;
     fxScript.async = false;
     head.appendChild(fxScript);
 
     const petScript = document.createElement('script');
+    petScript.id = 'active-skin-pet-script';
     petScript.src = 'js/pet-crazy.js';
     petScript.defer = true;
     petScript.async = false;
     head.appendChild(petScript);
+  } else if (activeSkin === 'mayank') {
+    const fxScript = document.createElement('script');
+    fxScript.id = 'active-skin-fx-script';
+    fxScript.src = 'js/fx-mayank.js';
+    fxScript.defer = true;
+    fxScript.async = false;
+    head.appendChild(fxScript);
   }
 
-  // 5. Global skin switcher (no browser restart needed; unloads old CSS/JS cleanly)
+  // 5. Global skin switcher (hot-switch without browser restart; unloads old CSS/JS cleanly)
   window.switchSkin = function (newSkin) {
-    if (newSkin !== 'minimal' && newSkin !== 'crazy') return;
+    if (newSkin !== 'minimal' && newSkin !== 'crazy' && newSkin !== 'mayank') return;
 
     const latest = readLatestSettings();
     latest.skin = newSkin;
@@ -171,6 +190,7 @@
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.set('skin', newSkin);
     nextUrl.searchParams.set('theme', latest.theme || activeTheme);
+    nextUrl.searchParams.set('palette', latest.accent_palette || activePalette);
 
     // Wait briefly so WebView2 IPC flushes before page navigation frees the old JS/CSS
     setTimeout(() => {
@@ -178,10 +198,44 @@
     }, 25);
   };
 
+  // 6. Global accent palette switcher (live CSS variable updates, zero reload)
+  window.switchPalette = function (newPalette) {
+    if (newPalette !== 'graphite' && newPalette !== 'slate' && newPalette !== 'mocha' && newPalette !== 'midnight_blue') return;
+
+    const latest = readLatestSettings();
+    latest.accent_palette = newPalette;
+    // When an accent palette is selected, set theme to match so the signature palette transforms the UI
+    latest.theme = newPalette;
+    latest.use_custom_accent = false;
+    writeLatestSettings(latest);
+
+    window.__applyAccentCss(null);
+    root.setAttribute('data-palette', newPalette);
+    root.setAttribute('data-theme', newPalette);
+
+    try {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('palette', newPalette);
+      nextUrl.searchParams.set('theme', newPalette);
+      window.history.replaceState(null, '', nextUrl.toString());
+    } catch (_) {}
+
+    if (window.Settings && typeof window.Settings.setMany === 'function') {
+      window.Settings.setMany({ accent_palette: newPalette, theme: newPalette, use_custom_accent: false });
+    } else if (window.bridge && typeof window.bridge.send === 'function') {
+      window.bridge.send('set_setting', { key: 'accent_palette', value: newPalette });
+      window.bridge.send('set_setting', { key: 'theme', value: newPalette });
+    }
+  };
+
   window.switchTheme = function (newTheme) {
     const latest = readLatestSettings();
     latest.theme = newTheme;
     latest.use_custom_accent = false;
+    if (newTheme === 'graphite' || newTheme === 'slate' || newTheme === 'mocha' || newTheme === 'midnight_blue') {
+      latest.accent_palette = newTheme;
+      root.setAttribute('data-palette', newTheme);
+    }
     writeLatestSettings(latest);
 
     window.__applyAccentCss(null);
@@ -190,13 +244,21 @@
     try {
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set('theme', newTheme);
+      if (latest.accent_palette) nextUrl.searchParams.set('palette', latest.accent_palette);
       window.history.replaceState(null, '', nextUrl.toString());
     } catch (_) {}
 
+    const payload = { theme: newTheme, use_custom_accent: false };
+    if (newTheme === 'graphite' || newTheme === 'slate' || newTheme === 'mocha' || newTheme === 'midnight_blue') {
+      payload.accent_palette = newTheme;
+    }
     if (window.Settings && typeof window.Settings.setMany === 'function') {
-      window.Settings.setMany({ theme: newTheme, use_custom_accent: false });
+      window.Settings.setMany(payload);
     } else if (window.bridge && typeof window.bridge.send === 'function') {
       window.bridge.send('set_setting', { key: 'theme', value: newTheme });
+      if (payload.accent_palette) {
+        window.bridge.send('set_setting', { key: 'accent_palette', value: payload.accent_palette });
+      }
     }
   };
 

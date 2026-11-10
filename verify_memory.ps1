@@ -26,11 +26,16 @@ function Normalize-PathMatch([string]$PathStr) {
     return $PathStr.Trim().Trim('"').Replace('/', '\').ToLowerInvariant()
 }
 
-function Classify-RustyProcess([string]$Name, [string]$CmdLine, [bool]$IsHost) {
+function Classify-RustyProcess([string]$Name, [string]$CmdLine, [bool]$IsHost, [int]$TargetProcessId = 0, [int]$EarliestRendererPid = 0) {
     if ($IsHost -or $Name -ieq "rusty_browser.exe") { return "Host (Rusty)" }
     $cmd = if ($CmdLine) { $CmdLine.ToLowerInvariant() } else { "" }
     if ($Name -ieq "msedgewebview2.exe") {
-        if ($cmd -match "--type=renderer") { return "Renderer (Tab/UI)" }
+        if ($cmd -match "--type=renderer") {
+            if ($EarliestRendererPid -ne 0 -and $TargetProcessId -eq $EarliestRendererPid) {
+                return "UI WebView"
+            }
+            return "Content Renderer"
+        }
         if ($cmd -match "--type=gpu-process") { return "GPU Process" }
         if ($cmd -match "--utility-sub-type=network\.mojom\.networkservice") { return "Network Service" }
         if ($cmd -match "--utility-sub-type=storage\.mojom\.storageservice") { return "Storage Service" }
@@ -160,6 +165,22 @@ foreach ($r in $perfRows) {
     $perfByPid[[int]$r.IDProcess] = $r
 }
 
+$rendererPids = @()
+foreach ($id in $treeIds) {
+    $proc = $procById[$id]
+    if ($proc) {
+        $cmdLower = if ($proc.CommandLine) { $proc.CommandLine.ToLowerInvariant() } else { "" }
+        if ($cmdLower -match "--type=renderer") {
+            $rendererPids += [PSCustomObject]@{
+                PID = $id
+                CreationDate = if ($proc.CreationDate) { [datetime]$proc.CreationDate } else { [datetime]::MaxValue }
+            }
+        }
+    }
+}
+$rendererPids = @($rendererPids | Sort-Object CreationDate)
+$earliestRendererPid = if ($rendererPids.Count -gt 0) { $rendererPids[0].PID } else { 0 }
+
 $rows = @()
 $sumPrivateWs = 0.0
 $sumWs = 0.0
@@ -175,7 +196,7 @@ foreach ($id in $treeIds) {
     $wsMb = [Math]::Round(([double]$perf.WorkingSet) / 1MB, 1)
     $commitMb = [Math]::Round(([double]$perf.PrivateBytes) / 1MB, 1)
     $isHost = ($id -eq $TargetPid)
-    $role = Classify-RustyProcess $proc.Name ([string]$proc.CommandLine) $isHost
+    $role = Classify-RustyProcess $proc.Name ([string]$proc.CommandLine) $isHost $id $earliestRendererPid
 
     $sumPrivateWs += $pwsMb
     $sumWs += $wsMb
@@ -194,7 +215,7 @@ foreach ($id in $treeIds) {
     }
 }
 
-$rows = $rows | Sort-Object _SortOrder, @{Expression="PrivateWS_MB"; Descending=$true}
+$rows = @($rows | Sort-Object _SortOrder, @{Expression="PrivateWS_MB"; Descending=$true})
 
 Write-Host ""
 Write-Host "=== Rusty Browser Process Tree Memory (Windows Perf Counters) ===" -ForegroundColor Cyan
@@ -205,6 +226,9 @@ if (-not [string]::IsNullOrEmpty($normDataDir)) {
 Write-Host ("Process Count   : {0}" -f $rows.Count)
 Write-Host ""
 $rows | Select-Object Role, Exe, PID, PPID, PrivateWS_MB, WorkingSet_MB, Commit_MB | Format-Table -AutoSize
+
+Write-Host "── Top 5 Process Consumers ──────────────────────────────────────────────" -ForegroundColor Yellow
+$rows | Sort-Object -Property PrivateWS_MB -Descending | Select-Object -First 5 Role, Exe, PID, PrivateWS_MB, WorkingSet_MB, Commit_MB | Format-Table -AutoSize
 
 Write-Host ("TOTAL Private Working Set (Task Mgr 'Memory') : {0:N1} MB  (Host: {1:N1} MB, Children: {2:N1} MB)" -f $sumPrivateWs, $hostPrivateWs, ($sumPrivateWs - $hostPrivateWs)) -ForegroundColor Green
 Write-Host ("TOTAL Working Set (incl. shared DLL/GPU pages): {0:N1} MB" -f $sumWs)

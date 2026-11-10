@@ -20,29 +20,30 @@
 /* ── Glassmorphism Chrome Bars ───────────────────────────────────────────── */
 [data-skin="crazy"] #chrome-header {
   background: var(--bg-glass) !important;
-  backdrop-filter: blur(18px) saturate(190%);
-  -webkit-backdrop-filter: blur(18px) saturate(190%);
-  border-bottom: 1px solid var(--border-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.10);
 }
 
 [data-skin="crazy"] #tabs-horizontal,
 [data-skin="crazy"] #tabs-sidebar {
   background: var(--bg-glass) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 [data-skin="crazy"] #side-panel {
   background: var(--bg-glass) !important;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-left: 1px solid var(--border-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.10);
 }
 
 [data-skin="crazy"] #find-bar {
   background: var(--bg-glass) !important;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1.5px solid rgba(255, 255, 255, 0.10);
 }
 
 /* ── 3D Pop Buttons with Ledge & Spring Physics ──────────────────────────── */
@@ -77,17 +78,17 @@
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   border-radius: inherit;
-  background: radial-gradient(circle 65px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.18), transparent 70%);
+  background: radial-gradient(circle 85px at var(--mouse-x, 50%) var(--mouse-y, 50%), var(--spotlight-color, var(--accent-primary, rgba(255, 255, 255, 0.2))), transparent 70%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.2s ease;
   z-index: 1;
 }
 [data-skin="crazy"] .spotlight-glow:hover::before {
-  opacity: 1;
+  opacity: 0.15;
 }
 
-/* ── Omnibox: Animated Conic Gradient Border on Focus ────────────────────── */
+/* ── Omnibox: Refined Glassmorphism & Soft Focus Glow ───────────────────── */
 [data-skin="crazy"] .omnibox-wrapper {
   position: relative;
 }
@@ -95,17 +96,17 @@
 [data-skin="crazy"] .omnibox {
   position: relative;
   background: var(--bg-glass-input);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--border-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(255, 255, 255, 0.10);
   box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.25);
-  transition: box-shadow 0.25s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 [data-skin="crazy"] .omnibox:focus-within {
-  transform: scale(1.01);
-  border-color: transparent;
-  box-shadow: 0 0 24px rgba(138, 180, 248, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.25);
-  animation: crazy-conic-glow 3s linear infinite;
+  transform: scale(1.005);
+  border-color: var(--accent-primary, #38bdf8);
+  box-shadow: 0 0 16px var(--accent-highlight, rgba(56, 189, 248, 0.22)), inset 0 1px 1px rgba(255, 255, 255, 0.12);
 }
 
 [data-skin="crazy"] .omnibox.omnibox-search-active,
@@ -114,18 +115,6 @@
   animation: none;
   box-shadow: none;
   border-color: transparent;
-}
-
-@keyframes crazy-conic-glow {
-  0% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
-  }
-  50% {
-    box-shadow: 0 0 28px rgba(236, 72, 153, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.25);
-  }
-  100% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
-  }
 }
 
 /* ── 3D Tabs with Springy Pop Open ───────────────────────────────────────── */
@@ -195,29 +184,30 @@
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-/* ── Large Gradient Clock on NTP (Crazy Skin) ────────────────────────────── */
+/* ── Large Gradient Clock on NTP (Softer Dark) ───────────────────────────── */
 [data-skin="crazy"] .clock-time {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 50%, #ec4899 100%);
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   font-weight: 700;
-  filter: drop-shadow(0 4px 16px rgba(138, 180, 248, 0.25));
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
 }
 
 /* ── Speed Dial 3D Card Hover ────────────────────────────────────────────── */
 [data-skin="crazy"] .dial-card {
   background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-glass);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease;
   will-change: transform;
 }
 
 [data-skin="crazy"] .dial-card:hover {
-  transform: translateY(-4px) scale(1.03);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+  border-color: rgba(255, 255, 255, 0.20);
 }
 
 /* ── Particles & Confetti Canvas ─────────────────────────────────────────── */

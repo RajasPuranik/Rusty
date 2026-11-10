@@ -10,11 +10,13 @@ use wry::WebViewId;
 // Compile-time embedded UI files (zero runtime disk dependencies)
 static INDEX_HTML: &[u8] = include_bytes!("../../ui/index.html");
 static NEWTAB_HTML: &[u8] = include_bytes!("../../ui/newtab.html");
+static INTERSTITIAL_HTML: &[u8] = include_bytes!("../../ui/interstitial.html");
 
 static CSS_BASE: &[u8] = include_bytes!("../../ui/css/base.css");
 static CSS_THEMES: &[u8] = include_bytes!("../../ui/css/themes.css");
 static CSS_SKIN_MINIMAL: &[u8] = include_bytes!("../../ui/css/skin-minimal.css");
 static CSS_SKIN_CRAZY: &[u8] = include_bytes!("../../ui/css/skin-crazy.css");
+static CSS_SKIN_MAYANK: &[u8] = include_bytes!("../../ui/css/skin-mayank.css");
 static CSS_NEWTAB: &[u8] = include_bytes!("../../ui/css/newtab.css");
 
 static JS_BOOT: &[u8] = include_bytes!("../../ui/js/boot.js");
@@ -26,8 +28,11 @@ static JS_LOCATIONS: &[u8] = include_bytes!("../../ui/js/locations.js");
 static JS_CHROME: &[u8] = include_bytes!("../../ui/js/chrome.js");
 static JS_NEWTAB: &[u8] = include_bytes!("../../ui/js/newtab.js");
 static JS_FX_CRAZY: &[u8] = include_bytes!("../../ui/js/fx-crazy.js");
+static JS_FX_MAYANK: &[u8] = include_bytes!("../../ui/js/fx-mayank.js");
+static JS_FX_REGISTRY: &[u8] = include_bytes!("../../ui/js/fx-registry.js");
 static JS_PET_CRAZY: &[u8] = include_bytes!("../../ui/js/pet-crazy.js");
 static JS_GLOBE: &[u8] = include_bytes!("../../ui/js/globe.js");
+static JS_YOUTUBE_FOCUS: &[u8] = include_bytes!("../../ui/js/youtube_focus.js");
 
 static ASSET_LOGO: &[u8] = include_bytes!("../../ui/assets/logo.svg");
 // PLACEHOLDER: self-generated procedural WebP Earth maps; verify license if replacing with NASA/Natural Earth assets.
@@ -46,11 +51,13 @@ pub fn handle_rusty_request(_id: WebViewId, req: Request<Vec<u8>>) -> Response<C
     let (content_type, body): (&str, &'static [u8]) = match path {
         "" | "index.html" | "chrome" => ("text/html; charset=utf-8", INDEX_HTML),
         "newtab.html" | "newtab" => ("text/html; charset=utf-8", NEWTAB_HTML),
+        "interstitial.html" | "interstitial" => ("text/html; charset=utf-8", INTERSTITIAL_HTML),
 
         "css/base.css" => ("text/css; charset=utf-8", CSS_BASE),
         "css/themes.css" => ("text/css; charset=utf-8", CSS_THEMES),
         "css/skin-minimal.css" => ("text/css; charset=utf-8", CSS_SKIN_MINIMAL),
         "css/skin-crazy.css" => ("text/css; charset=utf-8", CSS_SKIN_CRAZY),
+        "css/skin-mayank.css" => ("text/css; charset=utf-8", CSS_SKIN_MAYANK),
         "css/newtab.css" => ("text/css; charset=utf-8", CSS_NEWTAB),
 
         "js/boot.js" => ("text/javascript; charset=utf-8", JS_BOOT),
@@ -62,8 +69,11 @@ pub fn handle_rusty_request(_id: WebViewId, req: Request<Vec<u8>>) -> Response<C
         "js/chrome.js" => ("text/javascript; charset=utf-8", JS_CHROME),
         "js/newtab.js" => ("text/javascript; charset=utf-8", JS_NEWTAB),
         "js/fx-crazy.js" => ("text/javascript; charset=utf-8", JS_FX_CRAZY),
+        "js/fx-mayank.js" => ("text/javascript; charset=utf-8", JS_FX_MAYANK),
+        "js/fx-registry.js" => ("text/javascript; charset=utf-8", JS_FX_REGISTRY),
         "js/pet-crazy.js" => ("text/javascript; charset=utf-8", JS_PET_CRAZY),
         "js/globe.js" => ("text/javascript; charset=utf-8", JS_GLOBE),
+        "js/youtube_focus.js" => ("text/javascript; charset=utf-8", JS_YOUTUBE_FOCUS),
 
         "assets/logo.svg" => ("image/svg+xml", ASSET_LOGO),
         "assets/earth-day.webp" => ("image/webp", ASSET_EARTH_DAY),

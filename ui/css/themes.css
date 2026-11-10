@@ -1,40 +1,41 @@
 /* ==========================================================================
    THEMES (CSS Custom Properties)
    Independent of skins. Selectable via data-theme attribute.
+   Each of the 12 themes features a distinct signature color and palette.
    ========================================================================== */
 
-/* ── 1. Midnight (Default: dark navy matching existing UI screenshot) ───── */
+/* ── 1. Midnight (Deep Dark Navy with Electric Indigo Accent) ───────────── */
 :root, [data-theme="midnight"] {
-  --bg-primary: #1e1e2e;
-  --bg-surface: #202124;
-  --bg-surface-alt: #181824;
-  --bg-canvas: #151520;
-  --bg-subtle: #2b2c34;
-  --bg-hover: #323440;
-  --bg-input: #303134;
-  --bg-input-focus: #202124;
-  --bg-tab: #222330;
-  --bg-tab-active: #2d2e40;
+  --bg-primary: #11131f;
+  --bg-surface: #181a2b;
+  --bg-surface-alt: #141624;
+  --bg-canvas: #0c0e17;
+  --bg-subtle: #22253b;
+  --bg-hover: #2d314d;
+  --bg-input: #1a1c2e;
+  --bg-input-focus: #181a2b;
+  --bg-tab: #141624;
+  --bg-tab-active: #22253b;
 
-  --border-subtle: #383a48;
-  --border-active: #8ab4f8;
+  --border-subtle: #2d304a;
+  --border-active: #6366f1;
 
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
 
-  --accent-primary: #8ab4f8;
-  --accent-secondary: #38bdf8;
-  --accent-highlight: rgba(138, 180, 248, 0.2);
-  --accent-glow: rgba(138, 180, 248, 0.45);
+  --accent-primary: #6366f1;
+  --accent-secondary: #818cf8;
+  --accent-highlight: rgba(99, 102, 241, 0.22);
+  --accent-glow: rgba(99, 102, 241, 0.45);
 
-  --bg-glass: rgba(15, 23, 42, 0.65);
-  --bg-glass-hover: rgba(30, 41, 59, 0.8);
-  --bg-glass-input: rgba(18, 24, 38, 0.78);
-  --border-glass: rgba(255, 255, 255, 0.1);
+  --bg-glass: rgba(17, 19, 31, 0.72);
+  --bg-glass-hover: rgba(28, 31, 51, 0.85);
+  --bg-glass-input: rgba(20, 22, 36, 0.82);
+  --border-glass: rgba(99, 102, 241, 0.16);
 }
 
-/* ── 2. Light Theme ──────────────────────────────────────────────────────── */
+/* ── 2. Light Theme (Clean Crisp Slate-White with Sapphire Blue Accent) ─── */
 [data-theme="light"] {
   --bg-primary: #f8fafc;
   --bg-surface: #ffffff;
@@ -65,7 +66,7 @@
   --border-glass: rgba(15, 23, 42, 0.12);
 }
 
-/* ── 3. AMOLED Black (True 0x000000 for OLED efficiency) ─────────────────── */
+/* ── 3. AMOLED Black (True 0x000000 Pitch Black with Vivid Crimson Ruby) ─── */
 [data-theme="amoled"] {
   --bg-primary: #000000;
   --bg-surface: #0a0a0a;
@@ -78,54 +79,56 @@
   --bg-tab: #080808;
   --bg-tab-active: #1a1a1a;
 
-  --border-subtle: #262626;
-  --border-active: #3b82f6;
+  --border-subtle: #242424;
+  --border-active: #f43f5e;
 
   --text-primary: #fafafa;
-  --text-secondary: #d4d4d4;
-  --text-muted: #737373;
+  --text-secondary: #d4d4d8;
+  --text-muted: #71717a;
 
-  --accent-primary: #3b82f6;
-  --accent-secondary: #60a5fa;
-  --accent-highlight: rgba(59, 130, 246, 0.25);
-  --accent-glow: rgba(59, 130, 246, 0.5);
-  --bg-glass: rgba(10, 10, 10, 0.78);
-  --bg-glass-hover: rgba(24, 24, 27, 0.9);
-  --bg-glass-input: rgba(15, 15, 18, 0.85);
-  --border-glass: rgba(255, 255, 255, 0.1);
+  --accent-primary: #f43f5e;
+  --accent-secondary: #fb7185;
+  --accent-highlight: rgba(244, 63, 94, 0.25);
+  --accent-glow: rgba(244, 63, 94, 0.50);
+
+  --bg-glass: rgba(10, 10, 10, 0.88);
+  --bg-glass-hover: rgba(24, 24, 27, 0.95);
+  --bg-glass-input: rgba(15, 15, 18, 0.90);
+  --border-glass: rgba(244, 63, 94, 0.18);
 }
 
-/* ── 4. Aurora (Deep Northern Teal & Emerald) ────────────────────────────── */
+/* ── 4. Aurora (Deep Northern Teal & Luminous Mint Emerald) ──────────────── */
 [data-theme="aurora"] {
-  --bg-primary: #09171e;
-  --bg-surface: #0f2430;
-  --bg-surface-alt: #0b1a23;
-  --bg-canvas: #061015;
-  --bg-subtle: #193849;
-  --bg-hover: #214b62;
-  --bg-input: #122b39;
-  --bg-input-focus: #0f2430;
-  --bg-tab: #0d202b;
-  --bg-tab-active: #1b3e51;
+  --bg-primary: #06171b;
+  --bg-surface: #0b2228;
+  --bg-surface-alt: #081a1f;
+  --bg-canvas: #040f12;
+  --bg-subtle: #12333b;
+  --bg-hover: #194652;
+  --bg-input: #0d2830;
+  --bg-input-focus: #0b2228;
+  --bg-tab: #091d22;
+  --bg-tab-active: #133942;
 
-  --border-subtle: #25526c;
-  --border-active: #2dd4bf;
+  --border-subtle: #1a4d59;
+  --border-active: #10b981;
 
   --text-primary: #f0fdfa;
   --text-secondary: #ccfbf1;
   --text-muted: #5eead4;
 
-  --accent-primary: #2dd4bf;
-  --accent-secondary: #34d399;
-  --accent-highlight: rgba(45, 212, 191, 0.25);
-  --accent-glow: rgba(45, 212, 191, 0.5);
-  --bg-glass: rgba(11, 26, 35, 0.72);
-  --bg-glass-hover: rgba(20, 46, 61, 0.85);
-  --bg-glass-input: rgba(15, 36, 48, 0.82);
-  --border-glass: rgba(45, 212, 191, 0.18);
+  --accent-primary: #10b981;
+  --accent-secondary: #2dd4bf;
+  --accent-highlight: rgba(16, 185, 129, 0.25);
+  --accent-glow: rgba(16, 185, 129, 0.50);
+
+  --bg-glass: rgba(11, 34, 40, 0.74);
+  --bg-glass-hover: rgba(19, 57, 66, 0.86);
+  --bg-glass-input: rgba(13, 40, 48, 0.82);
+  --border-glass: rgba(16, 185, 129, 0.18);
 }
 
-/* ── 5. Cyberpunk (Neon Yellow, Electric Magenta & Cyan) ─────────────────── */
+/* ── 5. Cyberpunk (Neon Yellow, Electric Magenta & Night City Violet) ───── */
 [data-theme="cyberpunk"] {
   --bg-primary: #0f0f17;
   --bg-surface: #181926;
@@ -147,8 +150,9 @@
 
   --accent-primary: #facc15;
   --accent-secondary: #ec4899;
-  --accent-highlight: rgba(250, 204, 21, 0.3);
+  --accent-highlight: rgba(250, 204, 21, 0.30);
   --accent-glow: rgba(250, 204, 21, 0.55);
+
   --bg-glass: rgba(18, 19, 32, 0.74);
   --bg-glass-hover: rgba(32, 33, 54, 0.88);
   --bg-glass-input: rgba(24, 25, 38, 0.84);
@@ -179,68 +183,195 @@
   --accent-secondary: #fb7185;
   --accent-highlight: rgba(249, 115, 22, 0.25);
   --accent-glow: rgba(249, 115, 22, 0.55);
+
   --bg-glass: rgba(34, 20, 32, 0.72);
   --bg-glass-hover: rgba(48, 28, 45, 0.85);
   --bg-glass-input: rgba(43, 26, 41, 0.82);
   --border-glass: rgba(249, 115, 22, 0.16);
 }
 
-/* ── 7. Matcha (Forest Sage & Soothing Leaf Green) ───────────────────────── */
+/* ── 7. Matcha (Forest Sage & Lush Leaf Jade Green) ─────────────────────── */
 [data-theme="matcha"] {
-  --bg-primary: #141915;
-  --bg-surface: #1c241e;
-  --bg-surface-alt: #161d18;
-  --bg-canvas: #0f1310;
-  --bg-subtle: #2a372d;
-  --bg-hover: #36473a;
-  --bg-input: #232d26;
-  --bg-input-focus: #1c241e;
-  --bg-tab: #18201a;
-  --bg-tab-active: #2f3e33;
+  --bg-primary: #0f1711;
+  --bg-surface: #17241b;
+  --bg-surface-alt: #131d16;
+  --bg-canvas: #0a100b;
+  --bg-subtle: #223627;
+  --bg-hover: #2e4735;
+  --bg-input: #1a291f;
+  --bg-input-focus: #17241b;
+  --bg-tab: #142018;
+  --bg-tab-active: #273d2d;
 
-  --border-subtle: #3d4f41;
-  --border-active: #4ade80;
+  --border-subtle: #334e3a;
+  --border-active: #22c55e;
 
   --text-primary: #f0fdf4;
   --text-secondary: #bbf7d0;
   --text-muted: #86efac;
 
-  --accent-primary: #4ade80;
-  --accent-secondary: #22c55e;
-  --accent-highlight: rgba(74, 222, 128, 0.22);
-  --accent-glow: rgba(74, 222, 128, 0.45);
-  --bg-glass: rgba(22, 29, 24, 0.72);
-  --bg-glass-hover: rgba(35, 45, 38, 0.85);
-  --bg-glass-input: rgba(28, 36, 30, 0.82);
-  --border-glass: rgba(74, 222, 128, 0.16);
+  --accent-primary: #22c55e;
+  --accent-secondary: #4ade80;
+  --accent-highlight: rgba(34, 197, 94, 0.22);
+  --accent-glow: rgba(34, 197, 94, 0.45);
+
+  --bg-glass: rgba(23, 36, 27, 0.72);
+  --bg-glass-hover: rgba(36, 56, 42, 0.85);
+  --bg-glass-input: rgba(26, 41, 31, 0.82);
+  --border-glass: rgba(34, 197, 94, 0.16);
 }
 
-/* ── 8. Sakura (Blossom Plum & Soft Rose) ────────────────────────────────── */
+/* ── 8. Sakura (Blossom Plum & Soft Rose Pink) ──────────────────────────── */
 [data-theme="sakura"] {
-  --bg-primary: #1c1419;
-  --bg-surface: #271c23;
-  --bg-surface-alt: #1f161c;
-  --bg-canvas: #150e12;
-  --bg-subtle: #3a2a34;
-  --bg-hover: #4a3643;
-  --bg-input: #2f222b;
-  --bg-input-focus: #271c23;
-  --bg-tab: #221820;
-  --bg-tab-active: #412f3b;
+  --bg-primary: #1c1018;
+  --bg-surface: #281622;
+  --bg-surface-alt: #20121b;
+  --bg-canvas: #140b11;
+  --bg-subtle: #3b2132;
+  --bg-hover: #4e2c43;
+  --bg-input: #301b2a;
+  --bg-input-focus: #281622;
+  --bg-tab: #23131e;
+  --bg-tab-active: #43253a;
 
-  --border-subtle: #543d4c;
-  --border-active: #f472b6;
+  --border-subtle: #56304b;
+  --border-active: #ec4899;
 
   --text-primary: #fdf2f8;
   --text-secondary: #fbcfe8;
   --text-muted: #f472b6;
 
-  --accent-primary: #f472b6;
-  --accent-secondary: #fda4af;
-  --accent-highlight: rgba(244, 114, 182, 0.25);
-  --accent-glow: rgba(244, 114, 182, 0.5);
-  --bg-glass: rgba(31, 22, 28, 0.72);
-  --bg-glass-hover: rgba(47, 34, 43, 0.85);
-  --bg-glass-input: rgba(39, 28, 35, 0.82);
-  --border-glass: rgba(244, 114, 182, 0.16);
+  --accent-primary: #ec4899;
+  --accent-secondary: #f472b6;
+  --accent-highlight: rgba(236, 72, 153, 0.25);
+  --accent-glow: rgba(236, 72, 153, 0.50);
+
+  --bg-glass: rgba(32, 18, 27, 0.72);
+  --bg-glass-hover: rgba(48, 27, 41, 0.85);
+  --bg-glass-input: rgba(40, 22, 34, 0.82);
+  --border-glass: rgba(236, 72, 153, 0.16);
+}
+
+/* ── 9. Graphite (Cool Carbon, Pure White Text, Electric Cyan & Blue) ───── */
+[data-theme="graphite"], [data-palette="graphite"]:not([data-theme]), [data-palette="graphite"][data-theme="graphite"] {
+  --bg-primary: #111317;
+  --bg-surface: #181b22;
+  --bg-surface-alt: #14161c;
+  --bg-canvas: #0c0e12;
+  --bg-subtle: #232732;
+  --bg-hover: #2f3443;
+  --bg-input: #1a1e27;
+  --bg-input-focus: #181b22;
+  --bg-tab: #161820;
+  --bg-tab-active: #222634;
+
+  --border-subtle: #2b3040;
+  --border-active: #00d2ff;
+
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-primary: #00d2ff;
+  --accent-secondary: #4f8ff7;
+  --accent-highlight: rgba(0, 210, 255, 0.16);
+  --accent-glow: rgba(0, 210, 255, 0.35);
+
+  --bg-glass: rgba(24, 27, 34, 0.74);
+  --bg-glass-hover: rgba(35, 39, 50, 0.86);
+  --bg-glass-input: rgba(26, 30, 39, 0.82);
+  --border-glass: rgba(0, 210, 255, 0.14);
+}
+
+/* ── 10. Slate (Slate-Blue Cards, Icy Sky Blue Highlights) ──────────────── */
+[data-theme="slate"], [data-palette="slate"]:not([data-theme]), [data-palette="slate"][data-theme="slate"] {
+  --bg-primary: #0b0f17;
+  --bg-surface: #1e293b;
+  --bg-surface-alt: #162032;
+  --bg-canvas: #080c14;
+  --bg-subtle: #29354d;
+  --bg-hover: #33415e;
+  --bg-input: #192336;
+  --bg-input-focus: #1e293b;
+  --bg-tab: #141c2c;
+  --bg-tab-active: #222e44;
+
+  --border-subtle: #2b3952;
+  --border-active: #38bdf8;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-primary: #38bdf8;
+  --accent-secondary: #0ea5e9;
+  --accent-highlight: rgba(56, 189, 248, 0.14);
+  --accent-glow: rgba(56, 189, 248, 0.32);
+
+  --bg-glass: rgba(30, 41, 59, 0.72);
+  --bg-glass-hover: rgba(43, 57, 82, 0.85);
+  --bg-glass-input: rgba(25, 35, 54, 0.80);
+  --border-glass: rgba(56, 189, 248, 0.12);
+}
+
+/* ── 11. Mocha (Warm Dark Espresso, Rich Amber Caramel Accents) ─────────── */
+[data-theme="mocha"], [data-palette="mocha"]:not([data-theme]), [data-palette="mocha"][data-theme="mocha"] {
+  --bg-primary: #120e0c;
+  --bg-surface: #1a1512;
+  --bg-surface-alt: #15110e;
+  --bg-canvas: #0c0908;
+  --bg-subtle: #2c221d;
+  --bg-hover: #3d2f28;
+  --bg-input: #201a16;
+  --bg-input-focus: #1a1512;
+  --bg-tab: #171310;
+  --bg-tab-active: #2a201b;
+
+  --border-subtle: #382c25;
+  --border-active: #f59e0b;
+
+  --text-primary: #fef3c7;
+  --text-secondary: #fde68a;
+  --text-muted: #d97706;
+
+  --accent-primary: #f59e0b;
+  --accent-secondary: #d97706;
+  --accent-highlight: rgba(245, 158, 11, 0.18);
+  --accent-glow: rgba(245, 158, 11, 0.35);
+
+  --bg-glass: rgba(26, 21, 18, 0.75);
+  --bg-glass-hover: rgba(42, 33, 28, 0.87);
+  --bg-glass-input: rgba(32, 26, 22, 0.82);
+  --border-glass: rgba(245, 158, 11, 0.12);
+}
+
+/* ── 12. Midnight Blue (Deep Royal Navy, Vibrant Cobalt Accents) ─────────── */
+[data-theme="midnight_blue"], [data-palette="midnight_blue"]:not([data-theme]), [data-palette="midnight_blue"][data-theme="midnight_blue"] {
+  --bg-primary: #070d1e;
+  --bg-surface: #0a1128;
+  --bg-surface-alt: #080e22;
+  --bg-canvas: #040816;
+  --bg-subtle: #142048;
+  --bg-hover: #1c2c62;
+  --bg-input: #0e1736;
+  --bg-input-focus: #0a1128;
+  --bg-tab: #091026;
+  --bg-tab-active: #15224e;
+
+  --border-subtle: #1e2e60;
+  --border-active: #3b82f6;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-primary: #3b82f6;
+  --accent-secondary: #2563eb;
+  --accent-highlight: rgba(59, 130, 246, 0.16);
+  --accent-glow: rgba(59, 130, 246, 0.35);
+
+  --bg-glass: rgba(10, 17, 40, 0.75);
+  --bg-glass-hover: rgba(20, 32, 72, 0.87);
+  --bg-glass-input: rgba(14, 23, 54, 0.82);
+  --border-glass: rgba(59, 130, 246, 0.12);
 }

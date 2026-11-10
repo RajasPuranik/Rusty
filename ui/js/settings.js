@@ -5,8 +5,11 @@
   const STORAGE_KEY = 'rusty_browser_settings_v4';
 
   const DEFAULT_SETTINGS = {
-    skin: 'crazy',                    // 'crazy' | 'minimal'
-    theme: 'sunset',                  // 'sunset' | 'midnight' | 'light' | 'amoled' | 'aurora' | 'cyberpunk' | 'matcha' | 'sakura'
+    lite_mode: false,
+    skin: 'crazy',                    // 'crazy' | 'minimal' | 'mayank'
+    accent_palette: 'slate',          // 'graphite' | 'slate' | 'mocha' | 'midnight_blue'
+    bg_style: 'match_theme',
+    theme: 'sunset',                  // 'sunset' | 'midnight' | 'light' | 'amoled' | 'aurora' | 'cyberpunk' | 'matcha' | 'sakura' | 'graphite' | 'slate' | 'mocha' | 'midnight_blue'
     custom_accent: '#f97316',
     use_custom_accent: false,
     tabs_layout: 'horizontal',        // 'horizontal' | 'vertical'
@@ -39,7 +42,10 @@
     pet_color: '#f97316',
     pet_accessory: 'none',            // 'none' | 'collar' | 'bow' | 'hat' | 'glasses'
     pet_mood: 'content',
-    pet_roam: false
+    pet_roam: false,
+    extensions_enabled: true,
+    extensions: [],
+    userscripts: []
   };
 
   class SettingsStore {

@@ -11,9 +11,22 @@
 
 use serde::Serialize;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 
 static WEBVIEW_DATA_DIR_NORM: OnceLock<String> = OnceLock::new();
+pub static UI_WEBVIEW_RENDERER_PID: AtomicU32 = AtomicU32::new(0);
+
+/// Explicitly register the initial shell / chrome UI WebView renderer PID.
+pub fn register_ui_webview_renderer_pid(pid: u32) {
+    UI_WEBVIEW_RENDERER_PID.store(pid, Ordering::SeqCst);
+}
+
+/// Query the currently registered shell / chrome UI WebView renderer PID.
+#[allow(dead_code)]
+pub fn get_ui_webview_renderer_pid() -> u32 {
+    UI_WEBVIEW_RENDERER_PID.load(Ordering::Relaxed)
+}
 
 /// Register this browser instance's unique WebView2 user-data directory so telemetry
 /// identifies sibling `msedgewebview2.exe` processes owned by this data dir while
@@ -87,15 +100,20 @@ fn extract_gpu_engine_key(instance_name: &str) -> &str {
         .unwrap_or(from_luid)
 }
 
-/// Classify a process into a human-readable browser role from executable & command line flags.
-pub fn classify_process(exe_name: &str, cmd_line: &str, is_host_pid: bool) -> String {
+/// Classify a process into a human-readable browser role with known PID.
+pub fn classify_process_with_pid(pid: u32, exe_name: &str, cmd_line: &str, is_host_pid: bool) -> String {
     if is_host_pid || exe_name.eq_ignore_ascii_case("rusty_browser.exe") {
         return "Host (Rusty)".to_owned();
     }
     let cmd_lower = cmd_line.to_lowercase();
     if exe_name.eq_ignore_ascii_case("msedgewebview2.exe") {
         if cmd_lower.contains("--type=renderer") {
-            return "Renderer (Tab/UI)".to_owned();
+            let ui_pid = UI_WEBVIEW_RENDERER_PID.load(Ordering::Relaxed);
+            if ui_pid != 0 && pid == ui_pid {
+                return "UI WebView".to_owned();
+            } else {
+                return "Content Renderer".to_owned();
+            }
         }
         if cmd_lower.contains("--type=gpu-process") {
             return "GPU Process".to_owned();
@@ -120,10 +138,31 @@ pub fn classify_process(exe_name: &str, cmd_line: &str, is_host_pid: bool) -> St
         }
         return "WebView2 Manager".to_owned();
     }
+    // Linux WebKitGTK processes
+    if exe_name.contains("WebKitWebProcess") || cmd_lower.contains("webkitwebprocess") {
+        let ui_pid = UI_WEBVIEW_RENDERER_PID.load(Ordering::Relaxed);
+        if ui_pid != 0 && pid == ui_pid {
+            return "UI WebView".to_owned();
+        } else {
+            return "Content Renderer".to_owned();
+        }
+    }
+    if exe_name.contains("WebKitNetworkProcess") || cmd_lower.contains("webkitnetworkprocess") || exe_name.contains("WebKitNetworkP") {
+        return "Network Service".to_owned();
+    }
+    if exe_name.contains("WebKitGPUProcess") || cmd_lower.contains("webkitgpuprocess") {
+        return "GPU Process".to_owned();
+    }
     if cmd_lower.contains("--type=crashpad-handler") {
         return "Crashpad Handler".to_owned();
     }
     exe_name.to_owned()
+}
+
+/// Classify a process into a human-readable browser role from executable & command line flags.
+#[allow(dead_code)]
+pub fn classify_process(exe_name: &str, cmd_line: &str, is_host_pid: bool) -> String {
+    classify_process_with_pid(0, exe_name, cmd_line, is_host_pid)
 }
 
 /// Check if a command line belongs to this browser's `--user-data-dir` path.
@@ -193,9 +232,277 @@ pub(crate) fn build_process_tree_pids(nodes: &[ProcNode], seeds: &[u32]) -> std:
     tree
 }
 
+/// Helper to identify the earliest renderer PID given candidate tuples of (creation_timestamp, pid).
+/// Candidates with timestamp > 0 are prioritized by earliest timestamp;
+/// unrecorded timestamps (0) are pushed to the end as u64::MAX. Ties are broken by lowest PID.
+pub(crate) fn select_earliest_renderer_pid(candidates: &[(u64, u32)]) -> Option<u32> {
+    candidates
+        .iter()
+        .min_by_key(|&&(time, pid)| (if time > 0 { time } else { u64::MAX }, pid))
+        .map(|&(_, pid)| pid)
+}
+
 #[inline]
 fn bytes_to_mb(bytes: usize) -> f64 {
     round1((bytes as f64) / (1024.0 * 1024.0))
+}
+
+/// Aggregated memory metrics parsed from Linux `/proc/<pid>/smaps_rollup`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SmapsRollupStats {
+    pub rss_kb: u64,
+    pub pss_kb: u64,
+    pub pss_anon_kb: u64,
+    pub pss_file_kb: u64,
+    pub private_clean_kb: u64,
+    pub private_dirty_kb: u64,
+    pub swap_kb: u64,
+}
+
+#[allow(dead_code)]
+impl SmapsRollupStats {
+    #[inline]
+    pub fn private_ws_kb(&self) -> u64 {
+        self.private_clean_kb.saturating_add(self.private_dirty_kb)
+    }
+
+    #[inline]
+    pub fn private_ws_mb(&self) -> f64 {
+        round1((self.private_ws_kb() as f64) / 1024.0)
+    }
+
+    #[inline]
+    pub fn pss_mb(&self) -> f64 {
+        round1((self.pss_kb as f64) / 1024.0)
+    }
+
+    #[inline]
+    pub fn working_set_mb(&self) -> f64 {
+        round1((self.rss_kb as f64) / 1024.0)
+    }
+
+    #[inline]
+    pub fn commit_kb(&self) -> u64 {
+        self.private_dirty_kb.saturating_add(self.swap_kb)
+    }
+
+    #[inline]
+    pub fn commit_mb(&self) -> f64 {
+        round1((self.commit_kb() as f64) / 1024.0)
+    }
+}
+
+/// Pure parser for Linux `/proc/<pid>/smaps_rollup` text content.
+#[allow(dead_code)]
+pub fn parse_smaps_rollup_text(content: &str) -> SmapsRollupStats {
+    let mut stats = SmapsRollupStats::default();
+
+    for line in content.lines() {
+        let mut parts = line.split_whitespace();
+        let key = match parts.next() {
+            Some(k) => k,
+            None => continue,
+        };
+        let val: u64 = match parts.next().and_then(|v| v.parse().ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        match key {
+            "Rss:" => stats.rss_kb = val,
+            "Pss:" => stats.pss_kb = val,
+            "Pss_Anon:" => stats.pss_anon_kb = val,
+            "Pss_File:" => stats.pss_file_kb = val,
+            "Private_Clean:" => stats.private_clean_kb = val,
+            "Private_Dirty:" => stats.private_dirty_kb = val,
+            "Swap:" => stats.swap_kb = val,
+            _ => {}
+        }
+    }
+
+    stats
+}
+
+/// Information parsed from Linux `/proc/<pid>/stat`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcStatInfo {
+    pub pid: u32,
+    pub comm: String,
+    pub ppid: u32,
+    pub starttime: u64,
+}
+
+/// Parse a single line from Linux `/proc/<pid>/stat`.
+///
+/// Handles process names (`comm`) containing spaces or nested parentheses by locating
+/// the outermost `(` and `)`.
+#[allow(dead_code)]
+pub fn parse_proc_stat_text(line: &str) -> Option<ProcStatInfo> {
+    let open_paren = line.find('(')?;
+    let close_paren = line.rfind(')')?;
+
+    if open_paren >= close_paren {
+        return None;
+    }
+
+    let pid: u32 = line[..open_paren].trim().parse().ok()?;
+    let comm = line[open_paren + 1..close_paren].to_string();
+
+    let rest = line[close_paren + 1..].trim();
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+
+    // In /proc/<pid>/stat:
+    // field 3 (index 0) after comm is state
+    // field 4 (index 1) after comm is ppid
+    // field 22 (index 19) after comm is starttime
+    if fields.len() < 20 {
+        return None;
+    }
+
+    let ppid: u32 = fields[1].parse().ok()?;
+    let starttime: u64 = fields[19].parse().ok()?;
+
+    Some(ProcStatInfo {
+        pid,
+        comm,
+        ppid,
+        starttime,
+    })
+}
+
+#[cfg(target_os = "linux")]
+mod linux_mem {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+
+    pub fn sample_process_tree(fallback_active_webviews: usize) -> BrowserMemoryBreakdown {
+        let host_pid = std::process::id();
+        let mut procs_info: Vec<ProcStatInfo> = Vec::new();
+
+        if let Ok(entries) = fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let s = name.to_string_lossy();
+                if s.chars().all(|c| c.is_ascii_digit()) {
+                    let stat_path = entry.path().join("stat");
+                    if let Ok(content) = fs::read_to_string(&stat_path) {
+                        if let Some(info) = parse_proc_stat_text(&content) {
+                            procs_info.push(info);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut owned_pids = HashSet::new();
+        owned_pids.insert(host_pid);
+
+        let starttimes: HashMap<u32, u64> = procs_info
+            .iter()
+            .map(|p| (p.pid, p.starttime))
+            .collect();
+
+        let host_starttime = starttimes.get(&host_pid).copied().unwrap_or(0);
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for p in &procs_info {
+                if owned_pids.contains(&p.ppid) && !owned_pids.contains(&p.pid) {
+                    let parent_start = starttimes.get(&p.ppid).copied().unwrap_or(0);
+                    if p.starttime >= parent_start && p.starttime >= host_starttime {
+                        owned_pids.insert(p.pid);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Auto-register UI WebView renderer if not set:
+        // The earliest created renderer among owned processes is the UI WebView
+        if UI_WEBVIEW_RENDERER_PID.load(Ordering::Relaxed) == 0 {
+            let web_procs: Vec<(u64, u32)> = procs_info
+                .iter()
+                .filter(|p| owned_pids.contains(&p.pid) && p.comm.contains("WebKitWebProcess"))
+                .map(|p| (p.starttime, p.pid))
+                .collect();
+            if let Some(first_pid) = select_earliest_renderer_pid(&web_procs) {
+                UI_WEBVIEW_RENDERER_PID.store(first_pid, Ordering::Relaxed);
+            }
+        }
+
+        let mut processes: Vec<ProcessMemoryInfo> = Vec::new();
+        let mut total_priv_ws_mb = 0.0;
+        let mut total_working_set_mb = 0.0;
+        let mut total_commit_mb = 0.0;
+        let mut host_priv_ws_mb = 0.0;
+
+        for p in &procs_info {
+            if owned_pids.contains(&p.pid) {
+                let smaps_path = format!("/proc/{}/smaps_rollup", p.pid);
+                let stats = if let Ok(content) = fs::read_to_string(&smaps_path) {
+                    parse_smaps_rollup_text(&content)
+                } else {
+                    SmapsRollupStats::default()
+                };
+
+                let is_self = p.pid == host_pid;
+                let kind = classify_process_with_pid(p.pid, &p.comm, &p.comm, is_self);
+
+                let priv_ws = stats.private_ws_mb();
+                let ws = stats.working_set_mb();
+                let commit = stats.commit_mb();
+
+                total_priv_ws_mb += priv_ws;
+                total_working_set_mb += ws;
+                total_commit_mb += commit;
+
+                if is_self {
+                    host_priv_ws_mb = priv_ws;
+                }
+
+                processes.push(ProcessMemoryInfo {
+                    pid: p.pid,
+                    parent_pid: p.ppid,
+                    kind,
+                    exe_name: p.comm.clone(),
+                    private_ws_mb: priv_ws,
+                    working_set_mb: ws,
+                    commit_mb: commit,
+                });
+            }
+        }
+
+        if processes.is_empty() {
+            let est = 35.0 + (fallback_active_webviews as f64 * 30.0);
+            return BrowserMemoryBreakdown {
+                total_private_ws_mb: est,
+                total_working_set_mb: est,
+                total_commit_mb: est,
+                host_private_ws_mb: 5.0,
+                process_count: 1,
+                processes: Vec::new(),
+                chrome_live_measured: false,
+                chrome_process_count: 0,
+                chrome_live_private_ws_mb: 0.0,
+            };
+        }
+
+        BrowserMemoryBreakdown {
+            total_private_ws_mb: round1(total_priv_ws_mb),
+            total_working_set_mb: round1(total_working_set_mb),
+            total_commit_mb: round1(total_commit_mb),
+            host_priv_ws_mb: round1(host_priv_ws_mb),
+            process_count: processes.len(),
+            processes,
+            chrome_live_measured: false,
+            chrome_process_count: 0,
+            chrome_live_private_ws_mb: 0.0,
+        }
+    }
 }
 
 /// Measure full memory breakdown across host + owned WebView2 processes.
@@ -205,7 +512,12 @@ pub fn sample_browser_memory_breakdown(fallback_active_webviews: usize) -> Brows
         win32_mem::sample_process_tree(fallback_active_webviews)
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_mem::sample_process_tree(fallback_active_webviews)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let est = 35.0 + (fallback_active_webviews as f64 * 30.0);
         BrowserMemoryBreakdown {
@@ -276,8 +588,9 @@ where
 #[cfg(target_os = "windows")]
 mod win32_mem {
     use super::{
-        build_process_tree_pids, bytes_to_mb, classify_process, cmdline_matches_data_dir,
-        BrowserMemoryBreakdown, ProcNode, ProcessMemoryInfo, WEBVIEW_DATA_DIR_NORM,
+        build_process_tree_pids, bytes_to_mb, classify_process_with_pid,
+        cmdline_matches_data_dir, select_earliest_renderer_pid, BrowserMemoryBreakdown, Ordering,
+        ProcNode, ProcessMemoryInfo, UI_WEBVIEW_RENDERER_PID, WEBVIEW_DATA_DIR_NORM,
     };
     use std::collections::HashSet;
 
@@ -552,6 +865,7 @@ mod win32_mem {
             struct CandSnap {
                 pid: u32,
                 parent_pid: u32,
+                creation_time: u64,
                 exe: String,
                 is_wv2: bool,
                 cmd_line: String,
@@ -600,6 +914,7 @@ mod win32_mem {
                 cands.push(CandSnap {
                     pid: p.pid,
                     parent_pid: p.parent_pid,
+                    creation_time,
                     exe: p.exe.clone(),
                     is_wv2,
                     cmd_line,
@@ -640,17 +955,30 @@ mod win32_mem {
             let mut chrome_priv_ws: usize = 0;
             let mut chrome_count: usize = 0;
 
+            // Auto-register UI WebView renderer if not explicitly registered:
+            // The earliest created renderer among owned processes is the UI WebView
+            if UI_WEBVIEW_RENDERER_PID.load(Ordering::Relaxed) == 0 {
+                let renderers: Vec<(u64, u32)> = cands
+                    .iter()
+                    .filter(|c| owned_pids.contains(&c.pid) && c.cmd_line.to_lowercase().contains("--type=renderer"))
+                    .map(|c| (c.creation_time, c.pid))
+                    .collect();
+                if let Some(first_pid) = select_earliest_renderer_pid(&renderers) {
+                    UI_WEBVIEW_RENDERER_PID.store(first_pid, Ordering::Relaxed);
+                }
+            }
+
             for c in &cands {
                 if owned_pids.contains(&c.pid) {
                     if let Some((priv_ws, ws, commit)) = c.mem {
                         let is_self = c.pid == my_pid;
-                        total_priv_ws += priv_ws;
-                        total_ws += ws;
-                        total_commit += commit;
+                        total_priv_ws = total_priv_ws.saturating_add(priv_ws);
+                        total_ws = total_ws.saturating_add(ws);
+                        total_commit = total_commit.saturating_add(commit);
                         if is_self {
                             host_priv_ws = priv_ws;
                         }
-                        let kind = classify_process(&c.exe, &c.cmd_line, is_self);
+                        let kind = classify_process_with_pid(c.pid, &c.exe, &c.cmd_line, is_self);
                         processes.push(ProcessMemoryInfo {
                             pid: c.pid,
                             parent_pid: c.parent_pid,
@@ -663,7 +991,7 @@ mod win32_mem {
                     }
                 } else if chrome_pids.contains(&c.pid) {
                     if let Some((priv_ws, _, _)) = c.mem {
-                        chrome_priv_ws += priv_ws;
+                        chrome_priv_ws = chrome_priv_ws.saturating_add(priv_ws);
                         chrome_count += 1;
                     }
                 }
@@ -787,30 +1115,60 @@ mod win32 {
             lpUserTime: *mut FILETIME,
         ) -> i32;
         fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> i32;
+        fn LoadLibraryW(lpLibFileName: *const u16) -> isize;
+        fn GetProcAddress(hModule: isize, lpProcName: *const u8) -> *const c_void;
+        fn FreeLibrary(hModule: isize) -> i32;
     }
 
-    #[link(name = "pdh")]
-    extern "system" {
-        fn PdhOpenQueryW(
-            szDataSource: *const u16,
-            dwUserData: usize,
-            phQuery: *mut *mut c_void,
-        ) -> i32;
-        fn PdhAddEnglishCounterW(
-            hQuery: *mut c_void,
-            szFullCounterPath: *const u16,
-            dwUserData: usize,
-            phCounter: *mut *mut c_void,
-        ) -> i32;
-        fn PdhCollectQueryData(hQuery: *mut c_void) -> i32;
-        fn PdhGetFormattedCounterArrayW(
-            hCounter: *mut c_void,
-            dwFormat: u32,
-            lpdwBufferSize: *mut u32,
-            lpdwItemCount: *mut u32,
-            ItemBuffer: *mut PDH_FMT_COUNTERVALUE_ITEM_W,
-        ) -> i32;
-        fn PdhCloseQuery(hQuery: *mut c_void) -> i32;
+    struct PdhApi {
+        module: isize,
+        open_query: unsafe extern "system" fn(*const u16, usize, *mut *mut c_void) -> i32,
+        add_counter: unsafe extern "system" fn(*mut c_void, *const u16, usize, *mut *mut c_void) -> i32,
+        collect_query: unsafe extern "system" fn(*mut c_void) -> i32,
+        get_array: unsafe extern "system" fn(*mut c_void, u32, *mut u32, *mut u32, *mut PDH_FMT_COUNTERVALUE_ITEM_W) -> i32,
+        close_query: unsafe extern "system" fn(*mut c_void) -> i32,
+    }
+
+    impl Drop for PdhApi {
+        fn drop(&mut self) {
+            if self.module != 0 {
+                unsafe {
+                    FreeLibrary(self.module);
+                }
+            }
+        }
+    }
+
+    impl PdhApi {
+        #[allow(clippy::manual_c_str_literals, clippy::missing_transmute_annotations)]
+        fn load() -> Option<Self> {
+            unsafe {
+                let name = to_wide("pdh.dll");
+                let h = LoadLibraryW(name.as_ptr());
+                if h == 0 {
+                    return None;
+                }
+                let open_q = GetProcAddress(h, b"PdhOpenQueryW\0".as_ptr());
+                let add_cnt = GetProcAddress(h, b"PdhAddEnglishCounterW\0".as_ptr());
+                let collect = GetProcAddress(h, b"PdhCollectQueryData\0".as_ptr());
+                let get_arr = GetProcAddress(h, b"PdhGetFormattedCounterArrayW\0".as_ptr());
+                let close_q = GetProcAddress(h, b"PdhCloseQuery\0".as_ptr());
+
+                if open_q.is_null() || add_cnt.is_null() || collect.is_null() || get_arr.is_null() || close_q.is_null() {
+                    FreeLibrary(h);
+                    return None;
+                }
+
+                Some(Self {
+                    module: h,
+                    open_query: std::mem::transmute(open_q),
+                    add_counter: std::mem::transmute(add_cnt),
+                    collect_query: std::mem::transmute(collect),
+                    get_array: std::mem::transmute(get_arr),
+                    close_query: std::mem::transmute(close_q),
+                })
+            }
+        }
     }
 
     fn to_wide(s: &str) -> Vec<u16> {
@@ -833,6 +1191,7 @@ mod win32 {
         prev_idle: u64,
         prev_kernel: u64,
         prev_user: u64,
+        pdh_api: Option<PdhApi>,
         pdh_query: *mut c_void,
         gpu_counter: *mut c_void,
         net_counter: *mut c_void,
@@ -842,8 +1201,10 @@ mod win32 {
     impl Drop for WinCollector {
         fn drop(&mut self) {
             if !self.pdh_query.is_null() {
-                unsafe {
-                    PdhCloseQuery(self.pdh_query);
+                if let Some(ref api) = self.pdh_api {
+                    unsafe {
+                        (api.close_query)(self.pdh_query);
+                    }
                 }
                 self.pdh_query = ptr::null_mut();
             }
@@ -856,24 +1217,25 @@ mod win32 {
             let mut pdh_query: *mut c_void = ptr::null_mut();
             let mut gpu_counter: *mut c_void = ptr::null_mut();
             let mut net_counter: *mut c_void = ptr::null_mut();
+            let pdh_api = PdhApi::load();
 
-            unsafe {
-                if PdhOpenQueryW(ptr::null(), 0, &mut pdh_query) == 0 && !pdh_query.is_null() {
-                    let gpu_path = to_wide(r"\GPU Engine(*)\Utilization Percentage");
-                    if PdhAddEnglishCounterW(pdh_query, gpu_path.as_ptr(), 0, &mut gpu_counter) != 0
-                    {
-                        gpu_counter = ptr::null_mut();
+            if let Some(ref api) = pdh_api {
+                unsafe {
+                    if (api.open_query)(ptr::null(), 0, &mut pdh_query) == 0 && !pdh_query.is_null() {
+                        let gpu_path = to_wide(r"\GPU Engine(*)\Utilization Percentage");
+                        if (api.add_counter)(pdh_query, gpu_path.as_ptr(), 0, &mut gpu_counter) != 0 {
+                            gpu_counter = ptr::null_mut();
+                        }
+
+                        let net_path = to_wide(r"\Network Interface(*)\Bytes Total/sec");
+                        if (api.add_counter)(pdh_query, net_path.as_ptr(), 0, &mut net_counter) != 0 {
+                            net_counter = ptr::null_mut();
+                        }
+
+                        let _ = (api.collect_query)(pdh_query);
+                    } else {
+                        pdh_query = ptr::null_mut();
                     }
-
-                    let net_path = to_wide(r"\Network Interface(*)\Bytes Total/sec");
-                    if PdhAddEnglishCounterW(pdh_query, net_path.as_ptr(), 0, &mut net_counter) != 0
-                    {
-                        net_counter = ptr::null_mut();
-                    }
-
-                    let _ = PdhCollectQueryData(pdh_query);
-                } else {
-                    pdh_query = ptr::null_mut();
                 }
             }
 
@@ -881,6 +1243,7 @@ mod win32 {
                 prev_idle: idle,
                 prev_kernel: kernel,
                 prev_user: user,
+                pdh_api,
                 pdh_query,
                 gpu_counter,
                 net_counter,
@@ -939,9 +1302,13 @@ mod win32 {
             if counter.is_null() {
                 return 0;
             }
+            let api = match self.pdh_api.as_ref() {
+                Some(a) => a,
+                None => return 0,
+            };
             let mut buf_size: u32 = 0;
             let mut count: u32 = 0;
-            let status = PdhGetFormattedCounterArrayW(
+            let status = (api.get_array)(
                 counter,
                 PDH_FMT_DOUBLE,
                 &mut buf_size,
@@ -960,7 +1327,7 @@ mod win32 {
                 self.pdh_buf.resize(needed, 0);
             }
             let ptr = self.pdh_buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
-            let status2 = PdhGetFormattedCounterArrayW(
+            let status2 = (api.get_array)(
                 counter,
                 PDH_FMT_DOUBLE,
                 &mut buf_size,
@@ -977,8 +1344,12 @@ mod win32 {
             if self.pdh_query.is_null() {
                 return (None, 0.0);
             }
+            let api = match self.pdh_api.as_ref() {
+                Some(a) => a,
+                None => return (None, 0.0),
+            };
             unsafe {
-                if PdhCollectQueryData(self.pdh_query) != 0 {
+                if (api.collect_query)(self.pdh_query) != 0 {
                     return (None, 0.0);
                 }
 
@@ -1075,6 +1446,8 @@ mod win32 {
 mod tests {
     use super::*;
 
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_extract_gpu_engine_key() {
         let name = "pid_4212_luid_0x00000000_0x00010539_phys_0_eng_0_engtype_3D";
@@ -1087,14 +1460,35 @@ mod tests {
 
     #[test]
     fn test_classify_process_and_data_dir_match() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         assert_eq!(
             classify_process("rusty_browser.exe", "", false),
             "Host (Rusty)"
         );
+        // Without registered UI PID, default renderer role is Content Renderer (symmetric across platforms)
+        UI_WEBVIEW_RENDERER_PID.store(0, Ordering::SeqCst);
         assert_eq!(
             classify_process("msedgewebview2.exe", "msedgewebview2.exe --type=renderer", false),
-            "Renderer (Tab/UI)"
+            "Content Renderer"
         );
+        assert_eq!(
+            classify_process("WebKitWebProcess", "WebKitWebProcess", false),
+            "Content Renderer"
+        );
+
+        // With registered UI PID:
+        register_ui_webview_renderer_pid(4242);
+        assert_eq!(get_ui_webview_renderer_pid(), 4242);
+        assert_eq!(
+            classify_process_with_pid(4242, "msedgewebview2.exe", "msedgewebview2.exe --type=renderer", false),
+            "UI WebView"
+        );
+        assert_eq!(
+            classify_process_with_pid(4243, "msedgewebview2.exe", "msedgewebview2.exe --type=renderer", false),
+            "Content Renderer"
+        );
+        UI_WEBVIEW_RENDERER_PID.store(0, Ordering::SeqCst);
+
         assert_eq!(
             classify_process("msedgewebview2.exe", "msedgewebview2.exe --type=gpu-process", false),
             "GPU Process"
@@ -1106,6 +1500,22 @@ mod tests {
                 false
             ),
             "Network Service"
+        );
+        assert_eq!(
+            classify_process(
+                "msedgewebview2.exe",
+                "msedgewebview2.exe --type=utility --utility-sub-type=storage.mojom.StorageService",
+                false
+            ),
+            "Storage Service"
+        );
+        assert_eq!(
+            classify_process(
+                "msedgewebview2.exe",
+                "msedgewebview2.exe --type=utility --utility-sub-type=audio.mojom.AudioService",
+                false
+            ),
+            "Audio Service"
         );
         assert_eq!(
             classify_process("msedgewebview2.exe", "\"msedgewebview2.exe\" --user-data-dir=\"C:\\AppData\\rusty_browser\\WebView2\"", false),
@@ -1121,6 +1531,102 @@ mod tests {
             "\"msedgewebview2.exe\" --user-data-dir=\"C:\\Users\\Test\\AppData\\Local\\Microsoft\\Teams\\EBWebView\"",
             &dir
         ));
+    }
+
+    #[test]
+    fn test_linux_process_classification() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        UI_WEBVIEW_RENDERER_PID.store(1001, Ordering::SeqCst);
+        assert_eq!(
+            classify_process_with_pid(1001, "WebKitWebProcess", "WebKitWebProcess", false),
+            "UI WebView"
+        );
+        assert_eq!(
+            classify_process_with_pid(1002, "WebKitWebProcess", "WebKitWebProcess", false),
+            "Content Renderer"
+        );
+        assert_eq!(
+            classify_process_with_pid(1003, "WebKitNetworkProcess", "WebKitNetworkProcess", false),
+            "Network Service"
+        );
+        assert_eq!(
+            classify_process_with_pid(1004, "WebKitGPUProcess", "WebKitGPUProcess", false),
+            "GPU Process"
+        );
+        UI_WEBVIEW_RENDERER_PID.store(0, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_parse_smaps_rollup_text_standard() {
+        let content = "\
+Rss:               45280 kB
+Pss:               32140 kB
+Pss_Anon:          28000 kB
+Pss_File:           4140 kB
+Private_Clean:      1240 kB
+Private_Dirty:     29800 kB
+Swap:                  0 kB
+";
+        let stats = parse_smaps_rollup_text(content);
+        assert_eq!(stats.rss_kb, 45280);
+        assert_eq!(stats.pss_kb, 32140);
+        assert_eq!(stats.pss_anon_kb, 28000);
+        assert_eq!(stats.pss_file_kb, 4140);
+        assert_eq!(stats.private_clean_kb, 1240);
+        assert_eq!(stats.private_dirty_kb, 29800);
+        assert_eq!(stats.swap_kb, 0);
+
+        assert_eq!(stats.private_ws_kb(), 31040);
+        assert!((stats.private_ws_mb() - 30.3).abs() < 0.1);
+        assert!((stats.pss_mb() - 31.4).abs() < 0.1);
+        assert!((stats.working_set_mb() - 44.2).abs() < 0.1);
+        assert!((stats.commit_mb() - 29.1).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_parse_smaps_rollup_empty_and_unknown_fields() {
+        let content = "\
+SomeOtherField:   9999 kB
+Rss:               1024 kB
+Private_Dirty:     2048 kB
+Unknown:           abc kB
+";
+        let stats = parse_smaps_rollup_text(content);
+        assert_eq!(stats.rss_kb, 1024);
+        assert_eq!(stats.private_dirty_kb, 2048);
+        assert_eq!(stats.pss_kb, 0);
+        assert_eq!(stats.private_clean_kb, 0);
+
+        let empty = parse_smaps_rollup_text("");
+        assert_eq!(empty, SmapsRollupStats::default());
+    }
+
+    #[test]
+    fn test_parse_proc_stat_standard() {
+        let line = "1234 (rusty_browser) S 1 1234 1234 0 -1 4194304 1200 0 0 0 10 20 0 0 20 0 5 0 10500 12345678";
+        let info = parse_proc_stat_text(line).expect("Should parse proc stat line");
+        assert_eq!(info.pid, 1234);
+        assert_eq!(info.comm, "rusty_browser");
+        assert_eq!(info.ppid, 1);
+        assert_eq!(info.starttime, 10500);
+    }
+
+    #[test]
+    fn test_parse_proc_stat_with_spaces_and_parentheses_in_comm() {
+        let line = "5678 (WebKitWebProcess (Web)) S 1234 5678 5678 0 -1 4194304 1200 0 0 0 10 20 0 0 20 0 5 0 20500 12345678";
+        let info = parse_proc_stat_text(line).expect("Should parse comm with spaces/parentheses");
+        assert_eq!(info.pid, 5678);
+        assert_eq!(info.comm, "WebKitWebProcess (Web)");
+        assert_eq!(info.ppid, 1234);
+        assert_eq!(info.starttime, 20500);
+    }
+
+    #[test]
+    fn test_parse_proc_stat_malformed() {
+        assert!(parse_proc_stat_text("not a stat line").is_none());
+        assert!(parse_proc_stat_text("1234 no parentheses").is_none());
+        assert!(parse_proc_stat_text("1234 (comm) truncated").is_none());
+        assert!(parse_proc_stat_text("").is_none());
     }
 
     #[test]
@@ -1175,5 +1681,91 @@ mod tests {
         assert!(tree.contains(&200));
         assert!(tree.contains(&201));
         assert!(!tree.contains(&300));
+    }
+
+    #[test]
+    fn test_smaps_rollup_saturating_add_prevents_overflow_panic() {
+        let stats = SmapsRollupStats {
+            rss_kb: 1024,
+            pss_kb: 512,
+            pss_anon_kb: 256,
+            pss_file_kb: 256,
+            private_clean_kb: u64::MAX,
+            private_dirty_kb: 100,
+            swap_kb: 200,
+        };
+        // private_ws_kb must saturate at u64::MAX without panic
+        assert_eq!(stats.private_ws_kb(), u64::MAX);
+        // commit_kb must saturate (100 + 200 = 300)
+        assert_eq!(stats.commit_kb(), 300);
+
+        let max_commit = SmapsRollupStats {
+            private_dirty_kb: u64::MAX,
+            swap_kb: 1,
+            ..Default::default()
+        };
+        assert_eq!(max_commit.commit_kb(), u64::MAX);
+    }
+
+    #[test]
+    fn test_select_earliest_renderer_pid_ordering_and_ties() {
+        // Candidates with timestamps: (timestamp, pid)
+        // 1. Inverted PIDs: PID 200 was created at t=1000, PID 100 was created at t=2000
+        let cands1 = vec![(2000, 100), (1000, 200)];
+        assert_eq!(select_earliest_renderer_pid(&cands1), Some(200));
+
+        // 2. Timestamp ties break deterministically by lowest PID
+        let cands2 = vec![(1500, 305), (1500, 201), (1500, 450)];
+        assert_eq!(select_earliest_renderer_pid(&cands2), Some(201));
+
+        // 3. Unrecorded timestamps (0) pushed to the end
+        let cands3 = vec![(0, 50), (2500, 300), (0, 20)];
+        assert_eq!(select_earliest_renderer_pid(&cands3), Some(300));
+
+        // 4. All unrecorded timestamps break ties by lowest PID
+        let cands4 = vec![(0, 500), (0, 300), (0, 400)];
+        assert_eq!(select_earliest_renderer_pid(&cands4), Some(300));
+
+        // 5. Empty slice returns None
+        assert_eq!(select_earliest_renderer_pid(&[]), None);
+    }
+
+    #[test]
+    fn test_platform_symmetry_in_role_fallback() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        UI_WEBVIEW_RENDERER_PID.store(0, Ordering::SeqCst);
+
+        // When UI_WEBVIEW_RENDERER_PID == 0:
+        // Windows renderer defaults to "Content Renderer"
+        assert_eq!(
+            classify_process_with_pid(5001, "msedgewebview2.exe", "--type=renderer", false),
+            "Content Renderer"
+        );
+        // Linux renderer defaults to "Content Renderer"
+        assert_eq!(
+            classify_process_with_pid(5002, "WebKitWebProcess", "--type=renderer", false),
+            "Content Renderer"
+        );
+
+        // When UI_WEBVIEW_RENDERER_PID == 5001:
+        UI_WEBVIEW_RENDERER_PID.store(5001, Ordering::SeqCst);
+        assert_eq!(
+            classify_process_with_pid(5001, "msedgewebview2.exe", "--type=renderer", false),
+            "UI WebView"
+        );
+        assert_eq!(
+            classify_process_with_pid(5002, "msedgewebview2.exe", "--type=renderer", false),
+            "Content Renderer"
+        );
+        assert_eq!(
+            classify_process_with_pid(5001, "WebKitWebProcess", "--type=renderer", false),
+            "UI WebView"
+        );
+        assert_eq!(
+            classify_process_with_pid(5002, "WebKitWebProcess", "--type=renderer", false),
+            "Content Renderer"
+        );
+
+        UI_WEBVIEW_RENDERER_PID.store(0, Ordering::SeqCst);
     }
 }

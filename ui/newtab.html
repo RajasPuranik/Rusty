@@ -16,6 +16,7 @@
   <script src="js/settings.js"></script>
   <script src="js/engines.js"></script>
   <script src="js/locations.js"></script>
+  <script src="js/fx-registry.js"></script>
 </head>
 <body class="ntp-body">
   <!-- Interactive constellation canvas for Crazy skin -->
@@ -93,35 +94,19 @@
         <div id="speed-dial-grid" class="speed-dial-row"></div>
       </section>
 
-      <!-- Bottom Quick-Access Action Cards -->
-      <section class="action-cards-grid">
-        <div class="action-card" data-action="ai">
-          <div class="action-card-icon icon-ai"><script>document.write(window.Icons.get('sparkles', '', 18));</script></div>
-          <div class="action-card-text">
-            <div class="action-card-title">Quick Search</div>
-            <div class="action-card-desc">Jump to search, @yt, @gh, or @w shortcuts</div>
+      <!-- Bottom Quick-Access Launch Cards (Customizable: 3 to 6 cards) -->
+      <section class="launch-cards-section">
+        <div class="launch-cards-header">
+          <span class="launch-cards-title">Launch Cards</span>
+          <div class="launch-cards-actions">
+            <button type="button" class="btn-icon-xs" id="btn-add-launch-card" title="Add Card (3 to 6)"><script>document.write(window.Icons.get('plus', '', 12));</script></button>
+            <button type="button" class="btn-icon-xs" id="btn-export-launch-cards" title="Export Cards JSON"><script>document.write(window.Icons.get('download', '', 12));</script></button>
+            <button type="button" class="btn-icon-xs" id="btn-import-launch-cards" title="Import Cards JSON"><script>document.write(window.Icons.get('upload', '', 12));</script></button>
+            <input type="file" id="import-cards-file" accept=".json" style="display: none;">
           </div>
         </div>
-        <div class="action-card" data-action="spaces">
-          <div class="action-card-icon icon-spaces"><script>document.write(window.Icons.get('layers', '', 18));</script></div>
-          <div class="action-card-text">
-            <div class="action-card-title">Command Palette</div>
-            <div class="action-card-desc">Switch skins, themes, tabs, and actions</div>
-          </div>
-        </div>
-        <div class="action-card" data-action="media">
-          <div class="action-card-icon icon-media"><script>document.write(window.Icons.get('play', '', 16));</script></div>
-          <div class="action-card-text">
-            <div class="action-card-title">Media Hub</div>
-            <div class="action-card-desc">Videos, streams, music & downloads</div>
-          </div>
-        </div>
-        <div class="action-card" data-action="tools">
-          <div class="action-card-icon icon-tools"><script>document.write(window.Icons.get('settings', '', 18));</script></div>
-          <div class="action-card-text">
-            <div class="action-card-title">Customize UI</div>
-            <div class="action-card-desc">Skins, effects intensity, memory saver</div>
-          </div>
+        <div id="launch-cards-grid" class="action-cards-grid">
+          <!-- Rendered dynamically by newtab.js -->
         </div>
       </section>
     </main>
@@ -267,6 +252,70 @@
       </div>
     </aside>
   </div>
+
+  <!-- Launch Card Edit Modal -->
+  <div id="card-edit-modal-backdrop" class="modal-backdrop" style="display: none;">
+    <div class="card-edit-modal">
+      <div class="modal-header">
+        <span id="modal-card-title-text" class="modal-title">Edit Launch Card</span>
+        <button type="button" class="btn-icon-xs" id="btn-close-card-modal"><script>document.write(window.Icons.get('close', '', 14));</script></button>
+      </div>
+      <form id="card-edit-form" class="card-edit-form">
+        <input type="hidden" id="edit-card-id">
+        <div class="form-group">
+          <label for="edit-card-title">Title</label>
+          <input type="text" id="edit-card-title" required maxlength="28" class="form-input">
+        </div>
+        <div class="form-group">
+          <label for="edit-card-subtitle">Subtitle</label>
+          <input type="text" id="edit-card-subtitle" maxlength="48" class="form-input">
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="edit-card-type">Card Type</label>
+            <select id="edit-card-type" class="form-select">
+              <option value="app">App Launcher (Local Desktop App)</option>
+              <option value="web">Web Shortcut (URL)</option>
+              <option value="action">Quick Action (Browser Action)</option>
+              <option value="widget">Mini Widget (Live Stat)</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="edit-card-icon">Icon</label>
+            <select id="edit-card-icon" class="form-select">
+              <option value="command">Terminal / Command</option>
+              <option value="sparkles">Sparkles / AI</option>
+              <option value="search">Search</option>
+              <option value="target">Target / Focus</option>
+              <option value="layers">Layers / Tabs</option>
+              <option value="play">Media / Play</option>
+              <option value="download">Downloads</option>
+              <option value="settings">Settings</option>
+              <option value="cpu">CPU / Monitor</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="edit-card-target" id="edit-card-target-label">Target</label>
+          <input type="text" id="edit-card-target" required class="form-input" placeholder="e.g. terminal, https://..., tabs_count">
+        </div>
+        <div class="form-group">
+          <label for="edit-card-color">Accent Color</label>
+          <input type="color" id="edit-card-color" value="#f97316" class="form-color">
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-delete-card" class="btn-danger-xs">Delete</button>
+          <div class="modal-footer-right">
+            <button type="button" id="btn-cancel-card" class="btn-secondary-xs">Cancel</button>
+            <button type="submit" class="btn-primary-xs">Save Card</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="js/globe.js"></script>
   <script src="js/newtab.js"></script>

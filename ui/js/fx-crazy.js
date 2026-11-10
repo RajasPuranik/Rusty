@@ -70,15 +70,16 @@
     });
   }
 
-  // ── 3. Cursor Spotlight Glow Overlay ─────────────────────────────────────
+  // ── 3. Cursor Spotlight Glow Overlay (Tinted to match card accent, capped at 0.15) ──
   document.addEventListener('mousemove', (e) => {
     if (!fxGlow || intensity <= 0.01) return;
-    const target = e.target.closest('.btn-icon, .btn-new-tab, .tab-item, .dial-card, .dial-pill, .action-card, .chip, .skin-card, .dock-btn');
+    const target = e.target.closest('.btn-icon, .btn-new-tab, .tab-item, .dial-card, .dial-pill, .action-card, .chip, .skin-card, .dock-btn, .widget-card');
     if (!target) return;
     target.classList.add('spotlight-glow');
     const rect = target.getBoundingClientRect();
     target.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
     target.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+    target.style.setProperty('--spotlight-color', `rgba(${accentRgb}, 0.25)`);
   }, { passive: true });
 
   // ── 4. Magnetic Buttons (Drift gently toward cursor) ──────────────────────

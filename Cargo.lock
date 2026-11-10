@@ -1693,6 +1693,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "webview2-com",
+ "windows",
  "wry",
 ]
 

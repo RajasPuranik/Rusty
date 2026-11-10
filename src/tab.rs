@@ -27,6 +27,7 @@ pub struct TabInfo {
     pub muted: bool,
     pub group_id: Option<String>,
     pub zoom_percent: u32,
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +41,7 @@ pub struct Tab {
     pub id: TabId,
     pub url: String,
     pub title: String,
+    pub favicon: Option<String>,
     /// Whether this tab currently has a live, allocated `WebView`.
     pub has_webview: bool,
     /// Whether this tab has been discarded from RAM due to inactivity.
@@ -98,6 +100,7 @@ impl Tab {
         Self {
             id,
             title: "New Tab".to_owned(),
+            favicon: None,
             url,
             has_webview: false,
             is_discarded: false,
@@ -199,6 +202,14 @@ impl Tab {
         self.nav_history.get(self.nav_index + 1).map(|s| s.as_str())
     }
 
+    pub fn nav_history(&self) -> &[String] {
+        &self.nav_history
+    }
+
+    pub fn nav_index(&self) -> usize {
+        self.nav_index
+    }
+
     pub fn info(&self, active_id: Option<TabId>) -> TabInfo {
         TabInfo {
             id: self.id,
@@ -211,6 +222,7 @@ impl Tab {
             muted: self.muted,
             group_id: self.group_id.clone(),
             zoom_percent: (self.zoom_level * 100.0).round() as u32,
+            favicon: self.favicon.clone(),
         }
     }
 }
@@ -514,6 +526,46 @@ impl TabManager {
             self.active = Some(self.tabs[prev].id);
             self.tabs[prev].last_active = Instant::now();
         }
+    }
+
+    /// Replace all tabs from saved TabMetadata (used when switching workspaces).
+    /// Returns the new active TabId.
+    pub fn restore_from_metadata(
+        &mut self,
+        tabs_meta: &[crate::workspace::TabMetadata],
+        active_idx: usize,
+    ) -> Option<TabId> {
+        self.tabs.clear();
+        if tabs_meta.is_empty() {
+            let id = self.create_tab("about:blank".to_owned());
+            return Some(id);
+        }
+        for meta in tabs_meta {
+            let id = self.next_id;
+            self.next_id += 1;
+            let mut tab = Tab::new(id, meta.url.clone());
+            tab.title = meta.title.clone();
+            tab.favicon = meta.favicon.clone();
+            tab.scroll_y = meta.scroll_y;
+            tab.pinned = meta.pinned;
+            tab.muted = meta.muted;
+            tab.group_id = meta.group_id.clone();
+            if !meta.nav_history.is_empty() {
+                tab.nav_history = meta.nav_history.clone();
+                tab.nav_index = meta.nav_index.min(tab.nav_history.len().saturating_sub(1));
+            }
+            tab.has_webview = false;
+            tab.is_discarded = false;
+            self.tabs.push(tab);
+        }
+        let target_idx = if active_idx < self.tabs.len() {
+            active_idx
+        } else {
+            0
+        };
+        let active_id = self.tabs[target_idx].id;
+        self.active = Some(active_id);
+        Some(active_id)
     }
 }
 

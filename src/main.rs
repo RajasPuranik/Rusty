@@ -18,6 +18,25 @@ mod telemetry;
 mod ui;
 mod url_resolver;
 mod weather;
+pub mod workspace;
+pub mod adblock;
+pub mod vault;
+pub mod vpn;
+pub mod focus;
+pub mod extensions;
+mod platform;
+#[allow(unused_imports)]
+use platform::{
+    create_platform_host, PlatformHost, PlatformPermissionKind, PlatformPermissionResponse,
+    PlatformWebView, WebViewConfig,
+};
+
+static GLOBAL_FOCUS_MANAGER: std::sync::OnceLock<Arc<std::sync::Mutex<focus::FocusManager>>> =
+    std::sync::OnceLock::new();
+
+pub fn global_focus_manager() -> &'static Arc<std::sync::Mutex<focus::FocusManager>> {
+    GLOBAL_FOCUS_MANAGER.get_or_init(|| Arc::new(std::sync::Mutex::new(focus::FocusManager::new())))
+}
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -235,6 +254,57 @@ mod win32_platform {
             true
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
+#[cfg(target_os = "windows")]
+use windows::core::Interface;
+#[cfg(target_os = "windows")]
+use wry::MemoryUsageLevel;
+
+pub trait WebViewMemoryExt {
+    fn suspend(&self) -> Result<()>;
+    fn resume(&self) -> Result<()>;
+    fn set_memory_target_low(&self) -> Result<()>;
+    fn set_memory_target_normal(&self) -> Result<()>;
+}
+
+#[cfg(target_os = "windows")]
+impl WebViewMemoryExt for WebView {
+    fn suspend(&self) -> Result<()> {
+        let wv = self.webview();
+        let wv3: ICoreWebView2_3 = wv.cast().context("Failed cast to ICoreWebView2_3")?;
+        unsafe {
+            let handler = None::<&webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2TrySuspendCompletedHandler>;
+            wv3.TrySuspend(handler).ok().context("TrySuspend failed")?;
+        }
+        Ok(())
+    }
+    fn resume(&self) -> Result<()> {
+        let wv = self.webview();
+        let wv3: ICoreWebView2_3 = wv.cast().context("Failed cast to ICoreWebView2_3")?;
+        unsafe {
+            wv3.Resume().ok().context("Resume failed")?;
+        }
+        Ok(())
+    }
+    fn set_memory_target_low(&self) -> Result<()> {
+        self.set_memory_usage_level(MemoryUsageLevel::Low)
+            .context("Failed to set memory usage level to Low")
+    }
+    fn set_memory_target_normal(&self) -> Result<()> {
+        self.set_memory_usage_level(MemoryUsageLevel::Normal)
+            .context("Failed to set memory usage level to Normal")
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl WebViewMemoryExt for WebView {
+    fn suspend(&self) -> Result<()> { Ok(()) }
+    fn resume(&self) -> Result<()> { Ok(()) }
+    fn set_memory_target_low(&self) -> Result<()> { Ok(()) }
+    fn set_memory_target_normal(&self) -> Result<()> { Ok(()) }
 }
 
 /// Default window size.
@@ -502,6 +572,10 @@ enum UserEvent {
     Telemetry(telemetry::TelemetrySnapshot),
     /// Live weather lookup completed in worker thread.
     WeatherFetched(Result<weather::WeatherData, String>),
+    /// Navigate a content webview to a specific URL (used by Focus Mode and Interstitial).
+    NavigateTab(TabId, String),
+    /// 1-second timer tick for Focus Mode sessions.
+    FocusTick,
 }
 
 /// Strongly-typed IPC command matching `ui/IPC_CONTRACT.md`.
@@ -726,6 +800,95 @@ enum UiMessage {
     #[serde(rename = "clear_downloads")]
     ClearDownloads,
 
+    #[serde(rename = "switch_workspace")]
+    SwitchWorkspace { workspace_id: String },
+
+    #[serde(rename = "create_workspace")]
+    CreateWorkspace {
+        name: String,
+        icon: Option<String>,
+        color: Option<String>,
+        is_isolated: Option<bool>,
+    },
+
+    #[serde(rename = "rename_workspace")]
+    RenameWorkspace {
+        workspace_id: String,
+        name: String,
+    },
+
+    #[serde(rename = "delete_workspace")]
+    DeleteWorkspace { workspace_id: String },
+
+    #[serde(rename = "undo_delete_workspace")]
+    UndoDeleteWorkspace,
+
+    #[serde(rename = "reorder_workspaces")]
+    ReorderWorkspaces { workspace_ids: Vec<String> },
+
+    #[serde(rename = "move_tab_to_workspace")]
+    MoveTabToWorkspace {
+        tab_id: TabId,
+        target_workspace_id: String,
+    },
+
+    #[serde(rename = "restore_recently_closed_tab")]
+    RestoreRecentlyClosedTab { workspace_id: Option<String> },
+
+    #[serde(rename = "start_focus")]
+    StartFocus {
+        mode: String,
+        duration_secs: Option<u64>,
+    },
+
+    #[serde(rename = "pause_focus")]
+    PauseFocus,
+
+    #[serde(rename = "resume_focus")]
+    ResumeFocus,
+
+    #[serde(rename = "stop_focus")]
+    StopFocus,
+
+    #[serde(rename = "get_focus_state")]
+    GetFocusState,
+
+    #[serde(rename = "bypass_focus_domain")]
+    BypassFocusDomain {
+        domain: String,
+        confirmation: String,
+    },
+
+    #[serde(rename = "launch_local_app")]
+    LaunchLocalApp { app: String },
+
+    #[serde(rename = "get_mini_widget_stat")]
+    GetMiniWidgetStat { widget: String },
+
+    #[serde(rename = "load_unpacked_extension")]
+    LoadUnpackedExtension { path: String },
+
+    #[serde(rename = "toggle_extension")]
+    ToggleExtension { id: String, enabled: bool },
+
+    #[serde(rename = "remove_extension")]
+    RemoveExtension { id: String },
+
+    #[serde(rename = "inspect_extension")]
+    InspectExtension { path: String },
+
+    #[serde(rename = "save_userscript")]
+    SaveUserScript { script: storage::UserScript },
+
+    #[serde(rename = "toggle_userscript")]
+    ToggleUserScript { id: String, enabled: bool },
+
+    #[serde(rename = "delete_userscript")]
+    DeleteUserScript { id: String },
+
+    #[serde(rename = "get_extensions_and_scripts")]
+    GetExtensionsAndScripts,
+
     #[serde(other)]
     Unknown,
 }
@@ -934,17 +1097,38 @@ const CONTENT_INIT_SCRIPT: &str = r#"
       }, true);
 
       if (IS_TOP) {
+          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch
+          if (location.hostname.includes('youtube.com')) {
+              const checkShorts = () => {
+                  if (location.pathname.startsWith('/shorts/')) {
+                      const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
+                      if (id) {
+                          location.replace('https://www.youtube.com/watch?v=' + id);
+                      }
+                  }
+              };
+              checkShorts();
+          }
+
           // Notify Rust to re-read verified WebView2 URL after SPA pushState/popstate updates
           const pingUrl = () => postRawIpc(JSON.stringify({ action: 'tab_url_ping' }));
           const origPush = history.pushState;
           const origReplace = history.replaceState;
           history.pushState = function () {
               const r = origPush.apply(this, arguments);
+              if (location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
+                  const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
+                  if (id) location.replace('https://www.youtube.com/watch?v=' + id);
+              }
               setTimeout(pingUrl, 0);
               return r;
           };
           history.replaceState = function () {
               const r = origReplace.apply(this, arguments);
+              if (location.hostname.includes('youtube.com') && location.pathname.startsWith('/shorts/')) {
+                  const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];
+                  if (id) location.replace('https://www.youtube.com/watch?v=' + id);
+              }
               setTimeout(pingUrl, 0);
               return r;
           };
@@ -1009,7 +1193,11 @@ fn is_newtab_url(url: &str) -> bool {
 
 /// Append active skin/theme/layout query parameters for internal chrome and newtab pages.
 fn append_skin_theme_query(base: &str, settings: &storage::Settings) -> String {
-    let skin = if settings.skin == "minimal" { "minimal" } else { "crazy" };
+    let skin = match settings.skin.as_str() {
+        "minimal" => "minimal",
+        "mayank" => "mayank",
+        _ => "crazy",
+    };
     let theme = percent_encoding::utf8_percent_encode(
         &settings.theme,
         percent_encoding::NON_ALPHANUMERIC,
@@ -1019,8 +1207,12 @@ fn append_skin_theme_query(base: &str, settings: &storage::Settings) -> String {
     } else {
         "horizontal"
     };
+    let palette = percent_encoding::utf8_percent_encode(
+        &settings.accent_palette,
+        percent_encoding::NON_ALPHANUMERIC,
+    );
     let sep = if base.contains('?') { '&' } else { '?' };
-    format!("{base}{sep}skin={skin}&theme={theme}&tabs={tabs}")
+    format!("{base}{sep}skin={skin}&theme={theme}&tabs={tabs}&palette={palette}")
 }
 
 /// Resolve virtual URLs and inject current skin/theme/layout params for internal UI pages.
@@ -1198,6 +1390,8 @@ struct ContentWebViewParams<'a> {
     block_camera: bool,
     block_microphone: bool,
     block_geolocation: bool,
+    userscripts: &'a [storage::UserScript],
+    is_vault: bool,
 }
 
 /// Build a content webview for a tab positioned dynamically at `content_rect`.
@@ -1215,6 +1409,8 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
         block_camera,
         block_microphone,
         block_geolocation,
+        userscripts,
+        is_vault,
     } = params;
 
     let title_proxy = proxy.clone();
@@ -1235,7 +1431,8 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
     };
     let frame_token = generate_frame_token(tab_id);
     let init_core = CONTENT_INIT_SCRIPT.replace("__RUSTY_FRAME_TOKEN__", &frame_token);
-    let combined_script = format!("{init_core}\n{scroll_restore}");
+    let userscripts_js = extensions::build_userscripts_injection_js(userscripts, is_vault);
+    let combined_script = format!("{init_core}\n{scroll_restore}\n{userscripts_js}");
 
     #[cfg(not(target_os = "windows"))]
     let _ = shared_webview;
@@ -1349,6 +1546,29 @@ fn build_content_webview(params: ContentWebViewParams<'_>) -> Result<WebView> {
                 true
             } else if is_safe_web_url(&url) || url.starts_with("about:") {
                 nav_trusted.store(false, Ordering::Relaxed);
+
+                // Focus Mode Enforcement in Rust Navigation Handler
+                if let Ok(fm) = global_focus_manager().lock() {
+                    let decision = fm.check_url(&url);
+                    match decision {
+                        focus::FocusDecision::Blocked { mode, domain: _, url: dest_url, remaining_secs } => {
+                            let interstitial_url = format!(
+                                "rusty://app/interstitial.html?url={}&mode={}&remaining={}",
+                                percent_encoding::percent_encode(dest_url.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                                percent_encoding::percent_encode(mode.as_bytes(), percent_encoding::NON_ALPHANUMERIC),
+                                remaining_secs
+                            );
+                            let _ = url_proxy.send_event(UserEvent::NavigateTab(tab_id, interstitial_url));
+                            return false;
+                        }
+                        focus::FocusDecision::Redirect(redirect_url) => {
+                            let _ = url_proxy.send_event(UserEvent::NavigateTab(tab_id, redirect_url));
+                            return false;
+                        }
+                        focus::FocusDecision::Allowed => {}
+                    }
+                }
+
                 let _ = url_proxy.send_event(UserEvent::UrlChanged(tab_id, url.clone()));
                 true
             } else {
@@ -1712,6 +1932,8 @@ fn ensure_tab_webview(
         block_camera: settings.block_camera,
         block_microphone: settings.block_microphone,
         block_geolocation: settings.block_geolocation,
+        userscripts: &settings.userscripts,
+        is_vault: storage.is_active_workspace_vault(),
     })?;
 
     if needs_html_page {
@@ -1772,6 +1994,8 @@ fn apply_layout_and_visibility(
             if was_visible {
                 if let Some(wv) = content_webviews.get(&tid) {
                     let _ = wv.set_visible(false);
+                    let _ = wv.set_memory_target_low();
+                    let _ = wv.suspend();
                 }
                 split.applied_visible.insert(tid, false);
             }
@@ -1811,6 +2035,10 @@ fn apply_layout_and_visibility(
             let cur_visible = split.applied_visible.get(&tid).copied().unwrap_or(true);
             if cur_visible != want_visible {
                 let _ = wv.set_visible(want_visible);
+                if want_visible {
+                    let _ = wv.resume();
+                    let _ = wv.set_memory_target_normal();
+                }
                 split.applied_visible.insert(tid, want_visible);
             }
         }
@@ -1925,6 +2153,69 @@ fn open_new_tab(
     );
 }
 
+/// Safely launch an allowlisted desktop application without shell string interpretation.
+fn launch_safe_app(app: &str) -> Result<()> {
+    let clean = app.trim().to_ascii_lowercase();
+
+    #[cfg(target_os = "windows")]
+    let candidates: &[&str] = match clean.as_str() {
+        "terminal" | "wt" => &["wt.exe", "powershell.exe", "cmd.exe"],
+        "calculator" | "calc" => &["calc.exe"],
+        "explorer" | "files" => &["explorer.exe"],
+        "vscode" | "code" => &["code.cmd", "code.exe"],
+        "notepad" => &["notepad.exe"],
+        _ => anyhow::bail!("Application not allowed: {}", app),
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let candidates: &[&str] = match clean.as_str() {
+        "terminal" | "wt" => &["gnome-terminal", "xterm", "konsole", "alacritty"],
+        "calculator" | "calc" => &["gnome-calculator", "kcalc", "xcalc"],
+        "explorer" | "files" => &["nautilus", "dolphin", "thunar"],
+        "vscode" | "code" => &["code"],
+        "notepad" => &["gedit", "kate", "nano"],
+        _ => anyhow::bail!("Application not allowed: {}", app),
+    };
+
+    for candidate in candidates {
+        if let Ok(child) = std::process::Command::new(candidate).spawn() {
+            std::mem::drop(child);
+            return Ok(());
+        }
+    }
+
+    anyhow::bail!("Application not found: {}", app);
+}
+
+fn get_downloads_disk_space_string(storage: &mut Storage) -> String {
+    let dl_dir = Storage::resolve_downloads_dir();
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide: Vec<u16> = dl_dir.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let mut free_bytes: u64 = 0;
+        let mut total_bytes: u64 = 0;
+        let mut total_free_bytes: u64 = 0;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetDiskFreeSpaceExW(
+                lpDirectoryName: *const u16,
+                lpFreeBytesAvailableToCaller: *mut u64,
+                lpTotalNumberOfBytes: *mut u64,
+                lpTotalNumberOfFreeBytes: *mut u64,
+            ) -> i32;
+        }
+        let res = unsafe {
+            GetDiskFreeSpaceExW(wide.as_ptr(), &mut free_bytes, &mut total_bytes, &mut total_free_bytes)
+        };
+        if res != 0 {
+            let gb = free_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+            return format!("{:.1} GB free", gb);
+        }
+    }
+    format!("{} items", storage.downloads().len())
+}
+
 fn main() -> Result<()> {
     // Initialize structured tracing (RUST_LOG overrides default info filter)
     let _ = tracing_subscriber::fmt()
@@ -1987,6 +2278,16 @@ fn main() -> Result<()> {
     let proxy = event_loop.create_proxy();
     let watchdog = spawn_event_loop_watchdog(proxy.clone());
 
+    let focus_ticker_proxy = proxy.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            if focus_ticker_proxy.send_event(UserEvent::FocusTick).is_err() {
+                break;
+            }
+        }
+    });
+
     // ── Main window ────────────────────────────────────────────────────
     let window_title = if is_incognito {
         "Rusty Browser (Private Browsing)"
@@ -2003,6 +2304,8 @@ fn main() -> Result<()> {
         .context("Failed to create window")?;
 
     // ── Tab & Layout State ─────────────────────────────────────────────
+    let (persisted_workspaces, persisted_active_ws) = storage.get_workspaces();
+    let mut workspaces = workspace::WorkspaceManager::from_persisted(persisted_workspaces, persisted_active_ws);
     let mut tabs = TabManager::new();
     let mut groups: Vec<TabGroup> = Vec::new();
     let mut content_webviews: HashMap<TabId, WebView> = HashMap::new();
@@ -2079,6 +2382,8 @@ fn main() -> Result<()> {
                     block_camera: settings.block_camera,
                     block_microphone: settings.block_microphone,
                     block_geolocation: settings.block_geolocation,
+                    userscripts: &settings.userscripts,
+                    is_vault: storage.is_active_workspace_vault(),
                 }) {
                     if needs_html_page {
                         load_target_url(&wv, &url, &mut storage);
@@ -3819,6 +4124,444 @@ fn main() -> Result<()> {
                         );
                     }
 
+                    UiMessage::SwitchWorkspace { workspace_id } => {
+                        workspaces.sync_current_tabs(&tabs);
+                        if let Some((target_tabs, active_idx)) = workspaces.switch_workspace(&workspace_id, &tabs) {
+                            for id in tabs.all_ids() {
+                                remove_tab_webview(&mut content_webviews, &mut split, id);
+                            }
+                            content_webviews.clear();
+                            split.applied_bounds.clear();
+                            split.applied_visible.clear();
+                            tabs.restore_from_metadata(&target_tabs, active_idx);
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                            apply_layout_and_visibility(
+                                &window,
+                                &chrome_wv,
+                                &mut tabs,
+                                &mut content_webviews,
+                                &proxy,
+                                current_content_rect,
+                                is_overlay_open,
+                                &mut storage,
+                                is_incognito,
+                                &mut split,
+                                &watchdog,
+                            );
+                            sync_chrome_ui(
+                                &chrome_wv,
+                                &tabs,
+                                &groups,
+                                &content_webviews,
+                                &mut storage,
+                                is_incognito,
+                                &split,
+                            );
+
+                            if let Some(target_ws) = workspaces.get(&workspace_id) {
+                                if let Ok(mut fm) = global_focus_manager().lock() {
+                                    if let Some(_suggested) = fm.on_workspace_switch(&target_ws.name) {
+                                        let focus_msg = json!({
+                                            "type": "focus_state_changed",
+                                            "state": fm.state()
+                                        });
+                                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &focus_msg);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    UiMessage::CreateWorkspace { name, icon, color, is_isolated } => {
+                        let ws_id = workspaces.create_workspace(name, icon, color, is_isolated.unwrap_or(false));
+                        workspaces.sync_current_tabs(&tabs);
+                        storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                        let ws_msg = json!({
+                            "type": "workspaces_update",
+                            "workspaces": workspaces.summaries(tabs.count()),
+                            "active_workspace_id": workspaces.active_id(),
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                        let _ = ws_id;
+                    }
+
+                    UiMessage::RenameWorkspace { workspace_id, name } => {
+                        if workspaces.rename_workspace(&workspace_id, name) {
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                        }
+                    }
+
+                    UiMessage::DeleteWorkspace { workspace_id } => {
+                        let active_before = workspaces.active_id().to_owned();
+                        if let Ok(Some(deleted_ws)) = workspaces.delete_workspace(&workspace_id) {
+                            if active_before == workspace_id {
+                                let new_active = workspaces.active_id().to_owned();
+                                if let Some((target_tabs, active_idx)) = workspaces.switch_workspace(&new_active, &tabs) {
+                                    for id in tabs.all_ids() {
+                                        remove_tab_webview(&mut content_webviews, &mut split, id);
+                                    }
+                                    content_webviews.clear();
+                                    split.applied_bounds.clear();
+                                    split.applied_visible.clear();
+                                    tabs.restore_from_metadata(&target_tabs, active_idx);
+                                    apply_layout_and_visibility(
+                                        &window,
+                                        &chrome_wv,
+                                        &mut tabs,
+                                        &mut content_webviews,
+                                        &proxy,
+                                        current_content_rect,
+                                        is_overlay_open,
+                                        &mut storage,
+                                        is_incognito,
+                                        &mut split,
+                                        &watchdog,
+                                    );
+                                    sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
+                                }
+                            }
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                                "can_undo": true,
+                                "deleted_workspace": deleted_ws,
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                        }
+                    }
+
+                    UiMessage::UndoDeleteWorkspace => {
+                        if let Some(restored_id) = workspaces.undo_delete() {
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                                "can_undo": workspaces.has_undo(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                            let _ = restored_id;
+                        }
+                    }
+
+                    UiMessage::ReorderWorkspaces { workspace_ids } => {
+                        if workspaces.reorder_workspaces(&workspace_ids) {
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                        }
+                    }
+
+                    UiMessage::MoveTabToWorkspace { tab_id, target_workspace_id } => {
+                        if let Some(tab) = tabs.get(tab_id) {
+                            let meta = workspace::TabMetadata {
+                                url: tab.url.clone(),
+                                title: tab.title.clone(),
+                                favicon: tab.favicon.clone(),
+                                scroll_y: tab.scroll_y,
+                                pinned: tab.pinned,
+                                muted: tab.muted,
+                                group_id: tab.group_id.clone(),
+                                nav_history: tab.nav_history().to_vec(),
+                                nav_index: tab.nav_index(),
+                            };
+                            remove_tab_webview(&mut content_webviews, &mut split, tab_id);
+                            tabs.close_tab(tab_id);
+                            if tabs.count() == 0 {
+                                let new_id = tabs.create_tab("about:blank".to_owned());
+                                tabs.switch_to(new_id);
+                            }
+                            workspaces.move_tab_to_workspace(meta, &target_workspace_id);
+                            workspaces.sync_current_tabs(&tabs);
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                            apply_layout_and_visibility(
+                                &window,
+                                &chrome_wv,
+                                &mut tabs,
+                                &mut content_webviews,
+                                &proxy,
+                                current_content_rect,
+                                is_overlay_open,
+                                &mut storage,
+                                is_incognito,
+                                &mut split,
+                                &watchdog,
+                            );
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
+                        }
+                    }
+
+                    UiMessage::RestoreRecentlyClosedTab { workspace_id } => {
+                        let ws_id = match workspace_id {
+                            Some(ref id) => id.clone(),
+                            None => workspaces.active_id().to_owned(),
+                        };
+                        if let Some(meta) = workspaces.pop_recently_closed(&ws_id) {
+                            let new_id = tabs.create_tab(meta.url);
+                            if let Some(t) = tabs.get_mut(new_id) {
+                                t.title = meta.title;
+                                t.pinned = meta.pinned;
+                                t.muted = meta.muted;
+                            }
+                            tabs.switch_to(new_id);
+                            workspaces.sync_current_tabs(&tabs);
+                            storage.save_workspaces(workspaces.workspaces().to_vec(), workspaces.active_id().to_owned());
+                            apply_layout_and_visibility(
+                                &window,
+                                &chrome_wv,
+                                &mut tabs,
+                                &mut content_webviews,
+                                &proxy,
+                                current_content_rect,
+                                is_overlay_open,
+                                &mut storage,
+                                is_incognito,
+                                &mut split,
+                                &watchdog,
+                            );
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                            sync_chrome_ui(&chrome_wv, &tabs, &groups, &content_webviews, &mut storage, is_incognito, &split);
+                        }
+                    }
+
+                    UiMessage::StartFocus { mode, duration_secs } => {
+                        let kind = match mode.to_lowercase().as_str() {
+                            "work" => focus::FocusModeKind::Work,
+                            "deep" | "deep work" => focus::FocusModeKind::Deep,
+                            _ => focus::FocusModeKind::Study,
+                        };
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            fm.start(kind, duration_secs);
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        }
+                    }
+
+                    UiMessage::PauseFocus => {
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            fm.pause();
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        }
+                    }
+
+                    UiMessage::ResumeFocus => {
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            fm.resume();
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        }
+                    }
+
+                    UiMessage::StopFocus => {
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            fm.stop();
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        }
+                    }
+
+                    UiMessage::GetFocusState => {
+                        if let Ok(fm) = global_focus_manager().lock() {
+                            let state = fm.state();
+                            let msg = json!({
+                                "type": "focus_state_changed",
+                                "state": state
+                            });
+                            broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                        }
+                    }
+
+                    UiMessage::BypassFocusDomain { domain, confirmation } => {
+                        if let Ok(mut fm) = global_focus_manager().lock() {
+                            let _ = fm.grant_bypass(&domain, &confirmation);
+                        }
+                    }
+
+                    UiMessage::LaunchLocalApp { app } => {
+                        let res = launch_safe_app(&app);
+                        let resp = json!({
+                            "type": "launch_app_result",
+                            "app": app,
+                            "success": res.is_ok(),
+                            "error": res.err().map(|e| e.to_string()),
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::GetMiniWidgetStat { widget } => {
+                        let val = match widget.as_str() {
+                            "tabs_count" => tabs.all_ids().len().to_string(),
+                            "focus_time" => {
+                                if let Ok(fm) = global_focus_manager().lock() {
+                                    format!("{}m", fm.today_focus_mins())
+                                } else {
+                                    "0m".to_string()
+                                }
+                            }
+                            "downloads_disk_space" => get_downloads_disk_space_string(&mut storage),
+                            _ => "--".to_string(),
+                        };
+                        let resp = json!({
+                            "type": "mini_widget_stat",
+                            "widget": widget,
+                            "value": val,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::LoadUnpackedExtension { path } => {
+                        let path_buf = std::path::PathBuf::from(&path);
+                        match extensions::load_unpacked_extension(&path_buf) {
+                            Ok(ext) => {
+                                storage.add_extension(ext.clone());
+                                let resp = json!({
+                                    "type": "extension_loaded",
+                                    "success": true,
+                                    "extension": ext,
+                                });
+                                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                            }
+                            Err(e) => {
+                                let resp = json!({
+                                    "type": "extension_loaded",
+                                    "success": false,
+                                    "error": e.to_string(),
+                                });
+                                broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                            }
+                        }
+                    }
+
+                    UiMessage::ToggleExtension { id, enabled } => {
+                        let changed = storage.toggle_extension(&id, enabled);
+                        let resp = json!({
+                            "type": "extension_toggled",
+                            "id": id,
+                            "enabled": enabled,
+                            "success": changed,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::RemoveExtension { id } => {
+                        let changed = storage.remove_extension(&id);
+                        let resp = json!({
+                            "type": "extension_removed",
+                            "id": id,
+                            "success": changed,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::InspectExtension { path } => {
+                        let path_buf = std::path::PathBuf::from(&path);
+                        let res = extensions::inspect_extension_directory(&path_buf);
+                        let resp = match res {
+                            Ok(inspection) => json!({
+                                "type": "extension_inspection",
+                                "success": true,
+                                "inspection": inspection,
+                            }),
+                            Err(e) => json!({
+                                "type": "extension_inspection",
+                                "success": false,
+                                "error": e.to_string(),
+                            }),
+                        };
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::SaveUserScript { script } => {
+                        storage.save_userscript(script.clone());
+                        let resp = json!({
+                            "type": "userscript_saved",
+                            "success": true,
+                            "script": script,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::ToggleUserScript { id, enabled } => {
+                        let changed = storage.toggle_userscript(&id, enabled);
+                        let resp = json!({
+                            "type": "userscript_toggled",
+                            "id": id,
+                            "enabled": enabled,
+                            "success": changed,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::DeleteUserScript { id } => {
+                        let changed = storage.delete_userscript(&id);
+                        let resp = json!({
+                            "type": "userscript_deleted",
+                            "id": id,
+                            "success": changed,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
+                    UiMessage::GetExtensionsAndScripts => {
+                        let is_vault = storage.is_active_workspace_vault();
+                        let resp = json!({
+                            "type": "extensions_and_scripts",
+                            "is_windows": cfg!(target_os = "windows"),
+                            "is_linux": cfg!(target_os = "linux"),
+                            "extensions_enabled": storage.settings().extensions_enabled,
+                            "extensions": storage.settings().extensions,
+                            "userscripts": storage.settings().userscripts,
+                            "vault_active": is_vault,
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &resp);
+                    }
+
                     UiMessage::Unknown => {}
                 }
                 watchdog.ack();
@@ -4055,6 +4798,33 @@ fn main() -> Result<()> {
                 }
             }
 
+            Event::UserEvent(UserEvent::NavigateTab(tab_id, target_url)) => {
+                if let Some(wv) = content_webviews.get(&tab_id) {
+                    let _ = wv.load_url(&target_url);
+                }
+            }
+
+            Event::UserEvent(UserEvent::FocusTick) => {
+                if let Ok(mut fm) = global_focus_manager().lock() {
+                    let completed = fm.tick();
+                    if fm.state().is_active {
+                        let state = fm.state();
+                        let msg = json!({
+                            "type": "focus_state_changed",
+                            "state": state
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                    } else if completed {
+                        let state = fm.state();
+                        let msg = json!({
+                            "type": "focus_session_completed",
+                            "state": state
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
+                    }
+                }
+            }
+
             _ => {}
         }
     });
@@ -4122,6 +4892,15 @@ mod tests {
             resolve_content_url_with_settings("https://crates.io", &s),
             "https://crates.io"
         );
+
+        let s_mayank = storage::Settings {
+            skin: "mayank".to_owned(),
+            theme: "light".to_owned(),
+            tabs_layout: "horizontal".to_owned(),
+            ..Default::default()
+        };
+        let res_mayank = resolve_content_url_with_settings("about:blank", &s_mayank);
+        assert!(res_mayank.contains("newtab.html?skin=mayank&theme=light&tabs=horizontal"));
     }
 
     #[test]
@@ -4291,5 +5070,21 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_launch_safe_app_allowlist_enforcement() {
+        // Disallowed / arbitrary command strings are strictly rejected
+        assert!(launch_safe_app("rm -rf /").is_err());
+        assert!(launch_safe_app("format C:").is_err());
+        assert!(launch_safe_app("powershell.exe -enc evil").is_err());
+        assert!(launch_safe_app("curl http://evil.com").is_err());
+
+        // Allowlisted apps are recognized (calc, terminal, etc.)
+        let res = launch_safe_app("calculator");
+        // On headless CI calc might not exist or might spawn, but it won't fail with "not allowed"
+        if let Err(e) = res {
+            assert!(e.to_string().contains("not found"));
+        }
     }
 }

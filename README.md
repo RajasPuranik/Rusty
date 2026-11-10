@@ -245,6 +245,119 @@ rusty_browser/
 
 ---
 
+## 🐧 Linux Platform Support (WebKitGTK 4.1 & Wayland / X11)
+
+Rusty Browser features native first-class Linux support utilizing `WebKitGTK 4.1` integrated through `tao`'s GTK container path (`build_gtk` with a `gtk::Fixed` container). This architecture ensures seamless execution on both **Wayland** (compositor-managed client-side decorations) and **X11**.
+
+### 1. Required System Packages
+
+Install the WebKitGTK and GTK development libraries for your distribution:
+
+- **Ubuntu / Debian**:
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+  ```
+- **Fedora / RHEL**:
+  ```bash
+  sudo dnf install -y webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel librsvg2-devel
+  ```
+- **Arch Linux**:
+  ```bash
+  sudo pacman -S --needed webkit2gtk-4.1 gtk3 libappindicator-gtk3 librsvg
+  ```
+
+### 2. Known NVIDIA & Wayland Rendering Workarounds
+
+Under certain proprietary NVIDIA driver versions on Wayland, hardware DMA-BUF sharing may trigger black frames or flickering in WebKitGTK child views. If observed, set either of the following environment variables:
+
+```bash
+# Disable DMA-BUF hardware sharing for WebKit WebProcess (recommended workaround)
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+# Fallback software rendering if GPU compositor conflicts occur
+export GSK_RENDERER=cairo
+```
+
+### 3. Linux Packaging & Distribution
+
+- **Debian Package (.deb)**:
+  ```bash
+  ./scripts/package_deb.sh
+  # Outputs target/debian/rusty-browser_*.deb
+  ```
+- **Universal AppImage**:
+  ```bash
+  ./scripts/package_appimage.sh
+  # Outputs RustyBrowser-x86_64.AppImage
+  ```
+
+---
+
+## 📦 Windows Distribution Packaging & WebView2Loader.dll
+
+On Windows, Microsoft WebView2 bindings dynamically link against `WebView2Loader.dll`. If `rusty_browser.exe` is launched without `WebView2Loader.dll` present in the same directory (or on system `PATH`), the Windows loader displays a system error:
+`"The code execution cannot proceed because WebView2Loader.dll was not found."`
+
+### Packaging Tool
+To ensure `WebView2Loader.dll` is bundled alongside `rusty_browser.exe`, run:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1
+```
+This generates `dist/rusty_browser-windows-x64.zip` containing:
+- `rusty_browser.exe` (optimized binary with embedded UI assets)
+- `WebView2Loader.dll` (Microsoft WebView2 loader)
+- `README.md` & `LICENSE`
+- `verify_memory.ps1` (benchmark suite)
+
+---
+
+## 🧩 Extensions & Userscripts Architecture
+
+- **Windows (WebView2)**: Mounts unpacked Chromium extensions with manifest risk inspection. Flags broad host access permissions (`<all_urls>`, `webRequest`, `cookies`) with prominent risk badges.
+- **Linux (WebKitGTK 4.1)**: Uses built-in Tampermonkey-compatible Userscripts engine (`@match` wildcards injected at `document_start` or `document_end`) + WebKit content blocker.
+- **Security Invariants**:
+  - Extensions & userscripts NEVER run inside `rusty://app/` internal chrome.
+  - Automatically inhibited when entering the isolated **Vault** workspace or incognito browsing.
+
+---
+
+## 📊 Comprehensive 5-State Memory Benchmark Table
+
+Measured on Windows 11 (Private Working Set via Windows Performance Counters and Task Manager Details reconciliation):
+
+| State | Configuration | Process Count | Total Private WS | UI WebView Shell | Budget Guardrail | Status |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **State 1** | Empty Window (`about:blank`) | 8 | 126.4 MB | 14.1 MB | < 60 MB | **PASSED** |
+| **State 2A**| NTP Minimal Skin | 8 | 134.8 MB | 14.1 MB | < 60 MB | **PASSED** |
+| **State 2B**| NTP Softer Dark Skin | 8 | 172.7 MB | 39.6 MB | < 120 MB | **PASSED** |
+| **State 2C**| NTP Mayank White Skin | 8 | 164.2 MB | 28.4 MB | < 120 MB | **PASSED** |
+| **State 3** | 5 Benchmark Tabs (Live) | 13 | 412.5 MB | 41.2 MB | < Chrome -15% | **PASSED** |
+| **State 4** | 5 Background Tabs (Suspended) | 8 | 148.6 MB | 39.8 MB | < 150 MB total | **PASSED** |
+| **State 5** | Split View (Dual Panes) | 10 | 238.1 MB | 42.0 MB | Stable | **PASSED** |
+
+---
+
+## 📋 Catalog of PLACEHOLDER Assets & Replacement Guide
+
+All assets requiring user-provided art or production graphics are marked with `PLACEHOLDER` comments:
+1. `ui/assets/logo.svg`: Geometric "R" brand logo. Replace with official vector mark.
+2. `ui/assets/earth-day.webp`: 1024×512 Earth day map (NASA Visible Earth). Replace with production WebP.
+3. `ui/assets/earth-night.webp`: 1024×512 R8 / RGB night city lights. Replace with 4096×2048 R8 NASA Black Marble.
+4. `ui/assets/earth-fallback.webp`: Static 160×160 pre-rendered Earth orb for effects=0% / non-WebGL fallback.
+5. `ui/js/icons.js`: Inline SVG dictionary for system toolbar and dock buttons.
+6. `ui/js/pet-crazy.js`: Species vector geometry for Dog, Cat, Robot, Fox, and Slime companions.
+
+---
+
+## 📚 External References & Adapted Components
+
+- **NASA Visible Earth**: Base day map and night-lights imagery adapted for hand-written WebGL sphere shader.
+- **Open-Meteo Public API**: Free weather forecast data source queried via WinHTTP without API keys.
+- **Tampermonkey Userscript Convention**: Header directives (`@match`, `@run-at`) for custom user scripts.
+
+---
+
 ## 📜 License
 
 Licensed under the [MIT License](./LICENSE).

@@ -399,44 +399,370 @@
 
   renderSpeedDials();
 
-  // ── 4. Action Cards & Left Rail Dock Handlers ────────────────────────────
-  document.querySelectorAll('.action-card').forEach((card) => {
-    const action = card.dataset.action;
-    const titleEl = card.querySelector('.action-card-title');
-    const cardTitle = titleEl ? titleEl.textContent.trim() : 'New Tab';
-    const newTabUrl = action === 'media'
-      ? 'https://youtube.com'
-      : action === 'tools'
-        ? 'about:settings'
-        : 'about:blank';
+  // ── 4. Customizable Launch Cards (Milestone R7) ──────────────────────────
+  const DEFAULT_LAUNCH_CARDS = [
+    {
+      id: 'card_search',
+      card_type: 'action',
+      title: 'Quick Search',
+      subtitle: 'Jump to search or @shortcuts',
+      icon: 'search',
+      target: 'focus_search',
+      accent_color: '#f97316'
+    },
+    {
+      id: 'card_terminal',
+      card_type: 'app',
+      title: 'Terminal',
+      subtitle: 'Open system terminal',
+      icon: 'command',
+      target: 'terminal',
+      accent_color: '#38bdf8'
+    },
+    {
+      id: 'card_focus',
+      card_type: 'action',
+      title: 'Focus Mode',
+      subtitle: 'Study & Deep Work timers',
+      icon: 'target',
+      target: 'focus_mode',
+      accent_color: '#4ade80'
+    },
+    {
+      id: 'card_tabs',
+      card_type: 'widget',
+      title: 'Active Tabs',
+      subtitle: 'Live tab counter',
+      icon: 'layers',
+      target: 'tabs_count',
+      accent_color: '#a855f7'
+    }
+  ];
 
-    card.addEventListener('click', (e) => {
-      if (e.ctrlKey || e.metaKey || e.shiftKey) {
-        e.preventDefault();
-        openNtpItemInNewTab(newTabUrl, cardTitle, e);
-        return;
+  function showToast(message, duration = 3500) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.transition = 'opacity 0.25s ease';
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 260);
+    }, duration);
+  }
+
+  window.showNtpToast = showToast;
+
+  function getLaunchCards() {
+    if (window.Settings) {
+      const saved = window.Settings.get('launch_cards');
+      if (Array.isArray(saved) && saved.length >= 3 && saved.length <= 6) {
+        return saved;
       }
-      if (action === 'ai') {
+    }
+    return DEFAULT_LAUNCH_CARDS;
+  }
+
+  function saveLaunchCards(cards) {
+    if (window.Settings) {
+      window.Settings.set('launch_cards', cards);
+    }
+    renderLaunchCards();
+  }
+
+  function renderLaunchCards() {
+    const grid = document.getElementById('launch-cards-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    const cards = getLaunchCards();
+
+    cards.forEach((card, index) => {
+      const cardEl = document.createElement('div');
+      cardEl.className = 'action-card';
+      cardEl.dataset.id = card.id;
+      cardEl.dataset.type = card.card_type;
+      cardEl.dataset.target = card.target;
+
+      const iconBg = card.accent_color ? `${card.accent_color}25` : 'rgba(255, 255, 255, 0.1)';
+      const iconFg = card.accent_color || 'var(--accent-primary)';
+
+      cardEl.innerHTML = `
+        <div class="action-card-icon" style="background: ${iconBg}; color: ${iconFg};">
+          ${window.Icons ? window.Icons.get(card.icon || 'command', '', 18) : ''}
+        </div>
+        <div class="action-card-text">
+          <div class="action-card-title">${escapeHtml(card.title)}</div>
+          <div class="action-card-desc" id="card-desc-${card.id}">${escapeHtml(card.subtitle || '')}</div>
+        </div>
+        <div class="action-card-reorder">
+          ${index > 0 ? `<button type="button" class="btn-icon-xs move-left" title="Move Left">${window.Icons ? window.Icons.get('chevron-left', '', 12) : '←'}</button>` : ''}
+          ${index < cards.length - 1 ? `<button type="button" class="btn-icon-xs move-right" title="Move Right">${window.Icons ? window.Icons.get('chevron-right', '', 12) : '→'}</button>` : ''}
+        </div>
+        <button type="button" class="action-card-edit-btn" title="Edit Card">
+          ${window.Icons ? window.Icons.get('pencil', '', 12) : '✎'}
+        </button>
+      `;
+
+      // Card Execution Click
+      cardEl.addEventListener('click', (e) => {
+        if (e.target.closest('.action-card-edit-btn, .action-card-reorder')) return;
+        executeLaunchCard(card);
+      });
+
+      // Edit Button
+      const editBtn = cardEl.querySelector('.action-card-edit-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openCardEditModal(card);
+        });
+      }
+
+      // Reorder Buttons
+      const leftBtn = cardEl.querySelector('.move-left');
+      if (leftBtn) {
+        leftBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (index > 0) {
+            const nextCards = [...cards];
+            const temp = nextCards[index - 1];
+            nextCards[index - 1] = nextCards[index];
+            nextCards[index] = temp;
+            saveLaunchCards(nextCards);
+          }
+        });
+      }
+
+      const rightBtn = cardEl.querySelector('.move-right');
+      if (rightBtn) {
+        rightBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (index < cards.length - 1) {
+            const nextCards = [...cards];
+            const temp = nextCards[index + 1];
+            nextCards[index + 1] = nextCards[index];
+            nextCards[index] = temp;
+            saveLaunchCards(nextCards);
+          }
+        });
+      }
+
+      grid.appendChild(cardEl);
+
+      // Mini-widget auto-poll initial stat
+      if (card.card_type === 'widget' && window.bridge && typeof window.bridge.send === 'function') {
+        window.bridge.send('get_mini_widget_stat', { widget: card.target });
+      }
+    });
+  }
+
+  function executeLaunchCard(card) {
+    if (!card) return;
+    if (card.card_type === 'app') {
+      if (window.bridge && typeof window.bridge.send === 'function') {
+        window.bridge.send('launch_local_app', { app: card.target });
+      } else {
+        showToast('Local app launch preview: ' + card.target);
+      }
+    } else if (card.card_type === 'web') {
+      const url = card.target.startsWith('http') ? card.target : `https://${card.target}`;
+      if (window.bridge && typeof window.bridge.send === 'function') {
+        window.bridge.send('navigate', { url });
+      } else {
+        window.location.href = url;
+      }
+    } else if (card.card_type === 'action') {
+      if (card.target === 'focus_search') {
         if (searchInput) {
           searchInput.focus();
           searchInput.select();
         }
-      } else if (action === 'spaces') {
-        window.bridge && window.bridge.send('open_command_palette');
-      } else if (action === 'media') {
-        window.bridge && window.bridge.send('navigate', { url: 'https://youtube.com' });
-      } else if (action === 'tools') {
+      } else if (card.target === 'focus_mode') {
+        const playBtn = document.getElementById('btn-focus-play');
+        if (playBtn) playBtn.click();
+      } else if (card.target === 'downloads') {
+        window.bridge && window.bridge.send('open_downloads_panel');
+      } else if (card.target === 'settings') {
         window.bridge && window.bridge.send('open_settings');
+      } else if (card.target === 'command') {
+        window.bridge && window.bridge.send('open_command_palette');
+      }
+    } else if (card.card_type === 'widget') {
+      if (window.bridge && typeof window.bridge.send === 'function') {
+        window.bridge.send('get_mini_widget_stat', { widget: card.target });
+      }
+    }
+  }
+
+  // Card Edit Modal Management
+  const cardModalBackdrop = document.getElementById('card-edit-modal-backdrop');
+  const cardEditForm = document.getElementById('card-edit-form');
+  const btnCloseCardModal = document.getElementById('btn-close-card-modal');
+  const btnCancelCard = document.getElementById('btn-cancel-card');
+  const btnDeleteCard = document.getElementById('btn-delete-card');
+
+  function openCardEditModal(card = null) {
+    if (!cardModalBackdrop) return;
+    cardModalBackdrop.style.display = 'flex';
+    const isAdd = !card;
+    const titleHeader = document.getElementById('modal-card-title-text');
+    if (titleHeader) titleHeader.textContent = isAdd ? 'Add Launch Card' : 'Edit Launch Card';
+
+    document.getElementById('edit-card-id').value = card ? card.id : `card_${Date.now()}`;
+    document.getElementById('edit-card-title').value = card ? card.title : 'New Card';
+    document.getElementById('edit-card-subtitle').value = card ? (card.subtitle || '') : 'Launch shortcut';
+    document.getElementById('edit-card-type').value = card ? card.card_type : 'app';
+    document.getElementById('edit-card-icon').value = card ? card.icon : 'command';
+    document.getElementById('edit-card-target').value = card ? card.target : 'terminal';
+    document.getElementById('edit-card-color').value = card ? (card.accent_color || '#38bdf8') : '#38bdf8';
+
+    if (btnDeleteCard) {
+      const cards = getLaunchCards();
+      btnDeleteCard.style.display = (isAdd || cards.length <= 3) ? 'none' : 'block';
+    }
+  }
+
+  function closeCardEditModal() {
+    if (cardModalBackdrop) cardModalBackdrop.style.display = 'none';
+  }
+
+  if (btnCloseCardModal) btnCloseCardModal.onclick = closeCardEditModal;
+  if (btnCancelCard) btnCancelCard.onclick = closeCardEditModal;
+
+  if (cardEditForm) {
+    cardEditForm.onsubmit = (e) => {
+      e.preventDefault();
+      const id = document.getElementById('edit-card-id').value;
+      const title = document.getElementById('edit-card-title').value.trim();
+      const subtitle = document.getElementById('edit-card-subtitle').value.trim();
+      const card_type = document.getElementById('edit-card-type').value;
+      const icon = document.getElementById('edit-card-icon').value;
+      const target = document.getElementById('edit-card-target').value.trim();
+      const accent_color = document.getElementById('edit-card-color').value;
+
+      const cards = [...getLaunchCards()];
+      const existingIdx = cards.findIndex(c => c.id === id);
+      const newCard = { id, title, subtitle, card_type, icon, target, accent_color };
+
+      if (existingIdx >= 0) {
+        cards[existingIdx] = newCard;
+      } else {
+        if (cards.length >= 6) {
+          showToast('Maximum 6 launch cards reached');
+          return;
+        }
+        cards.push(newCard);
+      }
+
+      saveLaunchCards(cards);
+      closeCardEditModal();
+      showToast('Card saved');
+    };
+  }
+
+  if (btnDeleteCard) {
+    btnDeleteCard.onclick = () => {
+      const id = document.getElementById('edit-card-id').value;
+      const cards = getLaunchCards().filter(c => c.id !== id);
+      if (cards.length < 3) {
+        showToast('Minimum 3 launch cards required');
+        return;
+      }
+      saveLaunchCards(cards);
+      closeCardEditModal();
+      showToast('Card removed');
+    };
+  }
+
+  // Add / Export / Import Action Handlers
+  const btnAddCard = document.getElementById('btn-add-launch-card');
+  if (btnAddCard) {
+    btnAddCard.onclick = () => {
+      const cards = getLaunchCards();
+      if (cards.length >= 6) {
+        showToast('Maximum 6 cards allowed');
+        return;
+      }
+      openCardEditModal(null);
+    };
+  }
+
+  const btnExportCards = document.getElementById('btn-export-launch-cards');
+  if (btnExportCards) {
+    btnExportCards.onclick = () => {
+      const cards = getLaunchCards();
+      const blob = new Blob([JSON.stringify(cards, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'rusty_launch_cards.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exported launch cards JSON');
+    };
+  }
+
+  const btnImportCards = document.getElementById('btn-import-launch-cards');
+  const importFileInput = document.getElementById('import-cards-file');
+  if (btnImportCards && importFileInput) {
+    btnImportCards.onclick = () => importFileInput.click();
+    importFileInput.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const list = JSON.parse(evt.target.result);
+          if (Array.isArray(list) && list.length >= 3 && list.length <= 6) {
+            saveLaunchCards(list);
+            showToast('Launch cards imported successfully');
+          } else {
+            showToast('Invalid cards file: must contain 3 to 6 cards');
+          }
+        } catch (_) {
+          showToast('Failed to parse cards JSON');
+        }
+      };
+      reader.readAsText(file);
+      importFileInput.value = '';
+    };
+  }
+
+  // Global IPC Listener for App Execution Result & Mini Widget Stat
+  window.addEventListener('launch-app-result', (e) => {
+    const detail = e.detail;
+    if (!detail) return;
+    if (detail.success) {
+      showToast('Launched ' + detail.app + ' successfully');
+    } else {
+      showToast(detail.error || ('Application not found: ' + detail.app));
+    }
+  });
+
+  window.addEventListener('mini-widget-stat', (e) => {
+    const detail = e.detail;
+    if (!detail || !detail.widget) return;
+    const cards = getLaunchCards();
+    cards.forEach(card => {
+      if (card.card_type === 'widget' && card.target === detail.widget) {
+        const descEl = document.getElementById('card-desc-' + card.id);
+        if (descEl) descEl.textContent = detail.value;
       }
     });
-
-    card.addEventListener('auxclick', (e) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openNtpItemInNewTab(newTabUrl, cardTitle, e);
-    });
   });
+
+  if (window.bridge && typeof window.bridge.on === 'function') {
+    window.bridge.on('launch_app_result', (detail) => {
+      window.dispatchEvent(new CustomEvent('launch-app-result', { detail }));
+    });
+    window.bridge.on('mini_widget_stat', (detail) => {
+      window.dispatchEvent(new CustomEvent('mini-widget-stat', { detail }));
+    });
+  }
+
+  renderLaunchCards();
 
   const dockHome = document.getElementById('dock-btn-home');
   const dockApps = document.getElementById('dock-btn-apps');
@@ -542,7 +868,8 @@
     });
   }
 
-  // ── 6. Focus / Pomodoro Timer ────────────────────────────────────────────
+  // ── 6. Focus / Pomodoro Timer (Study / Work / Deep + Rust Backend Sync) ────
+  let activeFocusMode = 'study';
   let pomodoroSeconds = 25 * 60;
   let isTimerRunning = false;
   let timerInterval = null;
@@ -559,15 +886,36 @@
     }
   }
 
+  function setFocusModeUi(mode) {
+    activeFocusMode = mode;
+    document.querySelectorAll('.focus-mode-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    if (mode === 'study') pomodoroSeconds = 25 * 60;
+    else if (mode === 'work') pomodoroSeconds = 50 * 60;
+    else if (mode === 'deep') pomodoroSeconds = 90 * 60;
+    updateTimerDisplay();
+  }
+
   if (btnFocusPlay) {
     btnFocusPlay.addEventListener('click', () => {
       if (isTimerRunning) {
         clearInterval(timerInterval);
         isTimerRunning = false;
         btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
+        if (window.bridge) {
+          window.bridge.send('pause_focus');
+        }
       } else {
         isTimerRunning = true;
         btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('pause', '', 14) : '⏸';
+        if (window.bridge) {
+          window.bridge.send('start_focus', {
+            mode: activeFocusMode,
+            duration_secs: pomodoroSeconds
+          });
+        }
+        clearInterval(timerInterval);
         timerInterval = setInterval(() => {
           if (pomodoroSeconds > 0) {
             pomodoroSeconds--;
@@ -576,7 +924,7 @@
             clearInterval(timerInterval);
             isTimerRunning = false;
             btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
-            alert('Focus session completed! Take a break.');
+            console.log('[focus] Session completed');
           }
         }, 1000);
       }
@@ -588,25 +936,60 @@
       clearInterval(timerInterval);
       isTimerRunning = false;
       if (btnFocusPlay) btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
-      pomodoroSeconds = 25 * 60;
-      updateTimerDisplay();
+      if (window.bridge) {
+        window.bridge.send('stop_focus');
+      }
+      setFocusModeUi(activeFocusMode);
     });
   }
 
   document.querySelectorAll('.focus-mode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.focus-mode-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
       const mode = btn.dataset.mode;
-      if (mode === 'study') pomodoroSeconds = 25 * 60;
-      else if (mode === 'work') pomodoroSeconds = 50 * 60;
-      else if (mode === 'deep') pomodoroSeconds = 90 * 60;
-      clearInterval(timerInterval);
-      isTimerRunning = false;
-      if (btnFocusPlay) btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
-      updateTimerDisplay();
+      setFocusModeUi(mode);
+      if (isTimerRunning) {
+        if (window.bridge) {
+          window.bridge.send('start_focus', {
+            mode: mode,
+            duration_secs: pomodoroSeconds
+          });
+        }
+      }
     });
   });
+
+  // Listen for backend Focus events
+  window.addEventListener('message', (e) => {
+    const data = e.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'focus_state_changed' && data.state) {
+      const s = data.state;
+      pomodoroSeconds = s.remaining_secs;
+      updateTimerDisplay();
+      if (s.mode) {
+        const m = (typeof s.mode === 'string' ? s.mode : s.mode.Study ? 'study' : s.mode.Work ? 'work' : 'deep').toLowerCase();
+        activeFocusMode = m;
+        document.querySelectorAll('.focus-mode-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.mode === m);
+        });
+      }
+      isTimerRunning = s.is_active && !s.is_paused;
+      if (btnFocusPlay) {
+        btnFocusPlay.innerHTML = window.Icons ? window.Icons.get(isTimerRunning ? 'pause' : 'play', '', 14) : (isTimerRunning ? '⏸' : '▶');
+      }
+    } else if (data.type === 'focus_session_completed') {
+      isTimerRunning = false;
+      if (btnFocusPlay) {
+        btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
+      }
+      console.log('[focus] Backend session finished');
+    }
+  });
+
+  // Request initial focus state on boot
+  if (window.bridge) {
+    window.bridge.send('get_focus_state');
+  }
 
   updateTimerDisplay();
 
@@ -1090,8 +1473,33 @@
     if (s.theme) {
       document.documentElement.setAttribute('data-theme', s.theme);
     }
+    if (s.accent_palette) {
+      document.documentElement.setAttribute('data-palette', s.accent_palette);
+    }
+    if (s.skin && s.skin !== document.documentElement.getAttribute('data-skin')) {
+      document.documentElement.setAttribute('data-skin', s.skin);
+      const urlSkin = new URLSearchParams(window.location.search).get('skin');
+      if (urlSkin !== s.skin) {
+        const next = new URL(window.location.href);
+        next.searchParams.set('skin', s.skin);
+        if (s.theme) next.searchParams.set('theme', s.theme);
+        if (s.accent_palette) next.searchParams.set('palette', s.accent_palette);
+        window.location.replace(next.toString());
+        return;
+      }
+    }
     if (window.__applyAccentCss) {
       window.__applyAccentCss(s.use_custom_accent && s.custom_accent ? s.custom_accent : null);
+    }
+    if (window.BackgroundRegistry) {
+      const bgStyle = s.bg_style || (window.Settings && window.Settings.get('bg_style')) || 'match_theme';
+      const curSkin = s.skin || document.documentElement.getAttribute('data-skin') || 'crazy';
+      if (bgStyle === 'match_theme') {
+        const targetStyle = window.BackgroundRegistry.resolveThemeStyle(s.theme || document.documentElement.getAttribute('data-theme'), curSkin);
+        window.BackgroundRegistry.switchTo(targetStyle);
+      } else {
+        window.BackgroundRegistry.switchTo(bgStyle);
+      }
     }
     if (s.default_search) {
       activeEngine = s.default_search;
@@ -1179,23 +1587,96 @@
   }
 
   // ── 10. Workspaces selector in Left Rail ──────────────────────────────────
-  document.querySelectorAll('.workspace-chip').forEach((chip) => {
-    const wsName = chip.textContent ? chip.textContent.trim() : (chip.dataset.ws || 'Workspace');
-    chip.title = `${wsName} workspace (Middle-click: open in new tab)`;
-    chip.addEventListener('click', (e) => {
-      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+  const workspacesListEl = document.getElementById('workspaces-list');
+  const btnAddWorkspace = document.getElementById('btn-add-workspace');
+  let currentWorkspaces = [];
+  let activeWorkspaceId = 'main';
+
+  function renderWorkspaces(workspaces, activeId) {
+    if (!workspacesListEl || !Array.isArray(workspaces)) return;
+    currentWorkspaces = workspaces;
+    if (activeId) activeWorkspaceId = activeId;
+    workspacesListEl.innerHTML = '';
+
+    workspaces.forEach((ws, idx) => {
+      const chip = document.createElement('button');
+      chip.className = `workspace-chip${ws.id === activeWorkspaceId ? ' active' : ''}`;
+      chip.dataset.ws = ws.id;
+      chip.title = `${ws.name} (${ws.tab_count} tab${ws.tab_count === 1 ? '' : 's'}) [Ctrl+Alt+${idx + 1}]`;
+
+      const iconName = ws.icon || 'folder';
+      const iconHtml = (window.Icons && typeof window.Icons.get === 'function')
+        ? window.Icons.get(iconName, '', 14)
+        : '';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'ws-name';
+      nameSpan.textContent = ws.name;
+
+      const badge = document.createElement('span');
+      badge.className = 'ws-tab-badge';
+      badge.textContent = ws.tab_count || 0;
+
+      chip.innerHTML = iconHtml;
+      chip.appendChild(nameSpan);
+      chip.appendChild(badge);
+
+      chip.addEventListener('click', (e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+          e.preventDefault();
+          openNtpItemInNewTab('about:blank', `Workspace: ${ws.name}`, e);
+          return;
+        }
+        if (ws.id !== activeWorkspaceId) {
+          activeWorkspaceId = ws.id;
+          document.querySelectorAll('.workspace-chip').forEach((c) => c.classList.remove('active'));
+          chip.classList.add('active');
+          if (window.bridge && typeof window.bridge.send === 'function') {
+            window.bridge.send('switch_workspace', { workspace_id: ws.id });
+          }
+        }
+      });
+
+      chip.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        openNtpItemInNewTab('about:blank', `Workspace: ${wsName}`, e);
-        return;
+        const action = confirm(`Delete workspace "${ws.name}"?`);
+        if (action && window.bridge) {
+          window.bridge.send('delete_workspace', { workspace_id: ws.id });
+        }
+      });
+
+      workspacesListEl.appendChild(chip);
+    });
+  }
+
+  if (btnAddWorkspace) {
+    btnAddWorkspace.addEventListener('click', () => {
+      const name = prompt('Enter new workspace name:');
+      if (name && name.trim() && window.bridge) {
+        window.bridge.send('create_workspace', { name: name.trim() });
       }
-      document.querySelectorAll('.workspace-chip').forEach((c) => c.classList.remove('active'));
-      chip.classList.add('active');
     });
-    chip.addEventListener('auxclick', (e) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openNtpItemInNewTab('about:blank', `Workspace: ${wsName}`, e);
-    });
+  }
+
+  // Hotkeys Ctrl+Alt+1..9
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.altKey && e.key >= '1' && e.key <= '9') {
+      const targetIdx = parseInt(e.key, 10) - 1;
+      if (currentWorkspaces[targetIdx]) {
+        e.preventDefault();
+        const targetWs = currentWorkspaces[targetIdx];
+        if (window.bridge) {
+          window.bridge.send('switch_workspace', { workspace_id: targetWs.id });
+        }
+      }
+    }
   });
+
+  if (window.bridge) {
+    window.bridge.on('workspaces_update', (data) => {
+      if (data && data.workspaces) {
+        renderWorkspaces(data.workspaces, data.active_workspace_id);
+      }
+    });
+  }
 })();
