@@ -1,440 +1,343 @@
 /* ==========================================================================
-   SKIN: MAYANK (Neumorphic Glass, Warm Coral Accent, Clean Airy White)
-   Loaded only when data-skin="mayank"
+   SKIN: MAYANK (Soft 3D Neumorphism, Crisp Wind Lines with Glowing Edge)
+   Loaded only when data-skin="mayank".
+   Inherits colors, gradients, and tokens directly from active data-theme & data-palette.
    ========================================================================== */
 
 [data-skin="mayank"] {
-  --bg-primary: #f4f6fa;
-  --bg-surface: #ffffff;
-  --bg-surface-alt: #edf1f7;
-  --bg-canvas: #e9edf4;
-  --bg-subtle: #e2e8f0;
-  --bg-hover: #e6ecf5;
-  --bg-input: #ffffff;
-  --bg-input-focus: #ffffff;
-  --bg-tab: #edf2f9;
-  --bg-tab-active: #ffffff;
-
-  --border-subtle: #e2e8f0;
-  --border-active: #f97316;
-
-  --text-primary: #1e293b;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-
-  --accent-primary: #f97316;
-  --accent-secondary: #fb923c;
-  --accent-highlight: rgba(249, 115, 22, 0.12);
-  --accent-glow: rgba(249, 115, 22, 0.35);
-
-  --bg-glass: rgba(255, 255, 255, 0.88);
-  --bg-glass-hover: rgba(255, 255, 255, 0.96);
-  --bg-glass-input: rgba(255, 255, 255, 0.94);
-  --border-glass: #e2e8f0;
-
-  --neu-shadow: -2px -2px 6px rgba(255, 255, 255, 0.9), 4px 4px 10px rgba(163, 177, 198, 0.35);
-  --neu-shadow-hover: -3px -3px 8px rgba(255, 255, 255, 0.95), 5px 6px 14px rgba(163, 177, 198, 0.42);
-  --neu-inset: inset 2px 2px 4px rgba(163, 177, 198, 0.22), inset -2px -2px 4px rgba(255, 255, 255, 0.85);
-
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
   --radius-full: 9999px;
+
+  /* Default fallback tokens matching specification */
+  --bg-primary: var(--bg, #f4f6fa);
+  --text-primary: var(--text, #1e293b);
+  --accent-primary: var(--accent, #f97316);
+
+  /* Soft 3D Neumorphic Shadows using Theme Tokens */
+  --neu-shadow: -4px -4px 12px var(--shadow-light), 5px 7px 16px var(--shadow-dark, rgba(163, 177, 198, 0.35));
+  --neu-shadow-hover: -6px -6px 16px var(--shadow-light), 7px 9px 22px var(--shadow-dark);
+  --neu-inset: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+  --neu-pill: -2px -2px 6px var(--shadow-light), 3px 4px 10px var(--shadow-dark);
 }
 
-/* ── Base Reset & Font Stack for Mayank Skin ────────────────────────────── */
+/* ── Base Reset & Font Stack ─────────────────────────────────────────────── */
 [data-skin="mayank"] body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  background-color: var(--bg-canvas);
+  background-image: var(--bg-gradient);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   letter-spacing: -0.01em;
 }
 
-/* ── Top Chrome Bar & Navigation ─────────────────────────────────────────── */
+/* ── Top Band: Single Sleek ~38px Bar with Floating Pill Address Bar ─────── */
 [data-skin="mayank"] #chrome-header {
-  background: var(--bg-glass) !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  background: var(--bg-canvas) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 2px 8px rgba(163, 177, 198, 0.15);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px var(--shadow-dark);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 14px !important;
+  position: relative !important;
+  z-index: 100;
 }
 
-[data-skin="mayank"] #tabs-horizontal,
-[data-skin="mayank"] #tabs-sidebar {
-  background: rgba(244, 246, 250, 0.85) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-subtle);
+/* In Mayank skin, horizontal tab strip is integrated or hidden for clean single-bar look */
+[data-skin="mayank"] #tabs-horizontal {
+  display: none !important;
 }
 
-[data-skin="mayank"] #side-panel {
-  background: var(--bg-glass) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-left: 1px solid var(--border-subtle);
-  box-shadow: -4px 0 16px rgba(163, 177, 198, 0.2);
+/* ── Floating Pill Address Bar (Centered & Overlapping Canvas Edge) ───────── */
+[data-skin="mayank"] .omnibox-wrapper {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: clamp(280px, 52vw, 720px) !important;
+  height: 28px !important;
+  z-index: 110;
 }
 
-[data-skin="mayank"] #find-bar {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--neu-shadow);
-  border-radius: var(--radius-md);
+[data-skin="mayank"] .omnibox {
+  height: 28px !important;
+  border-radius: 9999px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--neu-pill) !important;
+  padding: 0 12px !important;
+  display: flex;
+  align-items: center;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+[data-skin="mayank"] .omnibox:focus-within {
+  border-color: var(--border-active) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--neu-pill) !important;
+}
+
+[data-skin="mayank"] .omnibox-input {
+  font-size: 12px !important;
+  color: var(--text) !important;
+}
+
+[data-skin="mayank"] .omnibox-input::placeholder {
+  color: var(--text-dim) !important;
 }
 
 /* ── Neumorphic Icon Buttons ─────────────────────────────────────────────── */
 [data-skin="mayank"] .btn-icon,
 [data-skin="mayank"] .btn-new-tab {
-  background: #ffffff;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  box-shadow: -2px -2px 5px rgba(255, 255, 255, 0.85), 2px 3px 8px rgba(163, 177, 198, 0.28);
+  width: 26px !important;
+  height: 26px !important;
+  background: var(--surface) !important;
+  color: var(--text-dim) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--neu-pill) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
 }
 
 [data-skin="mayank"] .btn-icon:hover,
 [data-skin="mayank"] .btn-new-tab:hover {
-  transform: translateY(-1.5px);
-  color: var(--text-primary);
-  box-shadow: -2px -2px 6px rgba(255, 255, 255, 0.95), 3px 5px 12px rgba(163, 177, 198, 0.38);
+  transform: translateY(-1px);
+  color: var(--text) !important;
+  box-shadow: var(--neu-shadow-hover) !important;
 }
 
 [data-skin="mayank"] .btn-icon:active,
 [data-skin="mayank"] .btn-new-tab:active {
   transform: translateY(1px);
-  box-shadow: var(--neu-inset);
+  box-shadow: var(--neu-inset) !important;
 }
 
-[data-skin="mayank"] .btn-icon:disabled {
-  opacity: 0.38;
-  box-shadow: none;
-  cursor: default;
-  transform: none;
-}
-
-/* ── Omnibox Address Bar: Friendly Neumorphic Pill ───────────────────────── */
-[data-skin="mayank"] .omnibox-wrapper {
-  position: relative;
-}
-
-[data-skin="mayank"] .omnibox {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  box-shadow: var(--neu-inset);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
-}
-
-[data-skin="mayank"] .omnibox:focus-within {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.14), var(--neu-inset);
-  transform: scale(1.003);
-}
-
-[data-skin="mayank"] .omnibox-input {
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-[data-skin="mayank"] .omnibox-input::placeholder {
-  color: var(--text-muted);
-}
-
-/* ── Neumorphic Tabs ─────────────────────────────────────────────────────── */
-[data-skin="mayank"] .tab-item {
-  border-radius: var(--radius-sm);
-  background: #edf2f9;
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.15s ease, color 0.15s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-[data-skin="mayank"] .tab-item:hover {
-  background: #f4f7fc;
-  color: var(--text-primary);
-  transform: translateY(-1px);
-}
-
-[data-skin="mayank"] .tab-item.active {
-  background: #ffffff;
-  color: var(--text-primary);
-  border-color: #e2e8f0;
-  box-shadow: 0 4px 12px rgba(163, 177, 198, 0.28);
-}
-
-[data-skin="mayank"] .tab-item.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 12px;
-  right: 12px;
-  height: 2.5px;
-  background: var(--accent-primary);
-  border-radius: 999px;
-}
-
-/* ── Memory Telemetry Badge ──────────────────────────────────────────────── */
-[data-skin="mayank"] .memory-badge {
-  background: #ffffff;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  box-shadow: var(--neu-shadow);
-}
-
-[data-skin="mayank"] .memory-dot {
-  background: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
-}
-
-/* ── Modals & Overlays ───────────────────────────────────────────────────── */
-[data-skin="mayank"] #modal-overlay {
-  background: rgba(30, 41, 59, 0.35);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-[data-skin="mayank"] .command-palette,
-[data-skin="mayank"] .settings-modal {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  box-shadow: -4px -4px 16px rgba(255, 255, 255, 0.9), 10px 14px 32px rgba(163, 177, 198, 0.45);
-  color: var(--text-primary);
+/* ── Content Viewport Placement ─────────────────────────────────────────── */
+[data-skin="mayank"] #webview-viewport {
+  top: 38px !important;
+  height: calc(100vh - 38px) !important;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
    NEW TAB PAGE (NTP) STYLING FOR MAYANK SKIN
    ══════════════════════════════════════════════════════════════════════════ */
 
-[data-skin="mayank"] .ntp-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+[data-skin="mayank"] .ntp-shell {
+  display: grid;
+  grid-template-columns: clamp(140px, 12vw, 190px) minmax(0, 1fr) clamp(250px, 20vw, 320px);
+  gap: 20px;
+  padding: 18px 24px;
+  min-height: calc(100vh - 38px);
+  box-sizing: border-box;
 }
 
-/* ── Left Rail: Off-White Vertical Pill Container ────────────────────────── */
+/* ── Left Column: ONE Tall Continuous Rounded Card (~28px radius) ────────── */
 [data-skin="mayank"] .ntp-left-rail {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 24px;
-  box-shadow: var(--neu-shadow);
-  padding: 14px 10px;
-  margin: 16px 0 16px 16px;
+  background: var(--surface) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--neu-shadow) !important;
+  padding: 16px 12px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 [data-skin="mayank"] .dock-btn {
-  background: #ffffff;
-  color: var(--text-muted);
-  border: 1px solid transparent;
-  border-radius: 12px;
+  background: var(--surface-2) !important;
+  color: var(--text-dim) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--neu-pill) !important;
   transition: all 0.15s ease;
 }
 
 [data-skin="mayank"] .dock-btn:hover {
-  background: #f4f6fa;
-  color: var(--text-primary);
+  background: var(--surface) !important;
+  color: var(--text) !important;
   transform: translateY(-1px);
+  box-shadow: var(--neu-shadow-hover) !important;
 }
 
 [data-skin="mayank"] .dock-btn.active {
-  background: rgba(249, 115, 22, 0.08);
-  color: var(--accent-primary);
-  border-color: rgba(249, 115, 22, 0.2);
-  box-shadow: inset 1px 1px 3px rgba(249, 115, 22, 0.12);
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+  border-color: var(--border-active) !important;
+  box-shadow: var(--neu-inset) !important;
 }
 
 [data-skin="mayank"] .workspace-chip {
-  background: #f8fafc;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  background: var(--surface-2) !important;
+  color: var(--text-dim) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--neu-pill) !important;
+  padding: 8px 10px !important;
+  font-weight: 500;
   transition: all 0.15s ease;
 }
 
 [data-skin="mayank"] .workspace-chip:hover {
-  background: #ffffff;
-  color: var(--text-primary);
-  box-shadow: 0 2px 6px rgba(163, 177, 198, 0.25);
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  box-shadow: var(--neu-shadow-hover) !important;
 }
 
 [data-skin="mayank"] .workspace-chip.active {
-  background: #ffffff;
-  color: var(--accent-primary);
-  border-color: rgba(249, 115, 22, 0.4);
-  box-shadow: 0 3px 8px rgba(249, 115, 22, 0.15);
+  background: var(--surface) !important;
+  color: var(--accent) !important;
+  border-color: var(--border-active) !important;
+  box-shadow: var(--neu-shadow) !important;
 }
 
-/* ── Central Hero Brand ──────────────────────────────────────────────────── */
+/* ── Central Hero Brand & Search ─────────────────────────────────────────── */
 [data-skin="mayank"] .brand-title {
-  color: var(--text-primary);
+  color: var(--text) !important;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 [data-skin="mayank"] .brand-tagline {
-  color: var(--text-muted);
+  color: var(--text-dim) !important;
   font-weight: 500;
 }
 
-/* ── Central Search Bar ──────────────────────────────────────────────────── */
 [data-skin="mayank"] .search-box {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  box-shadow: var(--neu-shadow);
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--neu-shadow) !important;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 [data-skin="mayank"] .search-box:focus-within {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.12), var(--neu-shadow-hover);
+  border-color: var(--border-active) !important;
+  box-shadow: 0 0 0 4px var(--accent-soft), var(--neu-shadow-hover) !important;
 }
 
 [data-skin="mayank"] .search-input {
-  color: var(--text-primary);
+  color: var(--text) !important;
 }
 
 [data-skin="mayank"] .search-input::placeholder {
-  color: var(--text-muted);
+  color: var(--text-dim) !important;
 }
 
-[data-skin="mayank"] .btn-ai-sparkle {
-  background: var(--accent-primary);
-  color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.35);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+[data-skin="mayank"] .chip {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--neu-pill) !important;
+  color: var(--text-dim) !important;
 }
 
-[data-skin="mayank"] .btn-ai-sparkle:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.48);
+[data-skin="mayank"] .chip:hover,
+[data-skin="mayank"] .chip.active {
+  color: var(--text) !important;
+  border-color: var(--border-active) !important;
+  box-shadow: var(--neu-shadow-hover) !important;
 }
 
-/* ── Speed Dial Rounded Square Cards ─────────────────────────────────────── */
-[data-skin="mayank"] .dial-card {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  box-shadow: var(--neu-shadow);
+/* Speed Dial Squircle Pills */
+[data-skin="mayank"] .dial-pill {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--neu-shadow) !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-  color: var(--text-primary);
 }
 
-[data-skin="mayank"] .dial-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--neu-shadow-hover);
-  border-color: rgba(249, 115, 22, 0.3);
+[data-skin="mayank"] .dial-pill:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: var(--neu-shadow-hover) !important;
+  border-color: var(--border-active) !important;
 }
 
-/* ── Bottom Launch Cards ─────────────────────────────────────────────────── */
+/* Action Cards */
 [data-skin="mayank"] .action-card {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  box-shadow: var(--neu-shadow);
-  color: var(--text-primary);
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--neu-shadow) !important;
+  color: var(--text) !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 [data-skin="mayank"] .action-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--neu-shadow-hover);
+  box-shadow: var(--neu-shadow-hover) !important;
 }
 
-[data-skin="mayank"] .action-card-title {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-[data-skin="mayank"] .action-card-desc {
-  color: var(--text-muted);
-}
-
-/* ── Right Rail Widget Cards ─────────────────────────────────────────────── */
-[data-skin="mayank"] .widget-card {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  box-shadow: var(--neu-shadow);
-  color: var(--text-primary);
-}
-
-[data-skin="mayank"] .widget-header .widget-title {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-[data-skin="mayank"] .clock-time {
-  color: var(--text-primary);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-
-[data-skin="mayank"] .clock-ampm {
-  color: var(--accent-primary);
-  font-weight: 600;
-}
-
-[data-skin="mayank"] .clock-date {
-  color: var(--text-muted);
-}
-
-/* ── Weather Orb Slot in Mayank Skin (Sun/Moon Glowing Orb) ──────────────── */
-[data-skin="mayank"] .globe-slot {
-  position: relative;
-  width: var(--globe-size, 154px);
-  height: var(--globe-size, 154px);
-  border-radius: 50%;
-  background: transparent;
+/* ── Right Column: FOUR Stacked Soft Cards (~24px radius) ────────────────── */
+[data-skin="mayank"] .ntp-right-rail {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
 }
 
-[data-skin="mayank"] .weather-orb-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 50%;
+[data-skin="mayank"] .widget-card {
+  background: var(--surface) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--neu-shadow) !important;
+  padding: 14px 16px !important;
+  color: var(--text) !important;
+  position: relative;
 }
 
-/* ── Hide Crazy-skin companion pet in Mayank skin ────────────────────────── */
-[data-skin="mayank"] .pet-rail-slot {
-  display: none !important;
+/* Faint sparkle decoration on 4th widget (System Monitor) */
+[data-skin="mayank"] #widget-monitor::after,
+[data-skin="mayank"] .widget-monitor-card::after {
+  content: '';
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
+  opacity: 0.75;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px var(--accent-glow, rgba(56, 189, 248, 0.6)));
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-/* ── Widget Controls in Mayank Skin ──────────────────────────────────────── */
-[data-skin="mayank"] .notes-textarea {
-  background: #f8fafc !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border-subtle) !important;
-  box-shadow: var(--neu-inset) !important;
+/* Primary Accent Action Buttons (Glossy Blue Gradient) */
+[data-skin="mayank"] .btn-primary-xs,
+[data-skin="mayank"] .btn-focus-play,
+[data-skin="mayank"] .btn-ai-sparkle {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
+  color: var(--accent-contrast) !important;
+  box-shadow: 0 4px 14px var(--accent-soft) !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-[data-skin="mayank"] .focus-btn,
-[data-skin="mayank"] .sys-pill {
-  background: #f8fafc !important;
-  color: var(--text-secondary) !important;
-  border: 1px solid var(--border-subtle) !important;
+[data-skin="mayank"] .btn-primary-xs:hover,
+[data-skin="mayank"] .btn-focus-play:hover,
+[data-skin="mayank"] .btn-ai-sparkle:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px var(--accent-soft) !important;
 }
 
-[data-skin="mayank"] .focus-btn.active {
-  background: rgba(249, 115, 22, 0.12) !important;
-  color: var(--accent-primary) !important;
-  border-color: rgba(249, 115, 22, 0.4) !important;
-}
-
-[data-skin="mayank"] .focus-time-display {
-  color: var(--text-primary) !important;
-}
-
-[data-skin="mayank"] .notes-header-title,
-[data-skin="mayank"] .focus-title,
-[data-skin="mayank"] .monitor-title {
-  color: var(--text-primary) !important;
+[data-skin="mayank"] .btn-primary-xs:active,
+[data-skin="mayank"] .btn-focus-play:active,
+[data-skin="mayank"] .btn-ai-sparkle:active {
+  transform: scale(0.97);
 }

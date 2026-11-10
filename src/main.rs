@@ -862,6 +862,12 @@ enum UiMessage {
     #[serde(rename = "get_focus_state")]
     GetFocusState,
 
+    #[serde(rename = "get_workspaces")]
+    GetWorkspaces,
+
+    #[serde(rename = "get_settings")]
+    GetSettings,
+
     #[serde(rename = "bypass_focus_domain")]
     BypassFocusDomain {
         domain: String,
@@ -2694,6 +2700,21 @@ fn run_browser() -> Result<()> {
 
                         if role.as_deref() == Some("newtab") {
                             broadcast_to_newtab_views(&tabs, &content_webviews, &settings_msg);
+
+                            let ws_msg = json!({
+                                "type": "workspaces_update",
+                                "workspaces": workspaces.summaries(tabs.count()),
+                                "active_workspace_id": workspaces.active_id(),
+                            });
+                            broadcast_to_newtab_views(&tabs, &content_webviews, &ws_msg);
+
+                            if let Ok(fm) = global_focus_manager().lock() {
+                                let f_msg = json!({
+                                    "type": "focus_state_changed",
+                                    "state": fm.state(),
+                                });
+                                broadcast_to_newtab_views(&tabs, &content_webviews, &f_msg);
+                            }
                             if let Some(snap) = &latest_telemetry {
                                 let tel_msg = build_telemetry_payload(snap);
                                 let mem_msg = build_memory_payload(&snap.breakdown, tabs.count());
@@ -4457,6 +4478,23 @@ fn run_browser() -> Result<()> {
                             });
                             broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &msg);
                         }
+                    }
+
+                    UiMessage::GetWorkspaces => {
+                        let ws_msg = json!({
+                            "type": "workspaces_update",
+                            "workspaces": workspaces.summaries(tabs.count()),
+                            "active_workspace_id": workspaces.active_id(),
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &ws_msg);
+                    }
+
+                    UiMessage::GetSettings => {
+                        let s_msg = json!({
+                            "type": "ui_settings_sync",
+                            "settings": storage.settings().to_ui_json(),
+                        });
+                        broadcast_to_internal_views(&chrome_wv, &tabs, &content_webviews, &s_msg);
                     }
 
                     UiMessage::BypassFocusDomain { domain, confirmation } => {

@@ -1219,6 +1219,10 @@
       if (cardMayank) {
         cardMayank.onclick = () => {
           closeSettings();
+          const curTheme = (window.Settings && window.Settings.get('theme')) || 'sunset';
+          if (curTheme !== 'light') {
+            window.switchTheme('light');
+          }
           window.switchSkin('mayank');
         };
       }

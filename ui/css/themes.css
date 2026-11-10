@@ -1,377 +1,647 @@
 /* ==========================================================================
    THEMES (CSS Custom Properties)
    Independent of skins. Selectable via data-theme attribute.
-   Each of the 12 themes features a distinct signature color and palette.
+   Complete token set:
+     --bg, --bg-canvas, --bg-gradient, --surface, --surface-2,
+     --text, --text-dim, --border, --border-active,
+     --shadow-light, --shadow-dark,
+     --accent, --accent-hover, --accent-soft, --accent-2, --accent-contrast,
+     --bg-particle, --danger, --ok
    ========================================================================== */
 
 /* ── 1. Midnight (Deep Dark Navy with Electric Indigo Accent) ───────────── */
 :root, [data-theme="midnight"] {
-  --bg-primary: #121526;
-  --bg-surface: #1a1e36;
-  --bg-surface-alt: #15182c;
+  --bg: #121526;
   --bg-canvas: #0a0c16;
+  --bg-gradient: radial-gradient(ellipse at 50% 30%, #171b33 0%, #0a0c16 100%);
+  --surface: rgba(26, 30, 54, 0.85);
+  --surface-2: rgba(21, 24, 44, 0.90);
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --border: rgba(99, 102, 241, 0.22);
+  --border-active: #6366f1;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.45);
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.22);
+  --accent-2: #818cf8;
+  --accent-contrast: #ffffff;
+  --bg-particle: #818cf8;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #242948;
   --bg-hover: #2f355c;
   --bg-input: #1b1f38;
   --bg-input-focus: #181c33;
   --bg-tab: #14172a;
   --bg-tab-active: #232847;
-
-  --border-subtle: #2e355c;
-  --border-active: #6366f1;
-
-  --text-primary: #f1f5f9;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-
-  --accent-primary: #6366f1;
-  --accent-secondary: #818cf8;
-  --accent-highlight: rgba(99, 102, 241, 0.28);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(99, 102, 241, 0.50);
-
-  --bg-glass: rgba(18, 21, 38, 0.78);
-  --bg-glass-hover: rgba(29, 34, 60, 0.88);
-  --bg-glass-input: rgba(22, 26, 46, 0.84);
-  --border-glass: rgba(99, 102, 241, 0.20);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(29, 34, 60, 0.92);
+  --bg-glass-input: rgba(22, 26, 46, 0.88);
+  --border-glass: var(--border);
 }
 
-/* ── 2. Light Theme (Clean Crisp Slate-White with Sapphire Blue Accent) ─── */
+/* ── 2. Light (Clean Crisp Slate-White with Sapphire Blue Accent) ────────── */
 [data-theme="light"] {
-  --bg-primary: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-surface-alt: #f1f5f9;
-  --bg-canvas: #e8eef6;
+  --bg: #f8fafc;
+  --bg-canvas: #eef2fb;
+  --bg-gradient: radial-gradient(ellipse at 50% 30%, #ffffff 0%, #eef2fb 100%);
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-2: rgba(241, 245, 249, 0.95);
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --border: rgba(15, 23, 42, 0.12);
+  --border-active: #1a73e8;
+  --shadow-light: rgba(255, 255, 255, 0.95);
+  --shadow-dark: rgba(163, 177, 198, 0.35);
+  --accent: #1a73e8;
+  --accent-hover: #1557b0;
+  --accent-soft: rgba(26, 115, 232, 0.14);
+  --accent-2: #0284c7;
+  --accent-contrast: #ffffff;
+  --bg-particle: #3b82f6;
+  --danger: #dc2626;
+  --ok: #16a34a;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #e2e8f0;
   --bg-hover: #cbd5e1;
   --bg-input: #ffffff;
   --bg-input-focus: #ffffff;
   --bg-tab: #edf2f9;
   --bg-tab-active: #ffffff;
-
-  --border-subtle: #cbd5e1;
-  --border-active: #1a73e8;
-
-  --text-primary: #0f172a;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #334155;
-  --text-muted: #64748b;
-
-  --accent-primary: #1a73e8;
-  --accent-secondary: #0284c7;
-  --accent-highlight: rgba(26, 115, 232, 0.18);
-  --accent-glow: rgba(26, 115, 232, 0.40);
-
-  --bg-glass: rgba(255, 255, 255, 0.85);
-  --bg-glass-hover: rgba(255, 255, 255, 0.95);
-  --bg-glass-input: rgba(255, 255, 255, 0.90);
-  --border-glass: rgba(15, 23, 42, 0.12);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
+  --accent-glow: rgba(26, 115, 232, 0.38);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(255, 255, 255, 0.98);
+  --bg-glass-input: rgba(255, 255, 255, 0.95);
+  --border-glass: var(--border);
 }
 
-/* ── 3. AMOLED Black (True 0x000000 Pitch Black with Vivid Crimson Ruby) ─── */
+/* ── 3. AMOLED Black (Pitch Black with Vivid Crimson Ruby) ───────────────── */
 [data-theme="amoled"] {
-  --bg-primary: #050505;
-  --bg-surface: #0c0c0c;
-  --bg-surface-alt: #070707;
+  --bg: #050505;
   --bg-canvas: #000000;
+  --bg-gradient: radial-gradient(circle at 50% 40%, #0a0a0a 0%, #000000 100%);
+  --surface: rgba(14, 14, 14, 0.92);
+  --surface-2: rgba(8, 8, 8, 0.96);
+  --text: #fafafa;
+  --text-dim: #71717a;
+  --border: rgba(244, 63, 94, 0.24);
+  --border-active: #f43f5e;
+  --shadow-light: rgba(255, 255, 255, 0.03);
+  --shadow-dark: rgba(0, 0, 0, 0.85);
+  --accent: #f43f5e;
+  --accent-hover: #e11d48;
+  --accent-soft: rgba(244, 63, 94, 0.24);
+  --accent-2: #fb7185;
+  --accent-contrast: #ffffff;
+  --bg-particle: #fb7185;
+  --danger: #f43f5e;
+  --ok: #10b981;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #181818;
   --bg-hover: #262626;
   --bg-input: #121212;
   --bg-input-focus: #050505;
   --bg-tab: #080808;
   --bg-tab-active: #1a1a1a;
-
-  --border-subtle: #242424;
-  --border-active: #f43f5e;
-
-  --text-primary: #fafafa;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #d4d4d8;
-  --text-muted: #71717a;
-
-  --accent-primary: #f43f5e;
-  --accent-secondary: #fb7185;
-  --accent-highlight: rgba(244, 63, 94, 0.32);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(244, 63, 94, 0.55);
-
-  --bg-glass: rgba(12, 12, 12, 0.88);
-  --bg-glass-hover: rgba(24, 24, 24, 0.95);
-  --bg-glass-input: rgba(16, 16, 16, 0.90);
-  --border-glass: rgba(244, 63, 94, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(24, 24, 24, 0.96);
+  --bg-glass-input: rgba(16, 16, 16, 0.92);
+  --border-glass: var(--border);
 }
 
 /* ── 4. Aurora (Deep Northern Teal & Luminous Mint Emerald) ──────────────── */
 [data-theme="aurora"] {
-  --bg-primary: #072228;
-  --bg-surface: #0c3039;
-  --bg-surface-alt: #09272e;
+  --bg: #072228;
   --bg-canvas: #031317;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #0a2d35 0%, #031317 100%);
+  --surface: rgba(12, 48, 57, 0.86);
+  --surface-2: rgba(9, 39, 46, 0.92);
+  --text: #f0fdfa;
+  --text-dim: #5eead4;
+  --border: rgba(16, 185, 129, 0.24);
+  --border-active: #10b981;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.45);
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-soft: rgba(16, 185, 129, 0.22);
+  --accent-2: #2dd4bf;
+  --accent-contrast: #ffffff;
+  --bg-particle: #2dd4bf;
+  --danger: #ef4444;
+  --ok: #10b981;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #124350;
   --bg-hover: #185566;
   --bg-input: #0d3640;
   --bg-input-focus: #0c3039;
   --bg-tab: #09272e;
   --bg-tab-active: #134754;
-
-  --border-subtle: #1b5d6d;
-  --border-active: #10b981;
-
-  --text-primary: #f0fdfa;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #ccfbf1;
-  --text-muted: #5eead4;
-
-  --accent-primary: #10b981;
-  --accent-secondary: #2dd4bf;
-  --accent-highlight: rgba(16, 185, 129, 0.30);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(16, 185, 129, 0.55);
-
-  --bg-glass: rgba(12, 48, 57, 0.78);
-  --bg-glass-hover: rgba(19, 71, 84, 0.88);
-  --bg-glass-input: rgba(14, 54, 64, 0.84);
-  --border-glass: rgba(16, 185, 129, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(19, 71, 84, 0.92);
+  --bg-glass-input: rgba(14, 54, 64, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 5. Cyberpunk (Neon Yellow, Electric Magenta & Night City Violet) ───── */
 [data-theme="cyberpunk"] {
-  --bg-primary: #160f29;
-  --bg-surface: #22183e;
-  --bg-surface-alt: #1a1232;
+  --bg: #160f29;
   --bg-canvas: #0c0817;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #20153c 0%, #0c0817 100%);
+  --surface: rgba(34, 24, 62, 0.86);
+  --surface-2: rgba(26, 18, 50, 0.92);
+  --text: #fffbeb;
+  --text-dim: #d8b4fe;
+  --border: rgba(250, 204, 21, 0.25);
+  --border-active: #facc15;
+  --shadow-light: rgba(255, 255, 255, 0.06);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #facc15;
+  --accent-hover: #eab308;
+  --accent-soft: rgba(250, 204, 21, 0.24);
+  --accent-2: #ec4899;
+  --accent-contrast: #000000;
+  --bg-particle: #ec4899;
+  --danger: #f43f5e;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #34255d;
   --bg-hover: #443179;
   --bg-input: #291c4a;
   --bg-input-focus: #22183e;
   --bg-tab: #1b1333;
   --bg-tab-active: #33245c;
-
-  --border-subtle: #4b3684;
-  --border-active: #facc15;
-
-  --text-primary: #fffbeb;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #fef08a;
-  --text-muted: #d8b4fe;
-
-  --accent-primary: #facc15;
-  --accent-secondary: #ec4899;
-  --accent-highlight: rgba(250, 204, 21, 0.32);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(250, 204, 21, 0.58);
-
-  --bg-glass: rgba(26, 18, 48, 0.78);
-  --bg-glass-hover: rgba(40, 28, 73, 0.90);
-  --bg-glass-input: rgba(32, 23, 59, 0.85);
-  --border-glass: rgba(250, 204, 21, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(40, 28, 73, 0.92);
+  --bg-glass-input: rgba(32, 23, 59, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 6. Sunset (Warm Twilight, Tangerine & Rose) ─────────────────────────── */
 [data-theme="sunset"] {
-  --bg-primary: #291225;
-  --bg-surface: #381933;
-  --bg-surface-alt: #2c1428;
+  --bg: #291225;
   --bg-canvas: #180b16;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #3a1934 0%, #180b16 100%);
+  --surface: rgba(56, 25, 51, 0.86);
+  --surface-2: rgba(44, 20, 40, 0.92);
+  --text: #fff7ed;
+  --text-dim: #fca5a5;
+  --border: rgba(249, 115, 22, 0.25);
+  --border-active: #f97316;
+  --shadow-light: rgba(255, 255, 255, 0.06);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #f97316;
+  --accent-hover: #ea580c;
+  --accent-soft: rgba(249, 115, 22, 0.24);
+  --accent-2: #fb7185;
+  --accent-contrast: #ffffff;
+  --bg-particle: #f97316;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #4f2348;
   --bg-hover: #652d5c;
   --bg-input: #401c3a;
   --bg-input-focus: #381933;
   --bg-tab: #2d1429;
   --bg-tab-active: #4e2347;
-
-  --border-subtle: #6c3262;
-  --border-active: #f97316;
-
-  --text-primary: #fff7ed;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #fed7aa;
-  --text-muted: #fca5a5;
-
-  --accent-primary: #f97316;
-  --accent-secondary: #fb7185;
-  --accent-highlight: rgba(249, 115, 22, 0.32);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(249, 115, 22, 0.58);
-
-  --bg-glass: rgba(43, 20, 39, 0.78);
-  --bg-glass-hover: rgba(62, 29, 56, 0.90);
-  --bg-glass-input: rgba(51, 24, 46, 0.85);
-  --border-glass: rgba(249, 115, 22, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(62, 29, 56, 0.92);
+  --bg-glass-input: rgba(51, 24, 46, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 7. Matcha (Forest Sage & Lush Leaf Jade Green) ─────────────────────── */
 [data-theme="matcha"] {
-  --bg-primary: #102315;
-  --bg-surface: #173320;
-  --bg-surface-alt: #132a1a;
+  --bg: #102315;
   --bg-canvas: #08140b;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #16301d 0%, #08140b 100%);
+  --surface: rgba(23, 51, 32, 0.86);
+  --surface-2: rgba(19, 42, 26, 0.92);
+  --text: #f0fdf4;
+  --text-dim: #86efac;
+  --border: rgba(34, 197, 94, 0.24);
+  --border-active: #22c55e;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.45);
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --accent-soft: rgba(34, 197, 94, 0.22);
+  --accent-2: #4ade80;
+  --accent-contrast: #ffffff;
+  --bg-particle: #4ade80;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #224b2f;
   --bg-hover: #2e623e;
   --bg-input: #1a3c25;
   --bg-input-focus: #173320;
   --bg-tab: #122819;
   --bg-tab-active: #234c2f;
-
-  --border-subtle: #316841;
-  --border-active: #22c55e;
-
-  --text-primary: #f0fdf4;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #bbf7d0;
-  --text-muted: #86efac;
-
-  --accent-primary: #22c55e;
-  --accent-secondary: #4ade80;
-  --accent-highlight: rgba(34, 197, 94, 0.30);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(34, 197, 94, 0.55);
-
-  --bg-glass: rgba(20, 42, 26, 0.78);
-  --bg-glass-hover: rgba(31, 65, 41, 0.90);
-  --bg-glass-input: rgba(24, 52, 32, 0.85);
-  --border-glass: rgba(34, 197, 94, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(31, 65, 41, 0.92);
+  --bg-glass-input: rgba(24, 52, 32, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 8. Sakura (Blossom Plum & Soft Rose Pink) ──────────────────────────── */
 [data-theme="sakura"] {
-  --bg-primary: #281022;
-  --bg-surface: #381730;
-  --bg-surface-alt: #2d1227;
+  --bg: #281022;
   --bg-canvas: #180914;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #381630 0%, #180914 100%);
+  --surface: rgba(56, 23, 48, 0.86);
+  --surface-2: rgba(45, 18, 39, 0.92);
+  --text: #fdf2f8;
+  --text-dim: #f472b6;
+  --border: rgba(236, 72, 153, 0.25);
+  --border-active: #ec4899;
+  --shadow-light: rgba(255, 255, 255, 0.06);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #ec4899;
+  --accent-hover: #db2777;
+  --accent-soft: rgba(236, 72, 153, 0.22);
+  --accent-2: #f472b6;
+  --accent-contrast: #ffffff;
+  --bg-particle: #f472b6;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #502144;
   --bg-hover: #672a58;
   --bg-input: #421b38;
   --bg-input-focus: #381730;
   --bg-tab: #2d1327;
   --bg-tab-active: #4e2043;
-
-  --border-subtle: #6e2e5e;
-  --border-active: #ec4899;
-
-  --text-primary: #fdf2f8;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #fbcfe8;
-  --text-muted: #f472b6;
-
-  --accent-primary: #ec4899;
-  --accent-secondary: #f472b6;
-  --accent-highlight: rgba(236, 72, 153, 0.30);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(236, 72, 153, 0.55);
-
-  --bg-glass: rgba(43, 18, 37, 0.78);
-  --bg-glass-hover: rgba(63, 26, 54, 0.90);
-  --bg-glass-input: rgba(52, 22, 44, 0.85);
-  --border-glass: rgba(236, 72, 153, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(63, 26, 54, 0.92);
+  --bg-glass-input: rgba(52, 22, 44, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 9. Graphite (Cool Carbon, Pure White Text, Electric Cyan & Blue) ───── */
-[data-theme="graphite"], [data-palette="graphite"]:not([data-theme]), [data-palette="graphite"][data-theme="graphite"] {
-  --bg-primary: #12161d;
-  --bg-surface: #1a202a;
-  --bg-surface-alt: #151a22;
+[data-theme="graphite"] {
+  --bg: #12161d;
   --bg-canvas: #090b0e;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #1a202a 0%, #090b0e 100%);
+  --surface: rgba(26, 32, 42, 0.86);
+  --surface-2: rgba(21, 26, 34, 0.92);
+  --text: #ffffff;
+  --text-dim: #94a3b8;
+  --border: rgba(0, 210, 255, 0.22);
+  --border-active: #00d2ff;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #00d2ff;
+  --accent-hover: #00b4db;
+  --accent-soft: rgba(0, 210, 255, 0.22);
+  --accent-2: #4f8ff7;
+  --accent-contrast: #000000;
+  --bg-particle: #00d2ff;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #262e3d;
   --bg-hover: #333d50;
   --bg-input: #1e2531;
   --bg-input-focus: #1a202a;
   --bg-tab: #141922;
   --bg-tab-active: #242c3a;
-
-  --border-subtle: #313b4e;
-  --border-active: #00d2ff;
-
-  --text-primary: #ffffff;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-
-  --accent-primary: #00d2ff;
-  --accent-secondary: #4f8ff7;
-  --accent-highlight: rgba(0, 210, 255, 0.26);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(0, 210, 255, 0.50);
-
-  --bg-glass: rgba(22, 28, 38, 0.78);
-  --bg-glass-hover: rgba(33, 42, 57, 0.90);
-  --bg-glass-input: rgba(27, 34, 46, 0.85);
-  --border-glass: rgba(0, 210, 255, 0.20);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(33, 42, 57, 0.92);
+  --bg-glass-input: rgba(27, 34, 46, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 10. Slate (Slate-Blue Cards, Icy Sky Blue Highlights) ──────────────── */
-[data-theme="slate"], [data-palette="slate"]:not([data-theme]), [data-palette="slate"][data-theme="slate"] {
-  --bg-primary: #0f1c2d;
-  --bg-surface: #182a42;
-  --bg-surface-alt: #122135;
+[data-theme="slate"] {
+  --bg: #0f1c2d;
   --bg-canvas: #070e17;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #162840 0%, #070e17 100%);
+  --surface: rgba(24, 42, 66, 0.86);
+  --surface-2: rgba(18, 33, 53, 0.92);
+  --text: #f8fafc;
+  --text-dim: #94a3b8;
+  --border: rgba(56, 189, 248, 0.22);
+  --border-active: #38bdf8;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.45);
+  --accent: #38bdf8;
+  --accent-hover: #0284c7;
+  --accent-soft: rgba(56, 189, 248, 0.22);
+  --accent-2: #0ea5e9;
+  --accent-contrast: #000000;
+  --bg-particle: #38bdf8;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #243c5d;
   --bg-hover: #2f4d76;
   --bg-input: #1c314d;
   --bg-input-focus: #182a42;
   --bg-tab: #122237;
   --bg-tab-active: #223958;
-
-  --border-subtle: #2d4c74;
-  --border-active: #38bdf8;
-
-  --text-primary: #f8fafc;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-
-  --accent-primary: #38bdf8;
-  --accent-secondary: #0ea5e9;
-  --accent-highlight: rgba(56, 189, 248, 0.26);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(56, 189, 248, 0.50);
-
-  --bg-glass: rgba(20, 36, 58, 0.78);
-  --bg-glass-hover: rgba(30, 53, 85, 0.90);
-  --bg-glass-input: rgba(25, 44, 71, 0.85);
-  --border-glass: rgba(56, 189, 248, 0.20);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(30, 53, 85, 0.92);
+  --bg-glass-input: rgba(25, 44, 71, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 11. Mocha (Warm Dark Espresso, Rich Amber Caramel Accents) ─────────── */
-[data-theme="mocha"], [data-palette="mocha"]:not([data-theme]), [data-palette="mocha"][data-theme="mocha"] {
-  --bg-primary: #21140e;
-  --bg-surface: #301e15;
-  --bg-surface-alt: #261811;
+[data-theme="mocha"] {
+  --bg: #21140e;
   --bg-canvas: #120b08;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #301e15 0%, #120b08 100%);
+  --surface: rgba(48, 30, 21, 0.86);
+  --surface-2: rgba(38, 24, 17, 0.92);
+  --text: #fef3c7;
+  --text-dim: #fbbf24;
+  --border: rgba(245, 158, 11, 0.24);
+  --border-active: #f59e0b;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-soft: rgba(245, 158, 11, 0.22);
+  --accent-2: #d97706;
+  --accent-contrast: #000000;
+  --bg-particle: #f59e0b;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #452b1f;
   --bg-hover: #5b3929;
   --bg-input: #372319;
   --bg-input-focus: #301e15;
   --bg-tab: #271811;
   --bg-tab-active: #442a1e;
-
-  --border-subtle: #5f3b2a;
-  --border-active: #f59e0b;
-
-  --text-primary: #fef3c7;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #fde68a;
-  --text-muted: #fbbf24;
-
-  --accent-primary: #f59e0b;
-  --accent-secondary: #d97706;
-  --accent-highlight: rgba(245, 158, 11, 0.30);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(245, 158, 11, 0.55);
-
-  --bg-glass: rgba(39, 24, 17, 0.78);
-  --bg-glass-hover: rgba(57, 36, 25, 0.90);
-  --bg-glass-input: rgba(46, 29, 21, 0.85);
-  --border-glass: rgba(245, 158, 11, 0.22);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(57, 36, 25, 0.92);
+  --bg-glass-input: rgba(46, 29, 21, 0.88);
+  --border-glass: var(--border);
 }
 
 /* ── 12. Midnight Blue (Deep Royal Navy, Vibrant Cobalt Accents) ─────────── */
-[data-theme="midnight_blue"], [data-palette="midnight_blue"]:not([data-theme]), [data-palette="midnight_blue"][data-theme="midnight_blue"] {
-  --bg-primary: #0a1430;
-  --bg-surface: #101f48;
-  --bg-surface-alt: #0c1839;
+[data-theme="midnight_blue"] {
+  --bg: #0a1430;
   --bg-canvas: #050a18;
+  --bg-gradient: radial-gradient(circle at 50% 30%, #101f48 0%, #050a18 100%);
+  --surface: rgba(16, 31, 72, 0.86);
+  --surface-2: rgba(12, 24, 57, 0.92);
+  --text: #f1f5f9;
+  --text-dim: #93c5fd;
+  --border: rgba(59, 130, 246, 0.24);
+  --border-active: #3b82f6;
+  --shadow-light: rgba(255, 255, 255, 0.05);
+  --shadow-dark: rgba(0, 0, 0, 0.50);
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: rgba(59, 130, 246, 0.22);
+  --accent-2: #2563eb;
+  --accent-contrast: #ffffff;
+  --bg-particle: #3b82f6;
+  --danger: #ef4444;
+  --ok: #22c55e;
+
+  /* Compatibility aliases */
+  --bg-primary: var(--bg);
+  --bg-surface: var(--surface);
+  --bg-surface-alt: var(--surface-2);
   --bg-subtle: #192f6d;
   --bg-hover: #223f90;
   --bg-input: #132557;
   --bg-input-focus: #101f48;
   --bg-tab: #0d1a3e;
   --bg-tab-active: #192e6b;
-
-  --border-subtle: #244192;
-  --border-active: #3b82f6;
-
-  --text-primary: #f1f5f9;
+  --border-subtle: var(--border);
+  --text-primary: var(--text);
   --text-secondary: #cbd5e1;
-  --text-muted: #93c5fd;
-
-  --accent-primary: #3b82f6;
-  --accent-secondary: #2563eb;
-  --accent-highlight: rgba(59, 130, 246, 0.28);
+  --text-muted: var(--text-dim);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-highlight: var(--accent-soft);
   --accent-glow: rgba(59, 130, 246, 0.52);
+  --bg-glass: var(--surface);
+  --bg-glass-hover: rgba(21, 41, 94, 0.92);
+  --bg-glass-input: rgba(16, 32, 75, 0.88);
+  --border-glass: var(--border);
+}
 
-  --bg-glass: rgba(13, 25, 59, 0.78);
-  --bg-glass-hover: rgba(21, 41, 94, 0.90);
-  --bg-glass-input: rgba(16, 32, 75, 0.85);
-  --border-glass: rgba(59, 130, 246, 0.20);
+/* ==========================================================================
+   ACCENT PALETTES
+   Independent accent color ramps and styling applicable over any base theme.
+   Customizes both accent color and card/surface aesthetic styling.
+   ========================================================================== */
+[data-palette="graphite"] {
+  --accent: #00d2ff;
+  --accent-primary: #00d2ff;
+  --accent-hover: #00b4db;
+  --accent-soft: rgba(0, 210, 255, 0.22);
+  --accent-highlight: rgba(0, 210, 255, 0.22);
+  --accent-glow: rgba(0, 210, 255, 0.50);
+  --accent-2: #4f8ff7;
+  --accent-secondary: #4f8ff7;
+  --accent-contrast: #000000;
+  --bg-particle: #00d2ff;
+  --border-active: #00d2ff;
+  --surface: rgba(22, 26, 36, 0.90);
+  --surface-2: rgba(16, 20, 28, 0.95);
+  --border: rgba(0, 210, 255, 0.20);
+  --shadow-dark: rgba(0, 0, 0, 0.60);
+  --bg-glass: rgba(22, 26, 36, 0.90);
+  --border-glass: rgba(0, 210, 255, 0.20);
+}
+
+[data-palette="slate"] {
+  --accent: #38bdf8;
+  --accent-primary: #38bdf8;
+  --accent-hover: #0284c7;
+  --accent-soft: rgba(56, 189, 248, 0.22);
+  --accent-highlight: rgba(56, 189, 248, 0.22);
+  --accent-glow: rgba(56, 189, 248, 0.50);
+  --accent-2: #0ea5e9;
+  --accent-secondary: #0ea5e9;
+  --accent-contrast: #000000;
+  --bg-particle: #38bdf8;
+  --border-active: #38bdf8;
+  --surface: rgba(18, 34, 54, 0.84);
+  --surface-2: rgba(13, 25, 42, 0.92);
+  --border: rgba(56, 189, 248, 0.22);
+  --shadow-dark: rgba(3, 12, 24, 0.55);
+  --bg-glass: rgba(18, 34, 54, 0.84);
+  --border-glass: rgba(56, 189, 248, 0.22);
+}
+
+[data-palette="mocha"] {
+  --accent: #f59e0b;
+  --accent-primary: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-soft: rgba(245, 158, 11, 0.22);
+  --accent-highlight: rgba(245, 158, 11, 0.22);
+  --accent-glow: rgba(245, 158, 11, 0.55);
+  --accent-2: #d97706;
+  --accent-secondary: #d97706;
+  --accent-contrast: #000000;
+  --bg-particle: #f59e0b;
+  --border-active: #f59e0b;
+  --surface: rgba(46, 26, 16, 0.88);
+  --surface-2: rgba(34, 18, 11, 0.94);
+  --border: rgba(245, 158, 11, 0.26);
+  --shadow-dark: rgba(20, 8, 3, 0.60);
+  --bg-glass: rgba(46, 26, 16, 0.88);
+  --border-glass: rgba(245, 158, 11, 0.26);
+}
+
+[data-palette="midnight_blue"] {
+  --accent: #3b82f6;
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: rgba(59, 130, 246, 0.22);
+  --accent-highlight: rgba(59, 130, 246, 0.22);
+  --accent-glow: rgba(59, 130, 246, 0.52);
+  --accent-2: #2563eb;
+  --accent-secondary: #2563eb;
+  --accent-contrast: #ffffff;
+  --bg-particle: #3b82f6;
+  --border-active: #3b82f6;
+  --surface: rgba(14, 30, 72, 0.88);
+  --surface-2: rgba(10, 22, 54, 0.94);
+  --border: rgba(59, 130, 246, 0.26);
+  --shadow-dark: rgba(3, 8, 28, 0.60);
+  --bg-glass: rgba(14, 30, 72, 0.88);
+  --border-glass: rgba(59, 130, 246, 0.26);
 }

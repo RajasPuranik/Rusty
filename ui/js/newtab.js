@@ -2,6 +2,18 @@
 (function () {
   'use strict';
 
+  const escapeHtml = (typeof window !== 'undefined' && typeof window.escapeHtml === 'function')
+    ? window.escapeHtml
+    : function (str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      };
+
   const WEATHER_CACHE_KEY = 'rusty_weather_cache_v2';
   const WEATHER_CACHE_TTL_MS = 30 * 60 * 1000;
 
@@ -469,7 +481,11 @@
     if (window.Settings) {
       window.Settings.set('launch_cards', cards);
     }
+    try {
     renderLaunchCards();
+  } catch (err) {
+    console.error('[newtab] renderLaunchCards failed:', err);
+  }
   }
 
   function renderLaunchCards() {
@@ -762,7 +778,11 @@
     });
   }
 
-  renderLaunchCards();
+  try {
+    renderLaunchCards();
+  } catch (err) {
+    console.error('[newtab] renderLaunchCards failed:', err);
+  }
 
   const dockHome = document.getElementById('dock-btn-home');
   const dockApps = document.getElementById('dock-btn-apps');
@@ -808,10 +828,21 @@
   // ── 5. Quick Notes Checklist ─────────────────────────────────────────────
   function loadNotes() {
     try {
-      const raw = localStorage.getItem('rusty_quick_notes');
-      if (raw) return JSON.parse(raw);
+      const keys = ['rusty_quick_notes', 'quick_notes', 'rusty_notes'];
+      for (const k of keys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((item) => {
+              if (typeof item === 'string') return { text: item, done: false };
+              return { text: String(item.text || ''), done: Boolean(item.done) };
+            });
+          }
+        }
+      }
     } catch (_) {}
-    return DEFAULT_NOTES;
+    return DEFAULT_NOTES.map((n) => ({ ...n }));
   }
 
   function saveNotes(notes) {
@@ -826,12 +857,13 @@
     notesChecklist.innerHTML = '';
 
     notes.forEach((item, index) => {
-      const row = document.createElement('label');
+      const row = document.createElement('div');
       row.className = `note-item ${item.done ? 'completed' : ''}`;
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = Boolean(item.done);
+      cb.title = item.done ? 'Mark pending' : 'Mark completed';
       cb.onchange = () => {
         notes[index].done = cb.checked;
         saveNotes(notes);
@@ -839,27 +871,127 @@
       };
 
       const span = document.createElement('span');
+      span.className = 'note-text';
       span.textContent = item.text;
+
+      const actions = document.createElement('div');
+      actions.className = 'note-actions';
+
+      if (index > 0) {
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'btn-icon-xs btn-note-move';
+        upBtn.title = 'Move up';
+        upBtn.innerHTML = window.Icons ? window.Icons.get('chevron-up', '', 11) : '↑';
+        upBtn.onclick = (e) => {
+          e.stopPropagation();
+          const temp = notes[index - 1];
+          notes[index - 1] = notes[index];
+          notes[index] = temp;
+          saveNotes(notes);
+          renderNotes();
+        };
+        actions.appendChild(upBtn);
+      }
+
+      if (index < notes.length - 1) {
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'btn-icon-xs btn-note-move';
+        downBtn.title = 'Move down';
+        downBtn.innerHTML = window.Icons ? window.Icons.get('chevron-down', '', 11) : '↓';
+        downBtn.onclick = (e) => {
+          e.stopPropagation();
+          const temp = notes[index + 1];
+          notes[index + 1] = notes[index];
+          notes[index] = temp;
+          saveNotes(notes);
+          renderNotes();
+        };
+        actions.appendChild(downBtn);
+      }
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn-icon-xs btn-note-del';
+      delBtn.title = 'Delete task';
+      delBtn.innerHTML = window.Icons ? window.Icons.get('x', '', 11) : '×';
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        notes.splice(index, 1);
+        saveNotes(notes);
+        renderNotes();
+      };
+      actions.appendChild(delBtn);
 
       row.appendChild(cb);
       row.appendChild(span);
+      row.appendChild(actions);
       notesChecklist.appendChild(row);
     });
+
+    // Inline add task row
+    let addRow = document.getElementById('notes-inline-add-row');
+    if (!addRow) {
+      addRow = document.createElement('div');
+      addRow.id = 'notes-inline-add-row';
+      addRow.className = 'notes-inline-add-row';
+      addRow.innerHTML = `
+        <input type="text" id="notes-inline-input" class="notes-inline-input" placeholder="Add task & press Enter..." />
+        <button type="button" id="notes-inline-btn" class="btn-icon-xs" title="Add">+</button>
+      `;
+      notesChecklist.parentNode.insertBefore(addRow, scratchpad);
+
+      const inlineInput = addRow.querySelector('#notes-inline-input');
+      const inlineBtn = addRow.querySelector('#notes-inline-btn');
+
+      const submitInline = () => {
+        const val = inlineInput ? inlineInput.value.trim() : '';
+        if (val) {
+          const curNotes = loadNotes();
+          curNotes.push({ text: val, done: false });
+          saveNotes(curNotes);
+          if (inlineInput) inlineInput.value = '';
+          renderNotes();
+        }
+      };
+
+      if (inlineInput) {
+        inlineInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitInline();
+          }
+        });
+      }
+      if (inlineBtn) {
+        inlineBtn.addEventListener('click', submitInline);
+      }
+    }
   }
 
   if (btnAddNote) {
     btnAddNote.addEventListener('click', () => {
-      const text = prompt('New Note or Task:');
-      if (text && text.trim()) {
-        const notes = loadNotes();
-        notes.push({ text: text.trim(), done: false });
-        saveNotes(notes);
-        renderNotes();
+      const inlineInput = document.getElementById('notes-inline-input');
+      if (inlineInput) {
+        inlineInput.focus();
+      } else {
+        const text = prompt('New Note or Task:');
+        if (text && text.trim()) {
+          const notes = loadNotes();
+          notes.push({ text: text.trim(), done: false });
+          saveNotes(notes);
+          renderNotes();
+        }
       }
     });
   }
 
-  renderNotes();
+  try {
+    renderNotes();
+  } catch (err) {
+    console.error('[newtab] renderNotes failed:', err);
+  }
 
   if (scratchpad) {
     scratchpad.value = localStorage.getItem('rusty_scratchpad') || '';
@@ -959,24 +1091,41 @@
   });
 
   // Listen for backend Focus events
+  function handleFocusUpdate(data) {
+    if (!data || typeof data !== 'object') return;
+    const s = data.state || data;
+    if (!s) return;
+    if (typeof s.remaining_secs === 'number') {
+      pomodoroSeconds = s.remaining_secs;
+    }
+    updateTimerDisplay();
+    if (s.mode) {
+      const m = (typeof s.mode === 'string' ? s.mode : s.mode.Study ? 'study' : s.mode.Work ? 'work' : 'deep').toLowerCase();
+      activeFocusMode = m;
+      document.querySelectorAll('.focus-mode-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mode === m);
+      });
+    }
+    isTimerRunning = Boolean(s.is_active && !s.is_paused);
+    if (btnFocusPlay) {
+      btnFocusPlay.innerHTML = window.Icons ? window.Icons.get(isTimerRunning ? 'pause' : 'play', '', 14) : (isTimerRunning ? '⏸' : '▶');
+    }
+  }
+
+  if (window.bridge && typeof window.bridge.on === 'function') {
+    window.bridge.on('focus_state_changed', handleFocusUpdate);
+    window.bridge.on('focus_state', handleFocusUpdate);
+    window.bridge.on('focus_session_completed', () => {
+      isTimerRunning = false;
+      if (btnFocusPlay) btnFocusPlay.innerHTML = window.Icons ? window.Icons.get('play', '', 14) : '▶';
+    });
+  }
+
   window.addEventListener('message', (e) => {
     const data = e.data;
     if (!data || typeof data !== 'object') return;
-    if (data.type === 'focus_state_changed' && data.state) {
-      const s = data.state;
-      pomodoroSeconds = s.remaining_secs;
-      updateTimerDisplay();
-      if (s.mode) {
-        const m = (typeof s.mode === 'string' ? s.mode : s.mode.Study ? 'study' : s.mode.Work ? 'work' : 'deep').toLowerCase();
-        activeFocusMode = m;
-        document.querySelectorAll('.focus-mode-btn').forEach((b) => {
-          b.classList.toggle('active', b.dataset.mode === m);
-        });
-      }
-      isTimerRunning = s.is_active && !s.is_paused;
-      if (btnFocusPlay) {
-        btnFocusPlay.innerHTML = window.Icons ? window.Icons.get(isTimerRunning ? 'pause' : 'play', '', 14) : (isTimerRunning ? '⏸' : '▶');
-      }
+    if (data.type === 'focus_state_changed' || data.type === 'focus_state') {
+      handleFocusUpdate(data);
     } else if (data.type === 'focus_session_completed') {
       isTimerRunning = false;
       if (btnFocusPlay) {
@@ -987,7 +1136,7 @@
   });
 
   // Request initial focus state on boot
-  if (window.bridge) {
+  if (window.bridge && typeof window.bridge.send === 'function') {
     window.bridge.send('get_focus_state');
   }
 
@@ -1475,7 +1624,10 @@
     }
     if (s.accent_palette) {
       document.documentElement.setAttribute('data-palette', s.accent_palette);
+    } else {
+      document.documentElement.removeAttribute('data-palette');
     }
+    window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: s.theme, palette: s.accent_palette } }));
     if (s.skin && s.skin !== document.documentElement.getAttribute('data-skin')) {
       document.documentElement.setAttribute('data-skin', s.skin);
       const urlSkin = new URLSearchParams(window.location.search).get('skin');
@@ -1682,5 +1834,18 @@
         renderWorkspaces(data.workspaces, data.active_workspace_id);
       }
     });
+    window.bridge.send('get_workspaces');
+    window.bridge.send('get_settings');
+  }
+
+  // Initial workspaces render so the left rail is never blank before IPC returns
+  if (workspacesListEl && (!workspacesListEl.children || workspacesListEl.children.length === 0)) {
+    renderWorkspaces([
+      { id: 'main', name: 'Main', icon: 'folder', tab_count: 1 },
+      { id: 'college', name: 'College', icon: 'book', tab_count: 0 },
+      { id: 'projects', name: 'Projects', icon: 'code', tab_count: 0 },
+      { id: 'media', name: 'Media', icon: 'play', tab_count: 0 },
+      { id: 'games', name: 'Games', icon: 'terminal', tab_count: 0 }
+    ], 'main');
   }
 })();

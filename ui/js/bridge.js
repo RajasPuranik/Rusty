@@ -590,6 +590,9 @@
     }
     const type = data.type || 'state_update';
     Bridge.dispatch(type, data);
+    try {
+      window.postMessage(data, '*');
+    } catch (_) {}
   };
 
   function getUiRole() {

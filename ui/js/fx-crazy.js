@@ -24,7 +24,8 @@
 
   function refreshAccentRgb() {
     try {
-      const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent-primary').trim();
+      const style = getComputedStyle(document.documentElement);
+      const hex = (style.getPropertyValue('--bg-particle') || style.getPropertyValue('--accent-primary') || style.getPropertyValue('--accent')).trim();
       if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
@@ -64,6 +65,12 @@
 
   loadFxSettings();
   window.addEventListener('settings-changed', (e) => applySettingsObj(e.detail));
+  window.addEventListener('themechange', () => {
+    refreshAccentRgb();
+    if (typeof window.__fxCrazySyncCanvas === 'function') {
+      window.__fxCrazySyncCanvas();
+    }
+  });
   if (window.bridge && typeof window.bridge.on === 'function') {
     window.bridge.on('ui_settings_sync', (data) => {
       if (data && data.settings) applySettingsObj(data.settings);
