@@ -1112,8 +1112,14 @@ const CONTENT_INIT_SCRIPT: &str = r#"
       }, true);
 
       if (IS_TOP) {
-          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch
+          // YouTube Shorts Restrictor: auto-redirect /shorts/:id to standard watch and hide shorts shelves
           if (location.hostname.includes('youtube.com')) {
+              try {
+                  const s = document.createElement('style');
+                  s.id = 'rusty-early-shorts-hide';
+                  s.textContent = 'ytd-rich-shelf-renderer[is-shorts],ytd-reel-shelf-renderer,ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),ytd-rich-section-renderer:has(a[href*="/shorts"]),ytd-rich-item-renderer:has(a[href*="/shorts"]),ytd-video-renderer:has(a[href*="/shorts"]),ytd-grid-video-renderer:has(a[href*="/shorts"]),ytd-compact-video-renderer:has(a[href*="/shorts"]),yt-lockup-view-model:has(a[href*="/shorts"]),ytm-shorts-lockup-view-model,#shorts-container,ytd-reel-video-renderer,ytd-guide-entry-renderer a[title="Shorts"],ytd-guide-entry-renderer a[href*="/shorts"],ytd-mini-guide-entry-renderer[aria-label="Shorts"],ytd-mini-guide-entry-renderer a[href*="/shorts"],a#endpoint[title="Shorts"],[data-rusty-shorts="true"]{display:none!important;}';
+                  (document.head || document.documentElement).appendChild(s);
+              } catch (_) {}
               const checkShorts = () => {
                   if (location.pathname.startsWith('/shorts/')) {
                       const id = location.pathname.replace('/shorts/', '').split('/')[0].split('?')[0];

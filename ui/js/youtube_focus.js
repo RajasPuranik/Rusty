@@ -135,20 +135,33 @@
       (document.head || document.documentElement).appendChild(style);
     }
 
-    if (isFocusActive()) {
-      style.textContent = `
-        /* Hide YouTube Shorts shelves, buttons & links */
-        ytd-rich-shelf-renderer[is-shorts],
-        ytd-reel-shelf-renderer,
-        ytd-guide-entry-renderer a[title="Shorts"],
-        ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-        #shorts-container,
-        ytd-reel-video-renderer,
-        ytd-ad-slot-renderer,
-        ytd-in-feed-ad-layout-renderer {
-          display: none !important;
-        }
+    const baseShortsBlock = `
+      /* Always block all YouTube Shorts shelves, carousels, cards & buttons */
+      ytd-rich-shelf-renderer[is-shorts],
+      ytd-reel-shelf-renderer,
+      ytd-rich-section-renderer:has(ytd-rich-shelf-renderer),
+      ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
+      ytd-rich-section-renderer:has(a[href*="/shorts"]),
+      ytd-rich-item-renderer:has(a[href*="/shorts"]),
+      ytd-video-renderer:has(a[href*="/shorts"]),
+      ytd-grid-video-renderer:has(a[href*="/shorts"]),
+      ytd-compact-video-renderer:has(a[href*="/shorts"]),
+      yt-lockup-view-model:has(a[href*="/shorts"]),
+      ytm-shorts-lockup-view-model,
+      #shorts-container,
+      ytd-reel-video-renderer,
+      ytd-guide-entry-renderer a[title="Shorts"],
+      ytd-guide-entry-renderer a[href*="/shorts"],
+      ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+      ytd-mini-guide-entry-renderer a[href*="/shorts"],
+      a#endpoint[title="Shorts"],
+      [data-rusty-shorts="true"] {
+        display: none !important;
+      }
+    `;
 
+    if (isFocusActive()) {
+      style.textContent = baseShortsBlock + `
         /* Hide comments section during focus */
         ytd-comments,
         #comments.ytd-watch-flexy {
@@ -210,7 +223,7 @@
         }
       `;
     } else {
-      style.textContent = '';
+      style.textContent = baseShortsBlock;
     }
   }
 
@@ -281,8 +294,30 @@
     'ytd-radio-renderer'
   ].join(', ');
 
+  function blockShortsElements() {
+    // Hide any section, shelf, or card that contains a /shorts/ link or header "Shorts"
+    document.querySelectorAll('ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer, ytd-rich-item-renderer, yt-lockup-view-model').forEach((el) => {
+      const hasShorts = el.querySelector('a[href*="/shorts"]') ||
+                        el.querySelector('[is-shorts]') ||
+                        el.querySelector('ytm-shorts-lockup-view-model');
+      const headerEl = el.querySelector('#title, #rich-shelf-header-container, h2, #title-text');
+      const header = (headerEl ? headerEl.textContent : '').toLowerCase();
+      if (hasShorts || header.includes('shorts')) {
+        el.style.setProperty('display', 'none', 'important');
+        el.setAttribute('data-rusty-shorts', 'true');
+      }
+    });
+
+    // Hide sidebar and mini-guide shorts buttons
+    document.querySelectorAll('ytd-guide-entry-renderer a[href*="/shorts"], ytd-mini-guide-entry-renderer a[href*="/shorts"], a#endpoint[title="Shorts"]').forEach((a) => {
+      const entry = a.closest('ytd-guide-entry-renderer, ytd-mini-guide-entry-renderer') || a;
+      entry.style.setProperty('display', 'none', 'important');
+    });
+  }
+
   function applyFocusFilters() {
     updateFocusStylesheet();
+    blockShortsElements();
     checkShortsRedirect();
 
     const active = isFocusActive();
